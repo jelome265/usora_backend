@@ -23,10 +23,10 @@
         <camunda.version>7.22.0</camunda.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <grpc-spring-boot.version>3.1.0</grpc-spring-boot.version>
-        <opentelemetry.version>1.48.0</opentelemetry.version>
+        <opentelemetry.version>1.62.0</opentelemetry.version>
         <resilience4j.version>2.3.0</resilience4j.version>
         <protobuf.version>4.29.3</protobuf.version>
-        <grpc.version>1.70.0</grpc.version>
+        <grpc.version>1.75.0</grpc.version>
         <testcontainers.version>1.20.4</testcontainers.version>
     </properties>
 
