@@ -1,0 +1,228 @@
+syntax = "proto3";
+
+package biometric;
+
+service IdentityVerificationService {
+  rpc VerifyDocument(DocumentVerificationRequest) returns (DocumentVerificationResponse);
+  rpc VerifyFace(FaceVerificationRequest) returns (FaceVerificationResponse);
+  rpc VerifyLiveness(LivenessVerificationRequest) returns (LivenessVerificationResponse);
+  rpc MatchBiometrics(BiometricMatchRequest) returns (BiometricMatchResponse);
+  rpc ExtractDocumentData(DocumentExtractionRequest) returns (DocumentExtractionResponse);
+  rpc VerifyDocumentAuthenticity(AuthenticityRequest) returns (AuthenticityResponse);
+}
+
+message DocumentVerificationRequest {
+  string request_id = 1;
+  string tenant_id = 2;
+  string user_id = 3;
+  string session_id = 4;
+  bytes document_image = 5;
+  string document_format = 6;
+  string document_type = 7;
+  bool extract_data = 8;
+  bool check_authenticity = 9;
+  map<string, string> options = 10;
+}
+
+message DocumentVerificationResponse {
+  string request_id = 1;
+  bool verified = 2;
+  double confidence = 3;
+  DocumentData extracted_data = 4;
+  AuthenticityResult authenticity = 5;
+  repeated string errors = 6;
+  repeated string warnings = 7;
+  int64 processing_time_ms = 8;
+}
+
+message DocumentData {
+  string document_number = 1;
+  string full_name = 2;
+  string date_of_birth = 3;
+  string nationality = 4;
+  string gender = 5;
+  string date_of_expiry = 6;
+  string date_of_issue = 7;
+  string address = 8;
+  string mrz_line = 9;
+  map<string, string> additional_fields = 10;
+}
+
+message AuthenticityResult {
+  bool authentic = 1;
+  double confidence = 2;
+  repeated string checks_passed = 3;
+  repeated string checks_failed = 4;
+  map<string, double> check_scores = 5;
+}
+
+message FaceVerificationRequest {
+  string request_id = 1;
+  string tenant_id = 2;
+  string user_id = 3;
+  string session_id = 4;
+  bytes source_image = 5;
+  bytes target_image = 6;
+  string image_format = 7;
+  bool perform_quality_check = 8;
+  bool perform_liveness_check = 9;
+  double match_threshold = 10;
+  map<string, string> options = 11;
+}
+
+message FaceVerificationResponse {
+  string request_id = 1;
+  bool verified = 2;
+  double similarity_score = 3;
+  double match_confidence = 4;
+  FaceDetectionResult source_detection = 5;
+  FaceDetectionResult target_detection = 6;
+  QualityAssessment source_quality = 7;
+  QualityAssessment target_quality = 8;
+  LivenessAssessment liveness = 9;
+  int64 processing_time_ms = 10;
+  repeated string errors = 11;
+}
+
+message FaceDetectionResult {
+  bool face_detected = 1;
+  double confidence = 2;
+  BoundingBox bbox = 3;
+  repeated Landmark landmarks = 4;
+  double face_angle = 5;
+}
+
+message BoundingBox {
+  double x1 = 1;
+  double y1 = 2;
+  double x2 = 3;
+  double y2 = 4;
+}
+
+message Landmark {
+  double x = 1;
+  double y = 2;
+}
+
+message QualityAssessment {
+  double overall_score = 1;
+  double brightness = 2;
+  double contrast = 3;
+  double sharpness = 4;
+  bool blur_detected = 5;
+  double blur_score = 6;
+  bool face_size_valid = 7;
+  bool face_position_valid = 8;
+  double eye_openness = 9;
+  bool obstruction_detected = 10;
+  string obstruction_type = 11;
+  double resolution_score = 12;
+  bool passes_quality_gate = 13;
+}
+
+message LivenessVerificationRequest {
+  string request_id = 1;
+  string tenant_id = 2;
+  string user_id = 3;
+  string session_id = 4;
+  bytes image = 5;
+  bytes video_segment = 6;
+  string challenge_type = 7;
+  bytes challenge_data = 8;
+  string liveness_mode = 9;
+  map<string, string> options = 10;
+}
+
+message LivenessVerificationResponse {
+  string request_id = 1;
+  bool is_live = 2;
+  double confidence = 3;
+  string spoof_type = 4;
+  LivenessDetails details = 5;
+  int64 processing_time_ms = 6;
+  repeated string errors = 7;
+}
+
+message LivenessDetails {
+  double texture_score = 1;
+  double motion_score = 2;
+  double depth_score = 3;
+  double color_distribution_score = 4;
+  double specular_reflection_score = 5;
+  double micro_expression_score = 6;
+  ActionVerification action_verification = 7;
+}
+
+message ActionVerification {
+  repeated string actions_requested = 1;
+  repeated string actions_performed = 2;
+  repeated double action_scores = 3;
+  double overall_score = 4;
+}
+
+message BiometricMatchRequest {
+  string request_id = 1;
+  string tenant_id = 2;
+  string user_id = 3;
+  string session_id = 4;
+  bytes probe_image = 5;
+  string match_type = 6;
+  int32 top_k = 7;
+  double match_threshold = 8;
+  repeated string gallery_ids = 9;
+  map<string, string> options = 10;
+}
+
+message BiometricMatchResponse {
+  string request_id = 1;
+  bool match_found = 2;
+  repeated MatchResult matches = 3;
+  int64 total_gallery_size = 4;
+  int64 processing_time_ms = 5;
+  repeated string errors = 6;
+}
+
+message MatchResult {
+  string user_id = 1;
+  double similarity_score = 2;
+  double match_confidence = 3;
+  FaceDetectionResult probe_detection = 4;
+  QualityAssessment probe_quality = 5;
+  int32 rank = 6;
+}
+
+message DocumentExtractionRequest {
+  string request_id = 1;
+  string tenant_id = 2;
+  string session_id = 3;
+  bytes document_image = 4;
+  string document_format = 5;
+  string document_type = 6;
+  map<string, string> options = 7;
+}
+
+message DocumentExtractionResponse {
+  string request_id = 1;
+  DocumentData extracted_data = 2;
+  double confidence = 3;
+  int64 processing_time_ms = 4;
+  repeated string errors = 5;
+}
+
+message AuthenticityRequest {
+  string request_id = 1;
+  string tenant_id = 2;
+  string session_id = 3;
+  bytes document_image = 4;
+  string document_type = 5;
+  map<string, string> options = 6;
+}
+
+message AuthenticityResponse {
+  string request_id = 1;
+  bool authentic = 2;
+  double confidence = 3;
+  AuthenticityResult authenticity = 4;
+  int64 processing_time_ms = 5;
+  repeated string errors = 6;
+}

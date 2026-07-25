@@ -1,0 +1,48 @@
+server:
+  port: 8083
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/usora_compliance_dev
+    username: dev_compliance_user
+    password: dev_compliance_pass
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  kafka:
+    bootstrap-servers: localhost:9092
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8081/auth/realms/usora-dev
+          jwk-set-uri: http://localhost:8081/auth/realms/usora-dev/protocol/openid-connect/certs
+
+compliance:
+  aml-screening:
+    host: localhost
+    port: 9090
+  security:
+    jwt-secret: dev-secret-key-not-for-production-use-change-it-32chars
+  schedule:
+    watchlist-refresh: "0 */5 * * * *"
+    report-generation: "0 0 */2 * * *"
+    evidence-archival: "0 0 */6 * * *"
+    sanctions-staleness: "0 */5 * * * *"
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+
+logging:
+  level:
+    com.usora.compliance: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.drools: DEBUG

@@ -1,0 +1,85 @@
+server:
+  port: 8085
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:usora_notifications}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      idle-timeout: 600000
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 100
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+      ssl:
+        enabled: true
+      timeout: 3000
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 8
+
+  mail:
+    host: ${SMTP_HOST}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME}
+    password: ${SMTP_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          timeout: 15000
+          connectiontimeout: 10000
+
+notification:
+  webhook:
+    retry:
+      max-attempts: 5
+      initial-delay-ms: 2000
+      multiplier: 2.0
+  cleanup:
+    retention-days: 90
+  async:
+    core-pool-size: 50
+    max-pool-size: 200
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      notificationDelivery:
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 40
+        wait-duration-in-open-state: 60s
+
+logging:
+  level:
+    com.usora: INFO
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
+
+grpc:
+  client:
+    tenant-service:
+      address: static://${TENANT_SERVICE_HOST:localhost}:${TENANT_SERVICE_PORT:9090}
+      negotiation-type: tls

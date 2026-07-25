@@ -1,0 +1,52 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/usora_audit_dev
+    username: usora_dev
+    password: usora_dev
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  kafka:
+    bootstrap-servers: localhost:9093
+  data:
+    redis:
+      host: localhost
+      port: 6380
+
+audit:
+  encryption:
+    key: dev-encryption-key-32byte-pad!!
+  siem:
+    url: http://localhost:8089
+    token: dev-siem-token
+  security:
+    jwt:
+      secret: dev-jwt-secret-key-minimum-32-characters-long
+  tenant:
+    tenants:
+      default:
+        hmac-key: dev-hmac-key
+      tenant_acme:
+        hmac-key: acme-hmac-key-dev
+        hot-retention-days: 30
+        cold-retention-years: 1
+      tenant_globex:
+        hmac-key: globex-hmac-key-dev
+        hot-retention-days: 60
+
+aws:
+  s3:
+    endpoint: http://localhost:9001
+    access-key-id: minioadmin
+    secret-access-key: minioadmin
+
+logging:
+  level:
+    com.usora: DEBUG
+    org.springframework.security: DEBUG
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0

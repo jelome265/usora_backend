@@ -1,0 +1,83 @@
+{
+  "namespace": "com.usora.events.identity",
+  "type": "record",
+  "name": "IdentityVerified",
+  "doc": "Event emitted when an identity verification check completes.",
+  "fields": [
+    {
+      "name": "event_id",
+      "type": "string",
+      "doc": "Unique identifier for the event (UUID)."
+    },
+    {
+      "name": "tenant_id",
+      "type": "string",
+      "doc": "Identifier of the tenant the user belongs to."
+    },
+    {
+      "name": "verification_id",
+      "type": "string",
+      "doc": "Unique identifier for the verification request."
+    },
+    {
+      "name": "user_reference",
+      "type": "string",
+      "doc": "External reference or user identifier provided by the tenant."
+    },
+    {
+      "name": "verified_at",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp in milliseconds when the identity verification completed."
+    },
+    {
+      "name": "document_type",
+      "type": "string",
+      "doc": "Type of identity document submitted (e.g. passport, driver_license, national_id)."
+    },
+    {
+      "name": "verification_method",
+      "type": {
+        "type": "enum",
+        "name": "VerificationMethod",
+        "symbols": ["document", "biometric", "hybrid"]
+      },
+      "doc": "Method used to perform identity verification."
+    },
+    {
+      "name": "confidence_score",
+      "type": "double",
+      "doc": "Confidence score of the verification result, ranging from 0.0 to 1.0."
+    },
+    {
+      "name": "status",
+      "type": {
+        "type": "enum",
+        "name": "IdentityStatus",
+        "symbols": ["VERIFIED", "FAILED", "PENDING_REVIEW"]
+      },
+      "doc": "Outcome status of the identity verification."
+    },
+    {
+      "name": "failure_reason",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Reason for failure if the identity verification did not pass."
+    },
+    {
+      "name": "matched_fields",
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "doc": "List of document fields that were successfully matched against the user data."
+    },
+    {
+      "name": "processing_duration_ms",
+      "type": "long",
+      "doc": "Time taken to process the identity verification in milliseconds."
+    }
+  ]
+}

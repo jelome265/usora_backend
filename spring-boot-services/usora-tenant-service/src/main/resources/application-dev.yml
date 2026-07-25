@@ -1,0 +1,44 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/usora_tenant_dev
+    username: usora_dev
+    password: usora_dev_pass
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  kafka:
+    bootstrap-servers: localhost:9092
+
+server:
+  port: 8083
+
+grpc:
+  server:
+    port: 9090
+  client:
+    identity-service:
+      host: localhost
+      port: 9091
+    compliance-service:
+      host: localhost
+      port: 9092
+
+jwt:
+  jwks-url: http://localhost:8081/auth/jwks
+
+logging:
+  level:
+    com.usora: DEBUG
+    org.springframework.security: DEBUG
+
+tenant:
+  provisioning:
+    auto-approve: true

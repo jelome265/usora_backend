@@ -1,0 +1,20 @@
+package compliance.rules.reporting
+
+import com.usora.compliance.entity.ComplianceRule;
+import java.util.Map;
+
+rule "Suspicious Activity Report Required"
+    when
+        $rule: ComplianceRule(category == "reporting", severity == "critical")
+        $data: Map(this["sarFiled"] == false, this["totalViolations"] > 0)
+    then
+        System.out.println("SAR: Suspicious Activity Report required for " + $rule.getRuleId());
+end
+
+rule "Threshold Transaction Report Required"
+    when
+        $rule: ComplianceRule(category == "reporting")
+        $data: Map(this["ttrFiled"] == false, this["transactionAmount"] != null && (Integer) this["transactionAmount"] > 10000)
+    then
+        System.out.println("TTR: Threshold Transaction Report required for " + $rule.getRuleId());
+end

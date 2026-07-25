@@ -1,0 +1,348 @@
+server:
+  port: 8084
+  compression:
+    enabled: true
+    mime-types: application/json,application/protobuf,text/html
+    min-response-size: 1024
+  forward-headers-strategy: framework
+  tomcat:
+    max-connections: 10000
+    threads:
+      max: 200
+      min-spare: 20
+    connection-timeout: 30s
+    max-swallow-size: 10MB
+
+spring:
+  application:
+    name: usora-integration-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+      write-durations-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+    default-property-inclusion: non_null
+    date-format: yyyy-MM-dd'T'HH:mm:ss.SSS'Z'
+    time-zone: UTC
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          batch_size: 50
+          fetch_size: 100
+        order_inserts: true
+        order_updates: true
+        format_sql: false
+        generate_statistics: false
+    show-sql: false
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/usora_integration}
+    username: ${DATABASE_USERNAME:usora}
+    password: ${DATABASE_PASSWORD:usora_secret}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 10000
+      max-lifetime: 600000
+      pool-name: IntegrationPool
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 4
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    table: flyway_schema_history_integration
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: io.cloudevents.kafka.CloudEventSerializer
+      value-serializer: io.cloudevents.kafka.CloudEventSerializer
+      acks: all
+      compression-type: snappy
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        linger.ms: 5
+        batch.size: 65536
+    consumer:
+      group-id: integration-service
+      auto-offset-reset: earliest
+      key-deserializer: io.cloudevents.kafka.CloudEventDeserializer
+      value-deserializer: io.cloudevents.kafka.CloudEventDeserializer
+      properties:
+        max.poll.records: 500
+        fetch.min.bytes: 1024
+        fetch.max.wait.ms: 500
+        heartbeat.interval.ms: 3000
+        session.timeout.ms: 45000
+    listener:
+      concurrency: 3
+      ack-mode: MANUAL_IMMEDIATE
+      missing-topics-fatal: false
+  cloud:
+    stream:
+      kafka:
+        binder:
+          brokers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+          auto-create-topics: true
+      bindings:
+        webhook-events-out:
+          destination: webhook-events
+          content-type: application/json
+        banking-events-out:
+          destination: banking-events
+          content-type: application/json
+        government-events-out:
+          destination: government-events
+          content-type: application/json
+        credit-events-out:
+          destination: credit-events
+          content-type: application/json
+  security:
+    filter:
+      order: 10
+
+grpc:
+  server:
+    port: 9095
+    enable-keep-alive: true
+    keep-alive-time: 30s
+    keep-alive-timeout: 5s
+    max-inbound-message-size: 4MB
+  client:
+    banking-service:
+      address: static://localhost:9090
+      enable-keep-alive: true
+      keep-alive-time: 30s
+      keep-alive-timeout: 10s
+      negotiation-type: PLAINTEXT
+    government-service:
+      address: static://localhost:9091
+      enable-keep-alive: true
+      keep-alive-time: 30s
+      keep-alive-timeout: 10s
+      negotiation-type: PLAINTEXT
+    credit-service:
+      address: static://localhost:9092
+      enable-keep-alive: true
+      keep-alive-time: 30s
+      keep-alive-timeout: 10s
+      negotiation-type: PLAINTEXT
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,env,loggers
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+    prometheus:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        integration.*: true
+      slo:
+        http.server.requests: 50ms,100ms,200ms,500ms,1s,2s
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_RATE:0.1}
+    baggage:
+      correlation:
+        fields: tenant-id,user-id,correlation-id
+  otlp:
+    tracing:
+      endpoint: ${OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+
+logging:
+  level:
+    com.usora: ${LOG_LEVEL:INFO}
+    org.springframework.security: WARN
+    org.springframework.web: WARN
+    org.hibernate: WARN
+    io.grpc: WARN
+    org.apache.kafka: WARN
+    io.lettuce: WARN
+    org.redisson: WARN
+
+integration:
+  service:
+    name: usora-integration-service
+    version: 1.0.0-RC1
+  webhook:
+    idempotency-ttl: ${IDEMPOTENCY_TTL_SECONDS:86400}
+    max-retries: 5
+    retry-delay-ms: 1000
+    max-payload-size: 10485760
+    circuit-breaker:
+      failure-threshold: 5
+      wait-duration: 30000
+      half-open-max-calls: 3
+  cache:
+    webhook:
+      ttl: 86400
+    banking:
+      ttl: 3600
+    government:
+      ttl: 1800
+    credit:
+      ttl: 3600
+  kafka:
+    topic:
+      webhook-events: webhook-events
+      webhook-results: webhook-results
+      banking-events: banking-events
+      government-events: government-events
+      credit-events: credit-events
+      dead-letter: webhook-dead-letter
+  encryption:
+    key: ${ENCRYPTION_KEY:AES256KeyMustBe32BytesLongForGCMEncryption}
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        wait-duration-in-open-state: 30s
+        failure-rate-threshold: 50
+        record-exceptions:
+          - java.net.ConnectException
+          - java.net.SocketTimeoutException
+          - org.springframework.web.reactive.function.client.WebClientRequestException
+          - com.usora.integration.exception.BusinessException
+    instances:
+      webhookIngest:
+        base-config: default
+      bankingProvider:
+        base-config: default
+        wait-duration-in-open-state: 30s
+      governmentProvider:
+        base-config: default
+        wait-duration-in-open-state: 60s
+      creditBureau:
+        base-config: default
+        wait-duration-in-open-state: 30s
+      restClient:
+        base-config: default
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 500ms
+        retry-exceptions:
+          - java.net.ConnectException
+          - java.net.SocketTimeoutException
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 30s
+        cancel-running-future: true
+  ratelimiter:
+    configs:
+      default:
+        limit-for-period: 100
+        limit-refresh-period: 1s
+        timeout-duration: 5s
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:}
+    issuer: usora-integration-service
+
+banking:
+  providers:
+    - name: "plaid"
+      enabled: true
+      products: ["auth", "transactions", "income"]
+    - name: "yodlee"
+      enabled: true
+    - name: "open_banking_eu"
+      enabled: true
+  cache:
+    ttl: 3600
+    max_entries: 10000
+  circuit_breaker:
+    failure_threshold: 5
+    wait_duration: 30000
+    half_open_max_calls: 3
+  rate_limiting:
+    requests_per_minute: 100
+    burst_size: 150
+
+government:
+  eidas:
+    enabled: true
+    supported_countries: ["DE", "FR", "IT", "ES", "NL"]
+  aadhaar:
+    enabled: true
+  dmv:
+    enabled: true
+    providers:
+      - state: "CA"
+      - state: "NY"
+  passport:
+    enabled: true
+    icao_pkd:
+      enabled: true
+    interpol:
+      enabled: true
+  cache:
+    ttl: 1800
+    max_entries: 5000
+
+credit:
+  bureaus:
+    experian:
+      enabled: true
+      products: ["precise_id", "connect_check"]
+    equifax:
+      enabled: true
+      products: ["identity_scan", "fraud_index"]
+    transunion:
+      enabled: true
+      products: ["tloxp", "fraud_guard"]
+  alternative:
+    lexisnexis:
+      enabled: true
+    chexsystems:
+      enabled: true
+  cache:
+    ttl: 3600
+    max_entries: 10000
+  compliance:
+    fcra_compliant: true
+    consent_required: true
+    adverse_action_notice: true
+    data_retention_days: 30

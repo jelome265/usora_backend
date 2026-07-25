@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package com.usora.notification.client;
+
+option java_package = "com.usora.notification.client";
+option java_outer_classname = "TenantServiceProto";
+
+service TenantService {
+    rpc GetTenantConfig (GetTenantConfigRequest) returns (GetTenantConfigResponse);
+    rpc ValidateTenant (ValidateTenantRequest) returns (ValidateTenantResponse);
+}
+
+message GetTenantConfigRequest {
+    string tenant_id = 1;
+}
+
+message GetTenantConfigResponse {
+    string tenant_id = 1;
+    string tenant_name = 2;
+    string sendgrid_api_key = 3;
+    string sendgrid_from_email = 4;
+    string twilio_account_sid = 5;
+    string twilio_auth_token = 6;
+    string twilio_from_number = 7;
+    string webhook_url_template = 8;
+    string webhook_secret = 9;
+    int32 retry_max_attempts = 10;
+    int64 retry_initial_delay_ms = 11;
+    bool active = 12;
+}
+
+message ValidateTenantRequest {
+    string tenant_id = 1;
+}
+
+message ValidateTenantResponse {
+    bool valid = 1;
+    string tenant_name = 2;
+}

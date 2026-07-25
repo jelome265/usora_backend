@@ -1,0 +1,228 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: usora-platform
+namePrefix: prod-
+
+commonLabels:
+  environment: production
+  managed-by: kustomize
+  app.kubernetes.io/environment: production
+
+replicas:
+  - name: usora-gateway
+    count: 5
+  - name: usora-core
+    count: 3
+  - name: usora-document-processor
+    count: 5
+
+resources:
+  - ../../base
+
+configMapGenerator:
+  - name: gateway-config
+    behavior: replace
+    literals:
+      - LOG_LEVEL=warn
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_DEFAULT_RPS=10000
+      - TLS_ENABLED=true
+      - OTEL_ENABLED=true
+      - OTEL_TRACES_SAMPLER_RATIO=0.1
+  - name: core-config
+    behavior: replace
+    literals:
+      - LOG_LEVEL=warn
+      - SPRING_PROFILES_ACTIVE=production
+      - KAFKA_AUTO_OFFSET_RESET=latest
+  - name: document-processor-config
+    behavior: replace
+    literals:
+      - LOG_LEVEL=warn
+      - RUST_LOG=warn
+      - KAFKA_AUTO_OFFSET_RESET=latest
+      - MODEL_PATH=s3://usora-models-prod/
+
+patches:
+  - target:
+      kind: Deployment
+      name: usora-gateway
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 5
+  - target:
+      kind: Deployment
+      name: usora-core
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target:
+      kind: Deployment
+      name: usora-document-processor
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 5
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: usora-gateway
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 5
+      - op: replace
+        path: /spec/maxReplicas
+        value: 20
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: usora-core
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 10
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: usora-document-processor
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 5
+      - op: replace
+        path: /spec/maxReplicas
+        value: 50
+
+patchesStrategicMerge:
+  - |-
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: usora-gateway-pdb
+    spec:
+      minAvailable: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: usora-gateway
+  - |-
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: usora-core-pdb
+    spec:
+      minAvailable: 2
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: usora-core
+  - |-
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: usora-document-processor-pdb
+    spec:
+      minAvailable: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: usora-document-processor
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: usora-gateway
+    spec:
+      template:
+        spec:
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: topology.kubernetes.io/zone
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: usora-gateway
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: usora-gateway
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: usora-core
+    spec:
+      template:
+        spec:
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: topology.kubernetes.io/zone
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: usora-core
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: usora-core
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: usora-document-processor
+    spec:
+      template:
+        spec:
+          topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: topology.kubernetes.io/zone
+              whenUnsatisfiable: DoNotSchedule
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: usora-document-processor
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: usora-document-processor
+  - |-
+    apiVersion: networking.istio.io/v1beta1
+    kind: VirtualService
+    metadata:
+      name: gateway-ingress
+    spec:
+      gateways:
+        - istio-system/prod-gateway
+  - |-
+    apiVersion: networking.istio.io/v1beta1
+    kind: DestinationRule
+    metadata:
+      name: usora-gateway
+    spec:
+      trafficPolicy:
+        tls:
+          mode: ISTIO_MUTUAL
+        connectionPool:
+          tcp:
+            maxConnections: 200
+          http:
+            http1MaxPendingRequests: 2048
+            maxRequestsPerConnection: 100
+        outlierDetection:
+          consecutive5xxErrors: 5
+          interval: 30s
+          baseEjectionTime: 60s
+          maxEjectionPercent: 50
+      subsets:
+        - name: stable
+          labels:
+            version: stable
+        - name: canary
+          labels:
+            version: canary

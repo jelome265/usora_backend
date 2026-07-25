@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package usora.compliance.v1;
+
+option go_package = "github.com/usora/compliance/v1;usoracompliancev1";
+option java_package = "com.usora.compliance.v1";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+enum RiskLevel {
+  RISK_LEVEL_UNSPECIFIED = 0;
+  LOW = 1;
+  MEDIUM = 2;
+  HIGH = 3;
+  CRITICAL = 4;
+}
+
+enum ScreeningStatus {
+  SCREENING_STATUS_UNSPECIFIED = 0;
+  CLEAR = 1;
+  PENDING_REVIEW = 2;
+  FLAGGED = 3;
+  ESCALATED = 4;
+}
+
+message SanctionsMatch {
+  string match_id = 1;
+  string list_name = 2;
+  string entity_name = 3;
+  string match_type = 4;
+  float match_score = 5;
+  string country = 6;
+  string program = 7;
+  google.protobuf.Timestamp listed_date = 8;
+  google.protobuf.Struct additional_info = 9;
+}
+
+message PEPRecord {
+  string record_id = 1;
+  string full_name = 2;
+  string position = 3;
+  string country = 4;
+  string organization = 5;
+  string relationship = 6;
+  google.protobuf.Timestamp start_date = 7;
+  google.protobuf.Timestamp end_date = 8;
+  bool is_immediate_family = 9;
+  bool is_close_associate = 10;
+}
+
+message AMLSummary {
+  RiskLevel overall_risk = 1;
+  float risk_score = 2;
+  repeated SanctionsMatch sanctions_matches = 3;
+  repeated PEPRecord pep_records = 4;
+  int32 total_alerts = 5;
+  int32 high_priority_alerts = 6;
+  string summary_text = 7;
+}
+
+message ScreeningResult {
+  string screening_id = 1;
+  string entity_id = 2;
+  string entity_type = 3;
+  ScreeningStatus status = 4;
+  RiskLevel risk_level = 5;
+  AMLSummary aml_summary = 6;
+  repeated SanctionsMatch sanctions_matches = 7;
+  repeated PEPRecord pep_records = 8;
+  string reviewed_by = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+  google.protobuf.Timestamp reviewed_at = 12;
+}
+
+message ScreenEntityRequest {
+  string tenant_id = 1;
+  string entity_id = 2;
+  string entity_type = 3;
+  string full_name = 4;
+  string date_of_birth = 5;
+  string nationality = 6;
+  string country_of_residence = 7;
+  repeated string keywords = 8;
+  bool include_pep = 9;
+  bool include_sanctions = 10;
+  bool include_adverse_media = 11;
+  google.protobuf.Struct metadata = 12;
+}
+
+message ScreenEntityResponse {
+  ScreeningResult result = 1;
+}
+
+message CheckSanctionsRequest {
+  string tenant_id = 1;
+  string entity_id = 2;
+  string full_name = 3;
+  string date_of_birth = 4;
+  string nationality = 5;
+  repeated string sanctions_lists = 6;
+  float match_threshold = 7;
+}
+
+message CheckSanctionsResponse {
+  string screening_id = 1;
+  ScreeningStatus status = 2;
+  repeated SanctionsMatch matches = 3;
+  int32 total_lists_checked = 4;
+}
+
+message RunPEPCheckRequest {
+  string tenant_id = 1;
+  string entity_id = 2;
+  string full_name = 3;
+  string country = 4;
+  bool include_family = 5;
+  bool include_associates = 6;
+}
+
+message RunPEPCheckResponse {
+  string screening_id = 1;
+  ScreeningStatus status = 2;
+  repeated PEPRecord records = 3;
+  RiskLevel risk_level = 4;
+}
+
+message GenerateComplianceReportRequest {
+  string tenant_id = 1;
+  string report_id = 2;
+  string entity_id = 3;
+  string date_from = 4;
+  string date_to = 5;
+  string report_type = 6;
+  google.protobuf.Struct options = 7;
+}
+
+message GenerateComplianceReportResponse {
+  string report_id = 1;
+  string report_url = 2;
+  string report_format = 3;
+  int32 page_count = 4;
+  google.protobuf.Timestamp generated_at = 5;
+  bytes report_data = 6;
+}
+
+message CheckAMLRequest {
+  string tenant_id = 1;
+  string entity_id = 2;
+  string full_name = 3;
+  string date_of_birth = 4;
+  string nationality = 5;
+  string country_of_residence = 6;
+  string address = 7;
+  string occupation = 8;
+  string source_of_funds = 9;
+  float transaction_amount = 10;
+  string transaction_currency = 11;
+  string transaction_country = 12;
+  google.protobuf.Struct metadata = 13;
+}
+
+message CheckAMLResponse {
+  string screening_id = 1;
+  AMLSummary summary = 2;
+  ScreeningStatus status = 3;
+  RiskLevel risk_level = 4;
+}
+
+service ComplianceService {
+  rpc ScreenEntity(ScreenEntityRequest) returns (ScreenEntityResponse);
+  rpc CheckSanctions(CheckSanctionsRequest) returns (CheckSanctionsResponse);
+  rpc RunPEPCheck(RunPEPCheckRequest) returns (RunPEPCheckResponse);
+  rpc GenerateComplianceReport(GenerateComplianceReportRequest) returns (GenerateComplianceReportResponse);
+  rpc CheckAML(CheckAMLRequest) returns (CheckAMLResponse);
+}

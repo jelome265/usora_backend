@@ -1,0 +1,49 @@
+server:
+  port: 0
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+    show-sql: true
+  data:
+    redis:
+      host: localhost
+      port: 16379
+  flyway:
+    enabled: false
+  kafka:
+    bootstrap-servers: ${spring.embedded.kafka.brokers:localhost:9092}
+    consumer:
+      auto-offset-reset: earliest
+    listener:
+      ack-mode: MANUAL_IMMEDIATE
+  main:
+    allow-bean-definition-overriding: true
+    allow-circular-references: false
+
+integration:
+  webhook:
+    idempotency-ttl: 60
+    max-retries: 3
+  encryption:
+    key: TestEncryptionKeyForUnitTestingPurposesOnly
+  kafka:
+    topic:
+      webhook-events: test-webhook-events
+      banking-events: test-banking-events
+      government-events: test-government-events
+      credit-events: test-credit-events
+
+logging:
+  level:
+    com.usora: DEBUG
+    org.springframework: WARN

@@ -1,0 +1,47 @@
+server:
+  port: 8084
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/usora_integration_dev
+    username: usora_dev
+    password: usora_dev_secret
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  kafka:
+    bootstrap-servers: localhost:9092
+
+logging:
+  level:
+    com.usora: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate:
+      SQL: DEBUG
+      type.descriptor.sql: TRACE
+
+grpc:
+  client:
+    banking-service:
+      address: static://localhost:9090
+    government-service:
+      address: static://localhost:9091
+    credit-service:
+      address: static://localhost:9092
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+
+integration:
+  webhook:
+    idempotency-ttl: 300

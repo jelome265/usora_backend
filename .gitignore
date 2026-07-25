@@ -1,0 +1,51 @@
+# Java
+target/
+*.class
+*.jar
+*.war
+*.nar
+.settings/
+.project
+.classpath
+*.iml
+.idea/
+*.gradle
+build/
+
+# Rust
+rust-services/*/target/
+rust-services/*/Cargo.lock
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Generated
+shared/proto/*.pb.go
+shared/proto/*.pb.rs
+shared/proto/*.py
+
+# Build
+node_modules/
+dist/
+.vagrant/

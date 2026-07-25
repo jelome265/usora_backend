@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package usora.audit.v1;
+
+option go_package = "github.com/usora/audit/v1;usorauditv1";
+option java_package = "com.usora.audit.v1";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+enum EventSeverity {
+  EVENT_SEVERITY_UNSPECIFIED = 0;
+  DEBUG = 1;
+  INFO = 2;
+  WARNING = 3;
+  ERROR = 4;
+  CRITICAL = 5;
+}
+
+enum EventCategory {
+  EVENT_CATEGORY_UNSPECIFIED = 0;
+  AUTHENTICATION = 1;
+  AUTHORIZATION = 2;
+  DATA_ACCESS = 3;
+  DATA_MODIFICATION = 4;
+  SYSTEM_CHANGE = 5;
+  SECURITY_INCIDENT = 6;
+  COMPLIANCE = 7;
+  WORKFLOW = 8;
+}
+
+message AuditEvent {
+  string event_id = 1;
+  string tenant_id = 2;
+  string actor_id = 3;
+  string actor_type = 4;
+  string action = 5;
+  string resource_type = 6;
+  string resource_id = 7;
+  EventSeverity severity = 8;
+  EventCategory category = 9;
+  string status = 10;
+  string source_ip = 11;
+  string user_agent = 12;
+  string payload_hash = 13;
+  string previous_event_hash = 14;
+  map<string, string> labels = 15;
+  google.protobuf.Struct payload = 16;
+  google.protobuf.Struct metadata = 17;
+  google.protobuf.Timestamp timestamp = 18;
+}
+
+message AuditQuery {
+  string tenant_id = 1;
+  string actor_id = 2;
+  string resource_type = 3;
+  string resource_id = 4;
+  string action = 5;
+  EventSeverity min_severity = 6;
+  EventCategory category = 7;
+  google.protobuf.Timestamp from_time = 8;
+  google.protobuf.Timestamp to_time = 9;
+  map<string, string> label_filters = 10;
+  int32 page_size = 11;
+  string page_token = 12;
+}
+
+message AuditTrail {
+  string trail_id = 1;
+  string entity_id = 2;
+  string entity_type = 3;
+  string tenant_id = 4;
+  repeated AuditEvent events = 5;
+  int32 total_events = 6;
+  google.protobuf.Timestamp from_time = 7;
+  google.protobuf.Timestamp to_time = 8;
+}
+
+message AuditReport {
+  string report_id = 1;
+  string tenant_id = 2;
+  string report_type = 3;
+  int32 total_events = 4;
+  repeated AuditEvent critical_events = 5;
+  map<string, int32> event_summary = 6;
+  map<string, int32> category_breakdown = 7;
+  map<string, int32> severity_breakdown = 8;
+  google.protobuf.Timestamp from_time = 9;
+  google.protobuf.Timestamp to_time = 10;
+  google.protobuf.Timestamp generated_at = 11;
+  bytes report_data = 12;
+}
+
+message RecordEventRequest {
+  string tenant_id = 1;
+  string actor_id = 2;
+  string actor_type = 3;
+  string action = 4;
+  string resource_type = 5;
+  string resource_id = 6;
+  EventSeverity severity = 7;
+  EventCategory category = 8;
+  string status = 9;
+  string source_ip = 10;
+  string user_agent = 11;
+  map<string, string> labels = 12;
+  google.protobuf.Struct payload = 13;
+  google.protobuf.Struct metadata = 14;
+}
+
+message RecordEventResponse {
+  string event_id = 1;
+  bool recorded = 2;
+  string event_hash = 3;
+}
+
+message QueryAuditLogRequest {
+  AuditQuery query = 1;
+}
+
+message QueryAuditLogResponse {
+  repeated AuditEvent events = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message GetAuditTrailRequest {
+  string entity_id = 1;
+  string entity_type = 2;
+  string tenant_id = 3;
+  google.protobuf.Timestamp from_time = 4;
+  google.protobuf.Timestamp to_time = 5;
+}
+
+message GetAuditTrailResponse {
+  AuditTrail trail = 1;
+}
+
+message GenerateAuditReportRequest {
+  string tenant_id = 1;
+  string report_type = 2;
+  EventSeverity min_severity = 3;
+  google.protobuf.Timestamp from_time = 4;
+  google.protobuf.Timestamp to_time = 5;
+  google.protobuf.Struct options = 6;
+}
+
+message GenerateAuditReportResponse {
+  AuditReport report = 1;
+}
+
+message AnchorToBlockchainRequest {
+  string tenant_id = 1;
+  repeated string event_ids = 2;
+  bytes merkle_root = 3;
+  string blockchain_network = 4;
+}
+
+message AnchorToBlockchainResponse {
+  string anchor_id = 1;
+  string transaction_hash = 2;
+  string block_number = 3;
+  int32 event_count = 4;
+  google.protobuf.Timestamp anchored_at = 5;
+  string blockchain_network = 6;
+}
+
+service AuditService {
+  rpc RecordEvent(RecordEventRequest) returns (RecordEventResponse);
+  rpc QueryAuditLog(QueryAuditLogRequest) returns (QueryAuditLogResponse);
+  rpc GetAuditTrail(GetAuditTrailRequest) returns (GetAuditTrailResponse);
+  rpc GenerateAuditReport(GenerateAuditReportRequest) returns (GenerateAuditReportResponse);
+  rpc AnchorToBlockchain(AnchorToBlockchainRequest) returns (AnchorToBlockchainResponse);
+}

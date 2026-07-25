@@ -1,0 +1,70 @@
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: ${DATASOURCE_URL}
+    username: ${DATASOURCE_USERNAME}
+    password: ${DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: 40
+      minimum-idle: 10
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      ssl:
+        enabled: true
+      timeout: 3000
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 8
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    properties:
+      security:
+        protocol: SSL
+    producer:
+      retries: 5
+    consumer:
+      group-id: usora-identity-group-prod
+
+identity:
+  opa:
+    url: ${OPA_URL}
+    timeout_ms: 500
+  brute_force:
+    max_attempts: 5
+    window_seconds: 300
+    lockout_duration: 900
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  tracing:
+    sampling:
+      probability: 0.01
+
+otel:
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+
+logging:
+  level:
+    com.usora: WARN
+    org.springframework.security: WARN
+    org.springframework.web: WARN

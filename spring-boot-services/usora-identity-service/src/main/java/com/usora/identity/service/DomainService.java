@@ -1,0 +1,499 @@
+package com.usora.identity.service;
+
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.usora.identity.config.TenantConfig;
+import com.usora.identity.dto.RequestDto;
+import com.usora.identity.dto.ResponseDto;
+import com.usora.identity.entity.TenantEntity;
+import com.usora.identity.event.DomainEventPublisher;
+import com.usora.identity.exception.BusinessException;
+import com.usora.identity.mapper.EntityMapper;
+import com.usora.identity.repository.OAuth2ClientRepository;
+import com.usora.identity.repository.TenantRepository;
+import com.usora.identity.repository.UserRepository;
+import com.usora.identity.security.JwtTokenProvider;
+import com.usora.identity.security.PermissionEvaluator;
+import com.usora.identity.security.TenantContext;
+import com.usora.identity.util.HashingUtil;
+import com.usora.identity.util.IdGenerator;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class DomainService {
+
+    private final TenantRepository tenantRepository;
+    private final UserRepository userRepository;
+    private final OAuth2ClientRepository oAuth2ClientRepository;
+    private final JwtTokenProvider jwtTokenProvider;
+    private final PermissionEvaluator permissionEvaluator;
+    private final PasswordEncoder passwordEncoder;
+    private final EntityMapper entityMapper;
+    private final DomainEventPublisher eventPublisher;
+    private final StringRedisTemplate redisTemplate;
+    private final TenantConfig tenantConfig;
+    private final MeterRegistry meterRegistry;
+
+    public ResponseDto.TokenResponse authenticate(RequestDto.TokenRequest request) {
+        Timer.Sample sample = Timer.start(meterRegistry);
+
+        try {
+            var client = oAuth2ClientRepository.findByClientId(request.getClientId())
+                    .orElseThrow(() -> BusinessException.unauthorized("Invalid client"));
+
+            validateBruteForce(client.getClientId());
+
+            return switch (request.getGrantType()) {
+                case "client_credentials" -> handleClientCredentials(request, client);
+                case "authorization_code" -> handleAuthorizationCode(request, client);
+                case "refresh_token" -> handleRefreshToken(request, client);
+                case "password" -> handlePasswordGrant(request, client);
+                default -> throw BusinessException.badRequest("Unsupported grant type: " + request.getGrantType());
+            };
+        } finally {
+            sample.stop(meterRegistry.timer("identity_auth_duration_seconds",
+                    "grant_type", request.getGrantType() != null ? request.getGrantType() : "unknown"));
+        }
+    }
+
+    private ResponseDto.TokenResponse handleClientCredentials(RequestDto.TokenRequest request,
+                                                                TenantEntity.OAuth2ClientEntity client) {
+        if (client.getClientSecret() != null && request.getClientSecret() != null) {
+            if (!passwordEncoder.matches(request.getClientSecret(), client.getClientSecret())) {
+                recordFailedAttempt(client.getClientId());
+                throw BusinessException.unauthorized("Invalid client credentials");
+            }
+        }
+
+        if (!client.getGrantTypes().contains("client_credentials")) {
+            throw BusinessException.badRequest("Client not authorized for client_credentials grant");
+        }
+
+        var tenantId = client.getTenant().getId().toString();
+        var tenantContext = TenantContext.getContext();
+        tenantContext.setTenantId(tenantId);
+        tenantContext.setClientId(client.getClientId());
+
+        try {
+            var claims = new JWTClaimsSet.Builder()
+                    .subject(client.getClientId())
+                    .issuer("http://localhost:8081")
+                    .audience(Collections.singletonList(client.getTenant().getTenantName()))
+                    .issueTime(new Date())
+                    .expirationTime(Date.from(Instant.now().plus(client.getAccessTokenTtlSeconds(), ChronoUnit.SECONDS)))
+                    .claim("tid", tenantId)
+                    .claim("cid", client.getClientId())
+                    .claim("scope", String.join(" ", client.getScopes()))
+                    .claim("roles", List.of("client"))
+                    .claim("grant_type", "client_credentials")
+                    .build();
+
+            var accessToken = jwtTokenProvider.signToken(claims, tenantId);
+
+            meterRegistry.counter("identity_token_issued_total",
+                    "grant_type", "client_credentials",
+                    "tenant", tenantId).increment();
+
+            eventPublisher.publishTokenEvent("token.issued", client.getClientId(), tenantId, client.getClientId());
+
+            return ResponseDto.TokenResponse.builder()
+                    .accessToken(accessToken)
+                    .tokenType("Bearer")
+                    .expiresIn(client.getAccessTokenTtlSeconds())
+                    .scope(String.join(" ", client.getScopes()))
+                    .build();
+        } catch (JOSEException e) {
+            log.error("Failed to sign token", e);
+            throw BusinessException.badRequest("Token generation failed");
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private ResponseDto.TokenResponse handleAuthorizationCode(RequestDto.TokenRequest request,
+                                                                TenantEntity.OAuth2ClientEntity client) {
+        if (client.isRequirePkce() && request.getCodeVerifier() == null) {
+            throw BusinessException.badRequest("PKCE code_verifier is required for this client");
+        }
+
+        if (client.isRequirePkce() && request.getCodeVerifier() != null) {
+            if (!verifyPkce(request.getCodeVerifier())) {
+                recordFailedAttempt(client.getClientId());
+                throw BusinessException.badRequest("PKCE verification failed");
+            }
+        }
+
+        var tenantId = client.getTenant().getId().toString();
+        var tenantContext = TenantContext.getContext();
+        tenantContext.setTenantId(tenantId);
+        tenantContext.setClientId(client.getClientId());
+
+        try {
+            var claims = new JWTClaimsSet.Builder()
+                    .subject(request.getClientId())
+                    .issuer("http://localhost:8081")
+                    .issueTime(new Date())
+                    .expirationTime(Date.from(Instant.now().plus(client.getAccessTokenTtlSeconds(), ChronoUnit.SECONDS)))
+                    .claim("tid", tenantId)
+                    .claim("cid", client.getClientId())
+                    .claim("scope", String.join(" ", client.getScopes()))
+                    .claim("nonce", IdGenerator.secureToken())
+                    .build();
+
+            var accessToken = jwtTokenProvider.signToken(claims, tenantId);
+            var refreshToken = generateRefreshToken(client, tenantId);
+
+            meterRegistry.counter("identity_token_issued_total",
+                    "grant_type", "authorization_code",
+                    "tenant", tenantId).increment();
+
+            return ResponseDto.TokenResponse.builder()
+                    .accessToken(accessToken)
+                    .tokenType("Bearer")
+                    .expiresIn(client.getAccessTokenTtlSeconds())
+                    .refreshToken(refreshToken)
+                    .scope(String.join(" ", client.getScopes()))
+                    .build();
+        } catch (JOSEException e) {
+            log.error("Failed to sign token", e);
+            throw BusinessException.badRequest("Token generation failed");
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private ResponseDto.TokenResponse handleRefreshToken(RequestDto.TokenRequest request,
+                                                          TenantEntity.OAuth2ClientEntity client) {
+        var storedRefreshToken = redisTemplate.opsForValue().get("token:refresh:" + request.getRefreshToken());
+        if (storedRefreshToken == null) {
+            throw BusinessException.unauthorized("Invalid or expired refresh token");
+        }
+
+        redisTemplate.delete("token:refresh:" + request.getRefreshToken());
+
+        var parts = storedRefreshToken.split(":");
+        if (parts.length < 2) {
+            throw BusinessException.unauthorized("Invalid refresh token data");
+        }
+
+        var tenantId = parts[0];
+        var tenantContext = TenantContext.getContext();
+        tenantContext.setTenantId(tenantId);
+        tenantContext.setClientId(client.getClientId());
+
+        try {
+            var claims = new JWTClaimsSet.Builder()
+                    .subject(client.getClientId())
+                    .issuer("http://localhost:8081")
+                    .issueTime(new Date())
+                    .expirationTime(Date.from(Instant.now().plus(client.getAccessTokenTtlSeconds(), ChronoUnit.SECONDS)))
+                    .claim("tid", tenantId)
+                    .claim("cid", client.getClientId())
+                    .claim("scope", String.join(" ", client.getScopes()))
+                    .build();
+
+            var accessToken = jwtTokenProvider.signToken(claims, tenantId);
+            var newRefreshToken = generateRefreshToken(client, tenantId);
+
+            meterRegistry.counter("identity_token_issued_total",
+                    "grant_type", "refresh_token",
+                    "tenant", tenantId).increment();
+
+            return ResponseDto.TokenResponse.builder()
+                    .accessToken(accessToken)
+                    .tokenType("Bearer")
+                    .expiresIn(client.getAccessTokenTtlSeconds())
+                    .refreshToken(newRefreshToken)
+                    .scope(String.join(" ", client.getScopes()))
+                    .build();
+        } catch (JOSEException e) {
+            log.error("Failed to sign token", e);
+            throw BusinessException.badRequest("Token generation failed");
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    private ResponseDto.TokenResponse handlePasswordGrant(RequestDto.TokenRequest request,
+                                                           TenantEntity.OAuth2ClientEntity client) {
+        if (request.getUsername() == null || request.getPassword() == null) {
+            throw BusinessException.badRequest("Username and password are required");
+        }
+
+        var user = userRepository.findByUsernameAndTenantId(request.getUsername(), client.getTenant().getId())
+                .orElseThrow(() -> {
+                    recordFailedAttempt(client.getClientId());
+                    return BusinessException.unauthorized("Invalid username or password");
+                });
+
+        if (!user.isEnabled()) {
+            throw BusinessException.forbidden("Account is disabled");
+        }
+
+        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            recordFailedAttempt(client.getClientId());
+            throw BusinessException.unauthorized("Invalid username or password");
+        }
+
+        clearBruteForceCounter(client.getClientId());
+
+        var tenantId = client.getTenant().getId().toString();
+        var tenantContext = TenantContext.getContext();
+        tenantContext.setTenantId(tenantId);
+        tenantContext.setClientId(client.getClientId());
+        tenantContext.setUserId(user.getId().toString());
+
+        try {
+            var claims = new JWTClaimsSet.Builder()
+                    .subject(user.getId().toString())
+                    .issuer("http://localhost:8081")
+                    .issueTime(new Date())
+                    .expirationTime(Date.from(Instant.now().plus(client.getAccessTokenTtlSeconds(), ChronoUnit.SECONDS)))
+                    .claim("tid", tenantId)
+                    .claim("cid", client.getClientId())
+                    .claim("username", user.getUsername())
+                    .claim("email", user.getEmail())
+                    .claim("roles", user.getRoles() != null ? List.copyOf(user.getRoles()) : List.of())
+                    .claim("scope", String.join(" ", client.getScopes()))
+                    .build();
+
+            var accessToken = jwtTokenProvider.signToken(claims, tenantId);
+            var refreshToken = generateRefreshToken(client, tenantId);
+
+            user.setLastLoginAt(Instant.now());
+            userRepository.save(user);
+
+            meterRegistry.counter("identity_auth_total",
+                    "grant_type", "password",
+                    "tenant", tenantId).increment();
+
+            eventPublisher.publishAuthEvent("auth.login.success", Map.of(
+                    "user_id", user.getId().toString(),
+                    "tenant_id", tenantId,
+                    "username", user.getUsername()
+            ));
+
+            return ResponseDto.TokenResponse.builder()
+                    .accessToken(accessToken)
+                    .tokenType("Bearer")
+                    .expiresIn(client.getAccessTokenTtlSeconds())
+                    .refreshToken(refreshToken)
+                    .scope(String.join(" ", client.getScopes()))
+                    .build();
+        } catch (JOSEException e) {
+            log.error("Failed to sign token", e);
+            throw BusinessException.badRequest("Token generation failed");
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    public ResponseDto.IntrospectResponse introspect(String token) {
+        if (token == null || token.isBlank()) {
+            return ResponseDto.IntrospectResponse.builder().active(false).build();
+        }
+
+        try {
+            var claims = jwtTokenProvider.parseToken(token);
+            var expiry = claims.getExpirationTime();
+            if (expiry != null && expiry.before(new Date())) {
+                return ResponseDto.IntrospectResponse.builder().active(false).build();
+            }
+
+            var tid = claims.getStringClaim("tid");
+            var valid = jwtTokenProvider.validateToken(token, tid);
+            if (!valid) {
+                return ResponseDto.IntrospectResponse.builder().active(false).build();
+            }
+
+            var rolesList = claims.getStringListClaim("roles");
+            var scope = claims.getStringClaim("scope");
+
+            return ResponseDto.IntrospectResponse.builder()
+                    .active(true)
+                    .sub(claims.getSubject())
+                    .tid(tid)
+                    .clientId(claims.getStringClaim("cid"))
+                    .exp(claims.getExpirationTime() != null ? claims.getExpirationTime().toInstant() : null)
+                    .iat(claims.getIssueTime() != null ? claims.getIssueTime().toInstant() : null)
+                    .scope(scope)
+                    .roles(rolesList != null ? Set.copyOf(rolesList) : Set.of())
+                    .tokenType("Bearer")
+                    .username(claims.getStringClaim("username"))
+                    .build();
+        } catch (Exception e) {
+            log.warn("Token introspection failed: {}", e.getMessage());
+            return ResponseDto.IntrospectResponse.builder().active(false).build();
+        }
+    }
+
+    public void revoke(String token) {
+        if (token == null || token.isBlank()) {
+            return;
+        }
+
+        try {
+            var claims = jwtTokenProvider.parseToken(token);
+            var tid = claims.getStringClaim("tid");
+            var jti = claims.getJWTID();
+
+            if (jti != null) {
+                redisTemplate.opsForValue().set(
+                        "token:revoked:" + jti, "revoked",
+                        tenantConfig.getJwt().getAccessTokenTtl(), TimeUnit.SECONDS);
+            }
+
+            var refreshKey = "token:refresh:" + token;
+            redisTemplate.delete(refreshKey);
+
+            eventPublisher.publishTokenEvent("token.revoked", jti, tid, claims.getStringClaim("cid"));
+            log.info("Token revoked: jti={}, tid={}", jti, tid);
+        } catch (Exception e) {
+            log.warn("Token revocation failed: {}", e.getMessage());
+        }
+    }
+
+    @Transactional
+    public ResponseDto.UserResponse createUser(RequestDto.UserCreateRequest request) {
+        var tenant = tenantRepository.findActiveById(UUID.fromString(request.getTenantId()))
+                .orElseThrow(() -> BusinessException.notFound("Tenant not found: " + request.getTenantId()));
+
+        if (userRepository.existsByUsernameAndTenantId(request.getUsername(), tenant.getId())) {
+            throw BusinessException.conflict("Username already exists in tenant");
+        }
+
+        if (request.getEmail() != null && userRepository.existsByEmailAndTenantId(request.getEmail(), tenant.getId())) {
+            throw BusinessException.conflict("Email already exists in tenant");
+        }
+
+        var userEntity = entityMapper.toUserEntity(request, tenant);
+        if (request.getPassword() != null) {
+            userEntity.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        }
+
+        var saved = userRepository.save(userEntity);
+
+        eventPublisher.publishTokenEvent("user.created", saved.getId().toString(), tenant.getId().toString(),
+                Map.of("username", saved.getUsername(), "email", saved.getEmail()));
+
+        return entityMapper.toUserResponse(saved);
+    }
+
+    @Transactional
+    public ResponseDto.UserResponse updateUserRoles(String userId, RequestDto.RoleUpdateRequest request) {
+        var user = userRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> BusinessException.notFound("User not found: " + userId));
+
+        var roles = new HashSet<>(user.getRoles() != null ? user.getRoles() : Set.of());
+        if (request.getAddRoles() != null) {
+            roles.addAll(request.getAddRoles());
+        }
+        if (request.getRemoveRoles() != null) {
+            roles.removeAll(request.getRemoveRoles());
+        }
+
+        user.setRoles(roles);
+        var saved = userRepository.save(user);
+
+        eventPublisher.publishUserEvent("user.roles.updated", saved.getId().toString(),
+                saved.getTenant().getId().toString(), Map.of("roles", roles));
+
+        return entityMapper.toUserResponse(saved);
+    }
+
+    public Map<String, Object> getOpenIdConfiguration() {
+        return Map.ofEntries(
+                Map.entry("issuer", "http://localhost:8081"),
+                Map.entry("authorization_endpoint", "http://localhost:8081/oauth2/authorize"),
+                Map.entry("token_endpoint", "http://localhost:8081/oauth2/token"),
+                Map.entry("introspection_endpoint", "http://localhost:8081/oauth2/introspect"),
+                Map.entry("revocation_endpoint", "http://localhost:8081/oauth2/revoke"),
+                Map.entry("jwks_uri", "http://localhost:8081/oauth2/jwks"),
+                Map.entry("userinfo_endpoint", "http://localhost:8081/oidc/userinfo"),
+                Map.entry("registration_endpoint", "http://localhost:8081/oidc/register"),
+                Map.entry("scopes_supported", List.of("openid", "profile", "email", "admin", "tenant:read", "tenant:write", "users:read", "users:write")),
+                Map.entry("response_types_supported", List.of("code", "token")),
+                Map.entry("grant_types_supported", List.of("authorization_code", "client_credentials", "refresh_token", "password")),
+                Map.entry("token_endpoint_auth_methods_supported", List.of("client_secret_basic", "client_secret_post", "none")),
+                Map.entry("claims_supported", List.of("sub", "tid", "cid", "roles", "permissions", "scope", "username", "email")),
+                Map.entry("code_challenge_methods_supported", List.of("S256", "plain")),
+                Map.entry("id_token_signing_alg_values_supported", List.of("RS256"))
+        );
+    }
+
+    public Map<String, Object> getUserinfo(Jwt jwt) {
+        var claims = jwt.getClaims();
+        var userinfo = new HashMap<String, Object>();
+        userinfo.put("sub", jwt.getSubject());
+        userinfo.put("tid", claims.get("tid"));
+
+        if (claims.containsKey("username")) userinfo.put("preferred_username", claims.get("username"));
+        if (claims.containsKey("email")) userinfo.put("email", claims.get("email"));
+        if (claims.containsKey("roles")) userinfo.put("roles", claims.get("roles"));
+
+        return userinfo;
+    }
+
+    private String generateRefreshToken(TenantEntity.OAuth2ClientEntity client, String tenantId) {
+        var refreshToken = IdGenerator.secureToken();
+        redisTemplate.opsForValue().set(
+                "token:refresh:" + refreshToken,
+                tenantId + ":" + client.getClientId(),
+                client.getRefreshTokenTtlSeconds(), TimeUnit.SECONDS);
+        return refreshToken;
+    }
+
+    private boolean verifyPkce(String codeVerifier) {
+        if (codeVerifier == null || codeVerifier.isBlank()) {
+            return false;
+        }
+        return codeVerifier.length() >= 43 && codeVerifier.length() <= 128;
+    }
+
+    private void validateBruteForce(String clientId) {
+        var counterKey = "bruteforce:" + clientId;
+        var attempts = redisTemplate.opsForValue().get(counterKey);
+        if (attempts != null) {
+            int count = Integer.parseInt(attempts);
+            if (count >= tenantConfig.getBruteForce().getMaxAttempts()) {
+                var ttl = redisTemplate.getExpire(counterKey);
+                if (ttl != null && ttl > 0) {
+                    log.warn("Brute force lockout for client: {}", clientId);
+                    throw BusinessException.rateLimited("Too many authentication attempts. Please try again later.");
+                }
+            }
+        }
+    }
+
+    private void recordFailedAttempt(String clientId) {
+        var counterKey = "bruteforce:" + clientId;
+        redisTemplate.opsForValue().increment(counterKey);
+        redisTemplate.expire(counterKey, tenantConfig.getBruteForce().getWindowSeconds(), TimeUnit.SECONDS);
+
+        meterRegistry.counter("identity_auth_failure_total",
+                "client_id", clientId).increment();
+    }
+
+    private void clearBruteForceCounter(String clientId) {
+        redisTemplate.delete("bruteforce:" + clientId);
+    }
+}

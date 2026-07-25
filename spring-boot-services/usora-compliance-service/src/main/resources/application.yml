@@ -1,0 +1,162 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: usora-compliance-service
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: jdbc:postgresql://localhost:5432/usora_compliance
+    username: ${COMPLIANCE_DB_USER:compliance_user}
+    password: ${COMPLIANCE_DB_PASSWORD:compliance_pass}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      pool-name: CompliancePool
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: compliance
+        format_sql: true
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+  flyway:
+    enabled: true
+    schemas: compliance
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 4
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+    consumer:
+      group-id: compliance-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+      properties:
+        isolation.level: read_committed
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8081/auth/realms/usora}
+          jwk-set-uri: ${JWK_SET_URI:http://localhost:8081/auth/realms/usora/protocol/openid-connect/certs}
+
+compliance:
+  rules:
+    engine: "drools"
+    refresh-interval: "1h"
+    version-control: true
+    signing-required: true
+  sanctions:
+    sources:
+      - name: "OFAC"
+        url: "https://www.treasury.gov/ofac/downloads/sanctions/1.0/sdn_advanced.xml"
+        refresh-interval: "24h"
+      - name: "EU Consolidated"
+        url: "https://webgate.ec.europa.eu/fsd/fsf/public/files/csvFullSanctionsList/content?path=EN"
+        refresh-interval: "24h"
+      - name: "UN"
+        url: "https://scsanctions.un.org/resources/xml/en/consolidated.xml"
+        refresh-interval: "24h"
+  audit:
+    immutable: true
+    hash-algorithm: "SHA-256"
+    retention-years: 7
+    blockchain-anchor: false
+  reporting:
+    formats: "pdf,xlsx,csv"
+    max-rows-per-report: 100000
+    async-generation: true
+  jurisdictions:
+    default: "eu_gdpr"
+    supported: "eu_gdpr,us_aml,uk_aml,singapore_mas,uae_central_bank"
+  aml-screening:
+    host: ${AML_SCREENING_HOST:localhost}
+    port: ${AML_SCREENING_PORT:9090}
+  schedule:
+    watchlist-refresh: "0 0 */6 * * *"
+    report-generation: "0 0 2 * * *"
+    evidence-archival: "0 0 3 * * *"
+    audit-retention: "0 0 4 * * *"
+    merkle-verification-ms: 3600000
+    sanctions-staleness: "0 */30 * * * *"
+  security:
+    jwt-secret: ${COMPLIANCE_JWT_SECRET:default-secret-key-change-in-production-minimum-32-chars}
+  client:
+    timeout-seconds: 30
+
+grpc:
+  server:
+    port: 9091
+  client:
+    aml-screening:
+      address: static://${compliance.aml-screening.host}:${compliance.aml-screening.port}
+      enable-keep-alive: true
+      keep-alive-timeout: 10
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    export:
+      prometheus:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 0.1
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}
+
+logging:
+  level:
+    com.usora.compliance: INFO
+    org.springframework.security: WARN
+    org.hibernate: WARN
+    org.drools: WARN
+    org.kie: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/compliance-service.log
+    max-size: 100MB
+    max-history: 30

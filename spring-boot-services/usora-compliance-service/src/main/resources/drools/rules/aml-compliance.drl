@@ -1,0 +1,36 @@
+package compliance.rules.core
+
+import com.usora.compliance.entity.ComplianceRule;
+import java.util.Map;
+
+rule "AML Basic Screening"
+    when
+        $rule: ComplianceRule(severity == "critical" || severity == "high")
+        $data: Map(this["kycVerified"] == false)
+    then
+        System.out.println("AML Basic Screening: KYC not verified for " + $rule.getRuleId());
+end
+
+rule "Sanctions List Check Required"
+    when
+        $rule: ComplianceRule(category == "sanctions")
+        $data: Map(this["sanctionsCheckCompleted"] == false)
+    then
+        System.out.println("Sanctions List Check Required for " + $rule.getRuleId());
+end
+
+rule "PEP Check Required"
+    when
+        $rule: ComplianceRule(category == "pep")
+        $data: Map(this["pepCheckCompleted"] == false)
+    then
+        System.out.println("PEP Check Required for " + $rule.getRuleId());
+end
+
+rule "Adverse Media Check"
+    when
+        $rule: ComplianceRule(category == "adverse_media")
+        $data: Map(this["adverseMediaCheckCompleted"] == false)
+    then
+        System.out.println("Adverse Media Check Required for " + $rule.getRuleId());
+end

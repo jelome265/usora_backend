@@ -1,0 +1,166 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: usora-audit-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:usora_audit}
+    username: ${DB_USER:usora}
+    password: ${DB_PASSWORD:usora}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: audit
+        jdbc:
+          batch_size: 50
+          order_inserts: true
+          order_updates: true
+        temp:
+          use_jdbc_metadata_defaults: false
+  flyway:
+    enabled: true
+    schemas: audit
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  kafka:
+    bootstrap-servers: ${KAFKA_HOST:localhost}:${KAFKA_PORT:9092}
+    producer:
+      acks: all
+      retries: 3
+      compression-type: snappy
+    consumer:
+      group-id: audit-service-group
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      max-poll-records: 500
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 4
+
+audit:
+  storage:
+    hot_store: postgresql
+    cold_store: s3
+    hot_retention_days: 90
+    cold_retention_years: 7
+  integrity:
+    hash_algorithm: SHA-256
+    merkle_tree_interval: 1h
+    blockchain_anchor: true
+    blockchain_network: hyperledger_fabric
+  signing:
+    algorithm: HMAC-SHA256
+    key_provider: vault
+    key_rotation_days: 90
+  encryption:
+    key: ${AUDIT_ENCRYPTION_KEY:default-aes-key-32byte!!change-me!!}
+  siem:
+    enabled: true
+    provider: splunk
+    url: http://localhost:8088
+    token: ${SIEM_TOKEN:default-siem-token}
+    batch_size: 100
+    flush_interval: 5s
+  blockchain:
+    grpc:
+      host: ${BLOCKCHAIN_GRPC_HOST:localhost}
+      port: ${BLOCKCHAIN_GRPC_PORT:50051}
+  kafka:
+    topic:
+      audit-events: audit-events
+      audit-events-persisted: audit-events-persisted
+      cross-service-events: cross-service-audit-events
+      audit-merkle-anchors: audit-merkle-anchors
+      audit-tamper-alerts: audit-tamper-alerts
+  events:
+    categories:
+      - authentication
+      - authorization
+      - data_access
+      - data_modification
+      - configuration_change
+      - security_event
+      - compliance_check
+    required_fields:
+      - timestamp
+      - actor_id
+      - action
+      - resource_type
+      - resource_id
+      - tenant_id
+      - outcome
+  security:
+    jwt:
+      secret: ${JWT_SECRET:default-secret-key-change-in-production-minimum-32-chars}
+      issuer: usora-audit
+  tenant:
+    tenants:
+      default:
+        hmac-key: ${HMAC_KEY_DEFAULT:default-hmac-key-change-in-production}
+        hot-retention-days: 90
+        cold-retention-years: 7
+        blockchain-anchoring: true
+
+aws:
+  s3:
+    region: ${AWS_REGION:us-east-1}
+    access-key-id: ${AWS_ACCESS_KEY_ID:minioadmin}
+    secret-access-key: ${AWS_SECRET_ACCESS_KEY:minioadmin}
+    endpoint: ${AWS_S3_ENDPOINT:http://localhost:9000}
+    bucket:
+      cold-storage: usora-audit-cold-storage
+      compliance-reports: usora-audit-compliance-reports
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    export:
+      prometheus:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+
+logging:
+  level:
+    com.usora: ${LOG_LEVEL:INFO}
+    org.springframework.security: WARN
+    org.springframework.kafka: WARN
+
+otel:
+  service:
+    name: usora-audit-service
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}
+
+grpc:
+  server:
+    port: 9092
+  client:
+    blockchain-service:
+      address: static://${BLOCKCHAIN_GRPC_HOST:localhost}:${BLOCKCHAIN_GRPC_PORT:50051}
+      negotiation-type: plaintext

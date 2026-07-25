@@ -1,0 +1,23 @@
+server:
+  port: 8080
+
+spring:
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: validate
+  kafka:
+    producer:
+      acks: all
+      retries: 3
+
+usora:
+  kafka:
+    topics:
+      verification-events: verification.events
+      case-events: case.events
+
+logging:
+  level:
+    root: WARN
+    com.usora: INFO

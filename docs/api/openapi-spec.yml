@@ -1,0 +1,3078 @@
+openapi: 3.1.0
+info:
+  title: USORA KYC Platform API
+  version: 1.0.0
+  description: |
+    The USORA KYC Platform API provides a comprehensive set of endpoints for
+    identity verification, document analysis, biometric matching, risk scoring,
+    compliance screening, and case management. Built with a polyglot architecture
+    combining Rust and Java services, the API delivers sub-100ms p99 latency for
+    simple verifications while maintaining hardware-enforced tenant isolation.
+
+    Key capabilities:
+    - End-to-end identity verification workflows
+    - Document forensic analysis (OCR, authenticity, tampering detection)
+    - Biometric matching with liveness detection (facial, fingerprint, voice, iris)
+    - ML-powered risk scoring with real-time fraud detection
+    - AML/sanctions/PEP watchlist screening
+    - Webhook event delivery with HMAC signature verification
+    - Configurable compliance rules and regulatory reporting
+    - Banking, credit bureau, and government ID integrations
+
+    The API uses cursor-based pagination, idempotency keys, and rate limiting
+    to provide reliable, predictable behavior at scale.
+  contact:
+    name: USORA Developer Support
+    email: developers@usora.io
+    url: https://docs.usora.io/support
+  termsOfService: https://usora.io/terms
+  license:
+    name: Commercial License
+    url: https://usora.io/license
+
+servers:
+  - url: https://api.usora.io
+    description: Production environment
+  - url: https://staging.api.usora.io
+    description: Staging environment
+  - url: http://localhost:8443
+    description: Local development
+
+security:
+  - BearerAuth: []
+  - ApiKeyAuth: []
+  - MutualTLS: []
+
+paths:
+  /v1/{tenantId}/verifications:
+    post:
+      operationId: createVerification
+      summary: Create a new verification session
+      description: Initializes a new identity verification workflow for a user.
+        Returns a session URL and token for the applicant to complete the flow.
+        Supports priority levels: express, standard, and batch.
+      tags:
+        - Verifications
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          description: Tenant identifier (UUID or slug)
+          schema:
+            type: string
+            format: uuid
+            pattern: '^[a-zA-Z0-9_-]{3,64}$'
+          example: tenant_acme
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Unique idempotency key for safe retries (24h window)
+          schema:
+            type: string
+            maxLength: 255
+            pattern: '^[\w\-.]{1,255}$'
+          example: idem_ver_abc123_20260721
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationCreateRequest'
+      responses:
+        '201':
+          description: Verification session created successfully
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+                format: uuid
+              description: Echo of request ID for tracing
+            X-Trace-ID:
+              schema:
+                type: string
+              description: OpenTelemetry trace ID
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+              description: Request quota per window
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+              description: Remaining requests in window
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+              description: Window reset Unix timestamp
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    get:
+      operationId: listVerifications
+      summary: List verifications with filtering and pagination
+      description: Returns a paginated list of verifications for the tenant.
+        Supports filtering by status, user reference, workflow, date range,
+        and risk level. Results are sorted by creation date by default.
+      tags:
+        - Verifications
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_-]{3,64}$'
+          description: Tenant identifier
+          example: tenant_acme
+        - name: status
+          in: query
+          required: false
+          description: Filter by status (comma-separated)
+          schema:
+            type: string
+            example: pending_documents,approved
+        - name: user_reference
+          in: query
+          required: false
+          description: Filter by user reference
+          schema:
+            type: string
+            maxLength: 255
+          example: user_12345
+        - name: workflow_id
+          in: query
+          required: false
+          description: Filter by workflow
+          schema:
+            type: string
+          example: standard-kyc-v3
+        - name: from
+          in: query
+          required: false
+          description: Created after (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+          example: '2026-07-01T00:00:00Z'
+        - name: to
+          in: query
+          required: false
+          description: Created before (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+          example: '2026-07-31T23:59:59Z'
+        - name: risk_level
+          in: query
+          required: false
+          description: Filter by risk level
+          schema:
+            type: string
+            enum: [low, medium, high, critical]
+        - name: sort
+          in: query
+          required: false
+          description: Sort field and direction (prefix with - for descending)
+          schema:
+            type: string
+            default: '-created_at'
+          example: -created_at
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of results per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          example: 20
+        - name: cursor
+          in: query
+          required: false
+          description: Pagination cursor from previous response
+          schema:
+            type: string
+          example: eyJpZCI6InZlcl94eXoiLCJjcmVhdGVkX2F0IjoiMjAyNi0wNy0yMVQyMzowMDowMFoifQ
+      responses:
+        '200':
+          description: Paginated list of verifications
+          headers:
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/{tenantId}/verifications/{verificationId}:
+    get:
+      operationId: getVerification
+      summary: Get verification details
+      description: Retrieves the full verification object including step status,
+        risk score, and result. Polling is supported at 100 req/s per tenant.
+      tags:
+        - Verifications
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_-]{3,64}$'
+          description: Tenant identifier
+        - name: verificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^ver_[a-zA-Z0-9]{16,32}$'
+          description: Verification session ID (prefixed with ver_)
+          example: ver_7f8a9b2c3d4e5f6a
+      responses:
+        '200':
+          description: Verification details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: Verification expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: VERIFICATION_EXPIRED
+                  message: The verification session has expired
+                  target: verification_id
+                  request_id: 550e8400-e29b-41d4-a716-446655440000
+                  timestamp: '2026-07-21T23:31:00Z'
+
+  /v1/{tenantId}/verifications/{verificationId}/cancel:
+    post:
+      operationId: cancelVerification
+      summary: Cancel an in-progress verification
+      description: Cancels a verification that is still in progress. Cannot cancel
+        verifications that are already completed, approved, or rejected.
+        Idempotent with Idempotency-Key header.
+      tags:
+        - Verifications
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_-]{3,64}$'
+        - name: verificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^ver_[a-zA-Z0-9]{16,32}$'
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            maxLength: 255
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Reason for cancellation
+                  enum: [user_request, system_error, fraud_suspicion, timeout, duplicate]
+                  example: user_request
+                notes:
+                  type: string
+                  maxLength: 2000
+                  description: Optional cancellation notes
+                  example: User decided to verify later
+      responses:
+        '200':
+          description: Verification cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    example: ver_7f8a9b2c3d4e5f6a
+                  status:
+                    type: string
+                    example: cancelled
+                  cancelled_at:
+                    type: string
+                    format: date-time
+                    example: '2026-07-21T23:35:00Z'
+                  cancel_reason:
+                    type: string
+                    example: user_request
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Verification already completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/{tenantId}/verifications/{verificationId}/documents:
+    post:
+      operationId: uploadDocument
+      summary: Upload a document for verification
+      description: Uploads an identity document image for forensic analysis.
+        Supports JPG, PNG, PDF, TIFF, HEIC, and WebP formats.
+        Maximum file size is 50MB. Returns immediately with processing status.
+      tags:
+        - Documents
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_-]{3,64}$'
+        - name: verificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^ver_[a-zA-Z0-9]{16,32}$'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - document
+                - document_type
+                - country_code
+              properties:
+                document:
+                  type: string
+                  format: binary
+                  description: Image file (JPG, PNG, PDF, TIFF, HEIC, WebP)
+                document_type:
+                  type: string
+                  description: Type of identity document
+                  enum: [passport, drivers_license, national_id, residence_permit, visa, birth_certificate, other]
+                  example: passport
+                country_code:
+                  type: string
+                  description: ISO 3166-1 alpha-2 country code
+                  minLength: 2
+                  maxLength: 2
+                  pattern: '^[A-Z]{2}$'
+                  example: US
+                side:
+                  type: string
+                  description: Document side (for two-sided documents)
+                  enum: [front, back]
+                  example: front
+      responses:
+        '202':
+          description: Document accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          description: Document exceeds size limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: DOCUMENT_TOO_LARGE
+                  message: Document exceeds 50MB limit
+                  target: document
+                  request_id: 550e8400-e29b-41d4-a716-446655440000
+                  timestamp: '2026-07-21T23:32:00Z'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/{tenantId}/verifications/{verificationId}/documents/{documentId}:
+    get:
+      operationId: getDocumentAnalysis
+      summary: Get document analysis results
+      description: Retrieves the complete document analysis results including
+        extracted data, authenticity checks, and tampering detection.
+      tags:
+        - Documents
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_-]{3,64}$'
+        - name: verificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^ver_[a-zA-Z0-9]{16,32}$'
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^doc_[a-zA-Z0-9]{16,32}$'
+          description: Document ID (prefixed with doc_)
+          example: doc_a1b2c3d4e5f6a7b8
+      responses:
+        '200':
+          description: Document analysis results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/{tenantId}/verifications/{verificationId}/biometric:
+    post:
+      operationId: submitBiometricCapture
+      summary: Submit a biometric capture
+      description: Submits a biometric capture (facial, fingerprint, voice, or iris)
+        for liveness detection and identity matching. Processes asynchronously.
+      tags:
+        - Biometrics
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_-]{3,64}$'
+        - name: verificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^ver_[a-zA-Z0-9]{16,32}$'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - capture
+                - type
+              properties:
+                capture:
+                  type: string
+                  format: binary
+                  description: Image or video capture file
+                type:
+                  type: string
+                  description: Biometric modality
+                  enum: [facial, fingerprint, voice, iris]
+                  example: facial
+                liveness_challenge:
+                  type: object
+                  description: Challenge-response data for active liveness
+                  properties:
+                    challenge_id:
+                      type: string
+                      example: chl_abc123
+                    response_data:
+                      type: string
+                      format: byte
+                      description: Encrypted challenge response
+      responses:
+        '202':
+          description: Biometric capture accepted for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  biometric_id:
+                    type: string
+                    pattern: '^bio_[a-zA-Z0-9]{16,32}$'
+                    example: bio_e5f6a7b8c9d0e1f2
+                  verification_id:
+                    type: string
+                    example: ver_7f8a9b2c3d4e5f6a
+                  type:
+                    type: string
+                    example: facial
+                  status:
+                    type: string
+                    enum: [processing, completed, failed]
+                    example: processing
+                  submitted_at:
+                    type: string
+                    format: date-time
+                    example: '2026-07-21T23:33:00Z'
+                  estimated_completion:
+                    type: string
+                    format: date-time
+                    example: '2026-07-21T23:33:03Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Biometric capture failed quality checks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/{tenantId}/cases:
+    get:
+      operationId: listCases
+      summary: List manual review cases
+      description: Retrieves a paginated list of cases requiring manual review.
+        Supports filtering by status, priority, assigned reviewer, and date range.
+      tags:
+        - Cases
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_-]{3,64}$'
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending_review, under_review, resolved, escalated]
+          example: pending_review
+        - name: priority
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [low, medium, high, critical]
+        - name: assigned_to
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Reviewer user ID
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated list of cases
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/{tenantId}/cases/{caseId}:
+    get:
+      operationId: getCase
+      summary: Get case details
+      description: Retrieves full case details including verification context,
+        review history, and attached evidence.
+      tags:
+        - Cases
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_-]{3,64}$'
+        - name: caseId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^case_[a-zA-Z0-9]{16,32}$'
+          example: case_f1g2h3i4j5k6l7m8
+      responses:
+        '200':
+          description: Case details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Case'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/{tenantId}/cases/{caseId}/status:
+    put:
+      operationId: updateCaseStatus
+      summary: Update case status
+      description: Updates the status of a manual review case. Used by reviewers
+        to accept, escalate, or resolve cases.
+      tags:
+        - Cases
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: caseId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^case_[a-zA-Z0-9]{16,32}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaseStatusUpdate'
+      responses:
+        '200':
+          description: Case status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Case'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Invalid state transition
+
+  /v1/{tenantId}/webhooks:
+    get:
+      operationId: listWebhooks
+      summary: List registered webhooks
+      description: Returns all webhook configurations for the tenant.
+      tags:
+        - Webhooks
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_-]{3,64}$'
+      responses:
+        '200':
+          description: List of webhook configurations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WebhookConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: createWebhook
+      summary: Register a new webhook
+      description: Registers a webhook endpoint to receive event notifications.
+        Events are delivered with HMAC-SHA256 signature for verification.
+      tags:
+        - Webhooks
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookConfigCreateRequest'
+      responses:
+        '201':
+          description: Webhook created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /v1/{tenantId}/webhooks/{webhookId}:
+    delete:
+      operationId: deleteWebhook
+      summary: Delete a webhook
+      description: Permanently deletes a webhook configuration and stops all deliveries.
+      tags:
+        - Webhooks
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^whk_[a-zA-Z0-9]{16,32}$'
+          example: whk_a3b4c5d6e7f8g9h0
+      responses:
+        '204':
+          description: Webhook deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/{tenantId}/config:
+    get:
+      operationId: getTenantConfig
+      summary: Get tenant configuration
+      description: Retrieves the full configuration for the authenticated tenant
+        including workflow definitions, document types, risk thresholds, and quotas.
+      tags:
+        - Configuration
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tenant configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      operationId: updateTenantConfig
+      summary: Update tenant configuration
+      description: Updates tenant configuration settings. Only provided fields
+        are updated; omitted fields retain their current values.
+      tags:
+        - Configuration
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                risk_thresholds:
+                  type: object
+                  properties:
+                    low:
+                      type: number
+                      format: float
+                      minimum: 0
+                      maximum: 100
+                      example: 30.0
+                    medium:
+                      type: number
+                      format: float
+                      minimum: 0
+                      maximum: 100
+                      example: 70.0
+                    high:
+                      type: number
+                      format: float
+                      minimum: 0
+                      maximum: 100
+                      example: 90.0
+                data_retention_days:
+                  type: integer
+                  minimum: 30
+                  maximum: 3650
+                  example: 2555
+                webhook_timeout_seconds:
+                  type: integer
+                  minimum: 5
+                  maximum: 120
+                  example: 30
+                max_upload_size_mb:
+                  type: integer
+                  minimum: 5
+                  maximum: 100
+                  example: 50
+                supported_locales:
+                  type: array
+                  items:
+                    type: string
+                    pattern: '^[a-z]{2}-[A-Z]{2}$'
+                branding:
+                  type: object
+                  properties:
+                    logo_url:
+                      type: string
+                      format: uri
+                    primary_color:
+                      type: string
+                      pattern: '^#[0-9A-Fa-f]{6}$'
+                    favicon_url:
+                      type: string
+                      format: uri
+      responses:
+        '200':
+          description: Configuration updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant_id:
+                    type: string
+                  configuration:
+                    type: object
+                  updated_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /v1/{tenantId}/notifications:
+    post:
+      operationId: createNotification
+      summary: Send a notification
+      description: Sends a notification to a user or group within the tenant.
+        Supports email, SMS, and in-app delivery channels.
+      tags:
+        - Notifications
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - type
+                - recipient
+                - message
+              properties:
+                type:
+                  type: string
+                  enum: [email, sms, in_app, push]
+                  example: email
+                recipient:
+                  type: string
+                  description: Email address, phone number, or user ID
+                  example: user@acme.com
+                message:
+                  type: object
+                  properties:
+                    subject:
+                      type: string
+                      maxLength: 255
+                      example: Verification Complete
+                    body:
+                      type: string
+                      maxLength: 10000
+                      example: Your identity verification has been approved.
+                    template_id:
+                      type: string
+                      example: tmpl_verification_complete
+                    template_data:
+                      type: object
+                      additionalProperties:
+                        type: string
+                  example:
+                    subject: Verification Complete
+                    template_id: tmpl_verification_complete
+                    template_data:
+                      user_name: John Doe
+                      status: approved
+                priority:
+                  type: string
+                  enum: [low, normal, high, urgent]
+                  default: normal
+      responses:
+        '201':
+          description: Notification sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      operationId: listNotifications
+      summary: List notifications
+      description: Retrieves a paginated list of notifications for the tenant.
+      tags:
+        - Notifications
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, sent, delivered, failed, acknowledged]
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [email, sms, in_app, push]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated list of notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/{tenantId}/notifications/{notificationId}/acknowledge:
+    post:
+      operationId: acknowledgeNotification
+      summary: Acknowledge a notification
+      description: Marks a notification as acknowledged by the recipient.
+      tags:
+        - Notifications
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^notif_[a-zA-Z0-9]{16,32}$'
+      responses:
+        '200':
+          description: Notification acknowledged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                    example: acknowledged
+                  acknowledged_at:
+                    type: string
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/{tenantId}/compliance/validate:
+    post:
+      operationId: validateCompliance
+      summary: Validate identity against compliance rules
+      description: Runs compliance validation checks including sanctions screening,
+        PEP checks, and adverse media searches against the provided identity data.
+      tags:
+        - Compliance
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComplianceValidationRequest'
+      responses:
+        '200':
+          description: Compliance validation results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplianceValidationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /v1/{tenantId}/compliance/rules:
+    get:
+      operationId: getComplianceRules
+      summary: Get compliance rules
+      description: Retrieves the compliance rule set configured for the tenant.
+      tags:
+        - Compliance
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Compliance rules configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant_id:
+                    type: string
+                  rules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        description:
+                          type: string
+                        enabled:
+                          type: boolean
+                        severity:
+                          type: string
+                          enum: [info, warning, critical]
+                        conditions:
+                          type: object
+                        actions:
+                          type: array
+                          items:
+                            type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      operationId: updateComplianceRules
+      summary: Update compliance rules
+      description: Replaces the compliance rule set for the tenant.
+      tags:
+        - Compliance
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - rules
+              properties:
+                rules:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - id
+                      - name
+                      - enabled
+                      - severity
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                        maxLength: 255
+                      description:
+                        type: string
+                        maxLength: 2000
+                      enabled:
+                        type: boolean
+                      severity:
+                        type: string
+                        enum: [info, warning, critical]
+                      conditions:
+                        type: object
+                      actions:
+                        type: array
+                        items:
+                          type: string
+      responses:
+        '200':
+          description: Compliance rules updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant_id:
+                    type: string
+                  rules:
+                    type: array
+                    items:
+                      type: object
+                  updated_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/{tenantId}/compliance/reports:
+    post:
+      operationId: generateComplianceReport
+      summary: Generate a compliance report
+      description: Initiates generation of a compliance report in PDF or CSV format
+        for the specified date range and filters.
+      tags:
+        - Compliance
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - type
+                - date_range
+              properties:
+                type:
+                  type: string
+                  enum: [compliance, audit, activity_summary, risk_assessment]
+                  example: compliance
+                format:
+                  type: string
+                  enum: [pdf, csv, xlsx]
+                  default: pdf
+                  example: pdf
+                date_range:
+                  type: object
+                  required:
+                    - from
+                    - to
+                  properties:
+                    from:
+                      type: string
+                      format: date-time
+                      example: '2026-06-01T00:00:00Z'
+                    to:
+                      type: string
+                      format: date-time
+                      example: '2026-06-30T23:59:59Z'
+                filters:
+                  type: object
+                  properties:
+                    status:
+                      type: array
+                      items:
+                        type: string
+                      example: [approved, rejected]
+                    workflow_id:
+                      type: string
+                      example: standard-kyc-v3
+                    risk_level:
+                      type: array
+                      items:
+                        type: string
+                        enum: [low, medium, high, critical]
+                delivery:
+                  type: object
+                  properties:
+                    method:
+                      type: string
+                      enum: [email, download, s3_push]
+                      default: download
+                    recipients:
+                      type: array
+                      items:
+                        type: string
+                        format: email
+                      example: [compliance@acme.com]
+      responses:
+        '202':
+          description: Report generation initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id:
+                    type: string
+                    pattern: '^rpt_[a-zA-Z0-9]{16,32}$'
+                    example: rpt_f7g8h9i0j1k2l3m4
+                  tenant_id:
+                    type: string
+                  type:
+                    type: string
+                  status:
+                    type: string
+                    enum: [generating, completed, failed]
+                    example: generating
+                  estimated_completion:
+                    type: string
+                    format: date-time
+                  created_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /v1/{tenantId}/banking/link:
+    post:
+      operationId: linkBankAccount
+      summary: Link a bank account for verification
+      description: Initiates Open Banking account linking for verification of
+        account ownership and transaction history.
+      tags:
+        - Banking
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - institution_id
+                - redirect_uri
+              properties:
+                institution_id:
+                  type: string
+                  description: Open Banking institution identifier
+                  example: ob_santander_uk
+                redirect_uri:
+                  type: string
+                  format: uri
+                  description: OAuth redirect URI after authorization
+                  example: https://acme.com/onboarding/callback
+                consent_duration_days:
+                  type: integer
+                  minimum: 1
+                  maximum: 365
+                  default: 90
+                  example: 90
+                account_types:
+                  type: array
+                  items:
+                    type: string
+                    enum: [checking, savings, credit_card]
+                  example: [checking, savings]
+      responses:
+        '200':
+          description: Bank account linking initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  link_id:
+                    type: string
+                    example: link_abc123
+                  auth_url:
+                    type: string
+                    format: uri
+                    description: URL for user to authorize bank account access
+                  expires_at:
+                    type: string
+                    format: date-time
+                  institution_name:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/{tenantId}/banking/verify:
+    post:
+      operationId: verifyBankAccount
+      summary: Verify a linked bank account
+      description: Verifies account ownership through micro-deposit verification
+        or instant account confirmation.
+      tags:
+        - Banking
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - link_id
+              properties:
+                link_id:
+                  type: string
+                  example: link_abc123
+                verification_method:
+                  type: string
+                  enum: [micro_deposit, instant_confirmation, statement_upload]
+                  default: instant_confirmation
+                  example: micro_deposit
+                amounts:
+                  type: array
+                  description: Micro-deposit amounts for verification (two values)
+                  minItems: 2
+                  maxItems: 2
+                  items:
+                    type: number
+                    example: [0.12, 0.47]
+      responses:
+        '200':
+          description: Bank account verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified:
+                    type: boolean
+                  account_name:
+                    type: string
+                  account_type:
+                    type: string
+                  institution:
+                    type: string
+                  verified_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/{tenantId}/government/eidas:
+    post:
+      operationId: verifyEidas
+      summary: Verify identity via eIDAS
+      description: Verifies identity using an EU eIDAS-compliant electronic
+        identification scheme. Supports notified eID schemes across all EU成员国.
+      tags:
+        - Government
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - country_code
+                - redirect_uri
+              properties:
+                country_code:
+                  type: string
+                  description: EU member state ISO 3166-1 alpha-2 code
+                  minLength: 2
+                  maxLength: 2
+                  pattern: '^[A-Z]{2}$'
+                  example: DE
+                redirect_uri:
+                  type: string
+                  format: uri
+                  description: Callback URL after eIDAS authentication
+                  example: https://acme.com/onboarding/eidas-callback
+                requested_attributes:
+                  type: array
+                  description: Minimum attribute set requested
+                  items:
+                    type: string
+                    enum: [full_name, date_of_birth, nationality, place_of_birth, address, personal_identifier]
+                  example: [full_name, date_of_birth, nationality]
+                loa:
+                  type: string
+                  description: Level of Assurance
+                  enum: [low, substantial, high]
+                  default: substantial
+                  example: substantial
+      responses:
+        '200':
+          description: eIDAS verification initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_id:
+                    type: string
+                  auth_url:
+                    type: string
+                    format: uri
+                  country_code:
+                    type: string
+                  loa:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/{tenantId}/government/aadhaar:
+    post:
+      operationId: verifyAadhaar
+      summary: Verify identity via Aadhaar
+      description: Verifies identity using India's Aadhaar eKYC system.
+        Supports biometric and OTP-based verification.
+      tags:
+        - Government
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - aadhaar_number
+                - consent
+              properties:
+                aadhaar_number:
+                  type: string
+                  description: 12-digit Aadhaar number
+                  pattern: '^\d{12}$'
+                  example: '123456789012'
+                verification_method:
+                  type: string
+                  enum: [otp, biometric, demographic]
+                  default: otp
+                  example: otp
+                otp:
+                  type: string
+                  description: OTP received by Aadhaar holder (for otp method)
+                  pattern: '^\d{6}$'
+                  example: '123456'
+                consent:
+                  type: boolean
+                  description: Explicit consent for eKYC
+                  example: true
+                consent_text:
+                  type: string
+                  description: Consent text displayed to user
+                  example: I consent to UIDAI sharing my KYC details with Acme Corp
+      responses:
+        '200':
+          description: Aadhaar verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified:
+                    type: boolean
+                  reference_id:
+                    type: string
+                  name:
+                    type: string
+                  date_of_birth:
+                    type: string
+                    format: date
+                  gender:
+                    type: string
+                  photo_hash:
+                    type: string
+                  masked_aadhaar:
+                    type: string
+                    example: XXXX-XXXX-9012
+                  verified_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /v1/{tenantId}/credit/verify:
+    post:
+      operationId: verifyCredit
+      summary: Perform credit verification
+      description: Queries credit bureau data for identity verification and
+        creditworthiness assessment. Supported bureaus include Experian,
+        Equifax, TransUnion, and CRIF.
+      tags:
+        - Credit
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - full_name
+                - date_of_birth
+                - bureau
+              properties:
+                full_name:
+                  type: string
+                  maxLength: 255
+                  example: John Michael Doe
+                date_of_birth:
+                  type: string
+                  format: date
+                  example: '1990-05-15'
+                bureau:
+                  type: string
+                  enum: [experian, equifax, transunion, crif]
+                  example: experian
+                ssn:
+                  type: string
+                  description: Social Security Number (US) or national ID
+                  pattern: '^\d{3}-?\d{2}-?\d{4}$'
+                  example: 123-45-6789
+                address:
+                  type: object
+                  properties:
+                    street:
+                      type: string
+                    city:
+                      type: string
+                    state:
+                      type: string
+                    zip:
+                      type: string
+                    country:
+                      type: string
+                  example:
+                    street: 123 Main St
+                    city: New York
+                    state: NY
+                    zip: '10001'
+                    country: US
+                consent:
+                  type: boolean
+                  example: true
+      responses:
+        '200':
+          description: Credit verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified:
+                    type: boolean
+                  credit_score:
+                    type: integer
+                    minimum: 300
+                    maximum: 850
+                  bureau:
+                    type: string
+                  identity_match:
+                    type: boolean
+                  fraud_alerts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                        description:
+                          type: string
+                  verified_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check endpoint
+      description: Returns the health status of the API gateway. Used by load
+        balancers and orchestrators for health probing.
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is unhealthy (degraded)
+
+  /metrics:
+    get:
+      operationId: getMetrics
+      summary: Prometheus metrics endpoint
+      description: Exposes Prometheus-formatted metrics for monitoring and alerting.
+      tags:
+        - System
+      security:
+        - MutualTLS: []
+      responses:
+        '200':
+          description: Prometheus metrics in text format
+          content:
+            text/plain:
+              schema:
+                type: string
+                description: Prometheus exposition format metrics
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT Bearer token authentication. Tokens are issued via OAuth 2.0 + PKCE
+        flow and are valid for 1 hour. The JWT contains tenant_id (tid),
+        user roles, and scopes for authorization.
+        
+        Format: Authorization: Bearer {jwt_token}
+        
+        JWT claims:
+        - sub: User identifier
+        - tid: Tenant identifier
+        - roles: Array of RBAC roles
+        - scope: Space-separated permission scopes
+        - iat: Issued at (Unix timestamp)
+        - exp: Expiration (Unix timestamp)
+        - jti: Unique token identifier (for revocation)
+        - iss: Issuer (usora.io)
+        - aud: Audience (usora-api)
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: |
+        API key authentication for server-to-server integrations.
+        Requests must be signed using HMAC-SHA256 with the API secret.
+        
+        Required headers:
+        - X-Api-Key: The API key identifier
+        - X-Usora-Timestamp: Current Unix timestamp
+        - X-Usora-Nonce: Unique nonce (max 64 chars)
+        - X-Usora-Signature: HMAC-SHA256 signature
+        
+        Signature formula:
+        signature = HMAC-SHA256(api_secret, timestamp + "." + nonce + "." + method + "." + path + "." + sha256(body))
+    MutualTLS:
+      type: mutualTLS
+      description: |
+        Mutual TLS authentication for high-security integrations and
+        inter-service communication. Clients must present an X.509 certificate
+        signed by the USORA Certificate Authority.
+        
+        - Certificate CN contains tenant_id
+        - Gateway validates certificate chain against USORA CA
+        - Used for service-to-service (gRPC) and internal metrics
+        - Certificates auto-rotated by Vault every 24 hours
+
+  schemas:
+    ErrorResponse:
+      type: object
+      description: Standard USORA error response format
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: VERIFICATION_EXPIRED
+            message:
+              type: string
+              description: Human-readable error message
+              example: The verification session has expired
+            target:
+              type: string
+              description: Target field or resource that caused the error
+              example: verification_id
+            details:
+              type: array
+              description: Additional error details
+              items:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: SESSION_TIMEOUT
+                  message:
+                    type: string
+                    example: Session exceeded 60 minute limit
+                  target:
+                    type: string
+                    example: expires_at
+            request_id:
+              type: string
+              format: uuid
+              description: Unique request identifier for tracing
+              example: 550e8400-e29b-41d4-a716-446655440000
+            timestamp:
+              type: string
+              format: date-time
+              description: Error timestamp in UTC
+              example: '2026-07-21T23:31:00Z'
+            documentation_url:
+              type: string
+              format: uri
+              description: Link to error documentation
+              example: https://docs.usora.io/errors/VERIFICATION_EXPIRED
+      example:
+        error:
+          code: VERIFICATION_EXPIRED
+          message: The verification session has expired
+          target: verification_id
+          details:
+            - code: SESSION_TIMEOUT
+              message: Session exceeded 60 minute limit
+              target: expires_at
+          request_id: 550e8400-e29b-41d4-a716-446655440000
+          timestamp: '2026-07-21T23:31:00Z'
+          documentation_url: https://docs.usora.io/errors/VERIFICATION_EXPIRED
+
+    Verification:
+      type: object
+      description: A verification session representing an identity verification workflow
+      required:
+        - id
+        - tenant_id
+        - status
+        - workflow_id
+        - user_reference
+        - created_at
+      properties:
+        id:
+          type: string
+          description: Unique verification identifier
+          pattern: '^ver_[a-zA-Z0-9]{16,32}$'
+          example: ver_7f8a9b2c3d4e5f6a
+        tenant_id:
+          type: string
+          description: Tenant identifier
+          example: tenant_acme
+        status:
+          type: string
+          description: Current verification status
+          enum:
+            - created
+            - pending_documents
+            - document_uploading
+            - document_analyzing
+            - document_analyzed
+            - biometric_pending
+            - biometric_capturing
+            - biometric_analyzing
+            - biometric_analyzed
+            - risk_scoring
+            - risk_scored
+            - enhanced_due_diligence
+            - manual_review_pending
+            - manual_reviewing
+            - approved
+            - rejected
+            - expired
+            - cancelled
+          example: pending_documents
+        workflow_id:
+          type: string
+          description: Workflow definition identifier
+          example: standard-kyc-v3
+        user_reference:
+          type: string
+          description: Client-provided user reference
+          maxLength: 255
+          example: user_12345
+        priority:
+          type: string
+          description: Verification priority level
+          enum: [express, standard, batch]
+          default: standard
+          example: standard
+        session_url:
+          type: string
+          format: uri
+          description: URL for the applicant's verification session
+          example: https://verify.usora.io/s/7f8a9b2c3d4e5f6a
+        session_token:
+          type: string
+          description: One-time session token for embedded flow
+          example: st_abc123def456...
+        steps:
+          type: array
+          description: Verification workflow steps
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: document_upload
+              name:
+                type: string
+                example: Document Upload
+              status:
+                type: string
+                enum: [pending, in_progress, completed, failed, skipped]
+                example: pending
+              required:
+                type: boolean
+                example: true
+              order:
+                type: integer
+                example: 1
+              completed_at:
+                type: string
+                format: date-time
+                nullable: true
+              result:
+                type: object
+                description: Step-specific result data
+                nullable: true
+          example:
+            - id: document_upload
+              name: Document Upload
+              status: pending
+              required: true
+              order: 1
+            - id: biometric_capture
+              name: Biometric Verification
+              status: pending
+              required: true
+              order: 2
+            - id: address_verification
+              name: Address Verification
+              status: pending
+              required: false
+              order: 3
+        risk_score:
+          type: number
+          format: float
+          nullable: true
+          description: Overall risk score (0-100)
+          minimum: 0
+          maximum: 100
+          example: 23.5
+        risk_level:
+          type: string
+          nullable: true
+          enum: [low, medium, high, critical]
+          example: low
+        result:
+          type: object
+          nullable: true
+          description: Verification result
+          properties:
+            decision:
+              type: string
+              enum: [approved, rejected, escalated, inconclusive]
+            confidence:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 1
+            flags:
+              type: array
+              items:
+                type: string
+          example:
+            decision: approved
+            confidence: 0.98
+            flags: []
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: '2026-07-21T23:31:00Z'
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Session expiration timestamp
+          example: '2026-07-22T00:31:00Z'
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Completion timestamp
+          example: null
+        metadata:
+          type: object
+          description: Client-provided metadata (max 20 keys, 1024 chars per value)
+          additionalProperties:
+            type: string
+            maxLength: 1024
+          example:
+            source: mobile_app
+            campaign: summer_2026
+            locale: en-US
+
+    VerificationCreateRequest:
+      type: object
+      description: Request payload for creating a new verification
+      required:
+        - workflow_id
+        - user_reference
+      properties:
+        workflow_id:
+          type: string
+          description: Active workflow identifier for the tenant
+          minLength: 3
+          maxLength: 64
+          example: standard-kyc-v3
+        user_reference:
+          type: string
+          description: Tenant-unique user reference
+          maxLength: 255
+          example: user_12345
+        callback_url:
+          type: string
+          format: uri
+          description: HTTPS callback URL for verification events
+          maxLength: 2048
+          example: https://acme.com/webhooks/usora
+        redirect_url:
+          type: string
+          format: uri
+          description: Post-verification redirect URL
+          maxLength: 2048
+          example: https://acme.com/onboarding/complete
+        metadata:
+          type: object
+          description: Arbitrary metadata (max 20 keys, values max 1024 chars)
+          maxProperties: 20
+          additionalProperties:
+            type: string
+            maxLength: 1024
+          example:
+            source: mobile_app
+            campaign: summer_2026
+            locale: en-US
+        expires_in_minutes:
+          type: integer
+          description: Session TTL in minutes
+          minimum: 5
+          maximum: 1440
+          default: 60
+          example: 60
+        priority:
+          type: string
+          description: Priority level
+          enum: [express, standard, batch]
+          default: standard
+          example: standard
+
+    VerificationListResponse:
+      type: object
+      description: Paginated response containing a list of verifications
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Verification'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Document:
+      type: object
+      description: Document analysis result with extracted data and authenticity checks
+      properties:
+        document_id:
+          type: string
+          pattern: '^doc_[a-zA-Z0-9]{16,32}$'
+          example: doc_a1b2c3d4e5f6a7b8
+        verification_id:
+          type: string
+          example: ver_7f8a9b2c3d4e5f6a
+        status:
+          type: string
+          enum: [processing, completed, failed]
+          example: completed
+        document_type:
+          type: string
+          enum: [passport, drivers_license, national_id, residence_permit, visa, birth_certificate, other]
+          example: passport
+        country_code:
+          type: string
+          minLength: 2
+          maxLength: 2
+          pattern: '^[A-Z]{2}$'
+          example: US
+        side:
+          type: string
+          enum: [front, back]
+          nullable: true
+          example: front
+        extracted_data:
+          type: object
+          description: OCR-extracted document data
+          properties:
+            full_name:
+              type: string
+              example: John Michael Doe
+            first_name:
+              type: string
+              example: John
+            middle_name:
+              type: string
+              example: Michael
+            last_name:
+              type: string
+              example: Doe
+            date_of_birth:
+              type: string
+              format: date
+              example: '1990-05-15'
+            document_number:
+              type: string
+              example: P123456789
+            document_expiry:
+              type: string
+              format: date
+              example: '2030-05-15'
+            nationality:
+              type: string
+              example: USA
+            sex:
+              type: string
+              enum: [M, F, X]
+              example: M
+            place_of_birth:
+              type: string
+              example: New York, NY
+            mrz:
+              type: string
+              description: Machine Readable Zone string
+              example: P<USADOE<<JOHN<MICHAEL<<<<<<<<<<<<<<<<<<<<<P1234567890USA9005158M3005157<<<<<<<<<<<<<<08
+        authenticity:
+          type: object
+          description: Document authenticity analysis
+          properties:
+            score:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 1
+              example: 0.98
+            checks:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  passed:
+                    type: boolean
+                  score:
+                    type: number
+                    format: float
+              example:
+                template_match:
+                  passed: true
+                  score: 0.99
+                hologram_detection:
+                  passed: true
+                  score: 0.97
+                uv_ir_analysis:
+                  passed: true
+                  score: 0.96
+                microprint_check:
+                  passed: true
+                  score: 0.98
+        tampering:
+          type: object
+          description: Document tampering detection results
+          properties:
+            detected:
+              type: boolean
+              example: false
+            checks:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  passed:
+                    type: boolean
+                  score:
+                    type: number
+                    format: float
+                  anomalies:
+                    type: array
+                    items:
+                      type: string
+              example:
+                pixel_analysis:
+                  passed: true
+                  anomalies: []
+                font_consistency:
+                  passed: true
+                  score: 0.99
+                metadata_forensics:
+                  passed: true
+                  indicators: []
+        risk_flags:
+          type: array
+          items:
+            type: string
+          example: []
+        processing_time_ms:
+          type: integer
+          description: Document processing time in milliseconds
+          example: 2340
+        uploaded_at:
+          type: string
+          format: date-time
+          example: '2026-07-21T23:32:00Z'
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-07-21T23:32:04Z'
+
+    DocumentUploadRequest:
+      type: object
+      description: Document upload request via multipart/form-data
+      required:
+        - document
+        - document_type
+        - country_code
+      properties:
+        document:
+          type: string
+          format: binary
+          description: Image file (JPG, PNG, PDF, TIFF, HEIC, WebP, max 50MB)
+        document_type:
+          type: string
+          description: Type of identity document
+          enum: [passport, drivers_license, national_id, residence_permit, visa, birth_certificate, other]
+        country_code:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          minLength: 2
+          maxLength: 2
+          pattern: '^[A-Z]{2}$'
+        side:
+          type: string
+          description: Document side
+          enum: [front, back]
+
+    BiometricCaptureRequest:
+      type: object
+      description: Biometric capture submission via multipart/form-data
+      required:
+        - capture
+        - type
+      properties:
+        capture:
+          type: string
+          format: binary
+          description: Image or video capture file
+        type:
+          type: string
+          description: Biometric modality
+          enum: [facial, fingerprint, voice, iris]
+        liveness_challenge:
+          type: object
+          description: Challenge-response data for active liveness
+          properties:
+            challenge_id:
+              type: string
+            response_data:
+              type: string
+              format: byte
+
+    Case:
+      type: object
+      description: A manual review case requiring human intervention
+      properties:
+        case_id:
+          type: string
+          pattern: '^case_[a-zA-Z0-9]{16,32}$'
+          example: case_f1g2h3i4j5k6l7m8
+        tenant_id:
+          type: string
+          example: tenant_acme
+        verification_id:
+          type: string
+          example: ver_7f8a9b2c3d4e5f6a
+        status:
+          type: string
+          enum: [pending_review, under_review, resolved, escalated]
+          example: pending_review
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+          example: high
+        reason:
+          type: string
+          description: Reason for escalation to manual review
+          example: Risk score exceeded threshold (score: 72.5, threshold: 70.0)
+        assigned_to:
+          type: string
+          nullable: true
+          description: Reviewer user ID
+          example: reviewer_42
+        verification_data:
+          type: object
+          description: Contextual verification data for reviewer
+        review_history:
+          type: array
+          description: History of actions taken on this case
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+                enum: [assigned, reviewed, escalated, resolved, reopened]
+              actor_id:
+                type: string
+              comment:
+                type: string
+              timestamp:
+                type: string
+                format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    CaseStatusUpdate:
+      type: object
+      description: Request to update a case status
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          description: New case status
+          enum: [under_review, resolved, escalated]
+          example: resolved
+        decision:
+          type: string
+          description: Review decision (required when resolving)
+          enum: [approve, reject, request_more_info]
+          example: approve
+        reason:
+          type: string
+          description: Reason for the decision
+          maxLength: 2000
+          example: Documents verified, biometric match passed, risk score within acceptable range
+        flags:
+          type: array
+          description: Compliance flags identified during review
+          items:
+            type: string
+          example: []
+        reviewer_notes:
+          type: string
+          maxLength: 5000
+          description: Internal reviewer notes
+          example: Customer provided clear passport photo
+
+    CaseListResponse:
+      type: object
+      description: Paginated list of manual review cases
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Case'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    WebhookConfig:
+      type: object
+      description: Webhook configuration for event delivery
+      properties:
+        webhook_id:
+          type: string
+          pattern: '^whk_[a-zA-Z0-9]{16,32}$'
+          example: whk_a3b4c5d6e7f8g9h0
+        tenant_id:
+          type: string
+          example: tenant_acme
+        url:
+          type: string
+          format: uri
+          description: HTTPS endpoint for webhook delivery
+          maxLength: 2048
+          example: https://acme.com/webhooks/usora
+        events:
+          type: array
+          description: Subscribed event types
+          items:
+            type: string
+            enum:
+              - verification.created
+              - verification.document_uploaded
+              - verification.document_processed
+              - verification.biometric_captured
+              - verification.biometric_processed
+              - verification.risk_scored
+              - verification.escalated
+              - verification.review_assigned
+              - verification.review_completed
+              - verification.approved
+              - verification.rejected
+              - verification.completed
+              - verification.expired
+              - verification.cancelled
+              - watchlist.hit
+              - compliance.alert
+          example:
+            - verification.created
+            - verification.completed
+            - verification.approved
+            - verification.rejected
+        active:
+          type: boolean
+          description: Whether the webhook is active
+          example: true
+        delivery_stats:
+          type: object
+          properties:
+            total_delivered:
+              type: integer
+              example: 15420
+            total_failed:
+              type: integer
+              example: 3
+            last_delivery:
+              type: string
+              format: date-time
+              nullable: true
+              example: '2026-07-21T23:30:00Z'
+            last_status:
+              type: integer
+              nullable: true
+              example: 200
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WebhookConfigCreateRequest:
+      type: object
+      description: Request to create a new webhook
+      required:
+        - url
+        - events
+      properties:
+        url:
+          type: string
+          format: uri
+          description: HTTPS endpoint for webhook delivery
+          maxLength: 2048
+          pattern: '^https://.*'
+          example: https://acme.com/webhooks/usora
+        events:
+          type: array
+          description: Event types to subscribe to
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - verification.created
+              - verification.document_uploaded
+              - verification.document_processed
+              - verification.biometric_captured
+              - verification.biometric_processed
+              - verification.risk_scored
+              - verification.escalated
+              - verification.review_assigned
+              - verification.review_completed
+              - verification.approved
+              - verification.rejected
+              - verification.completed
+              - verification.expired
+              - verification.cancelled
+              - watchlist.hit
+              - compliance.alert
+          example:
+            - verification.created
+            - verification.completed
+            - verification.approved
+            - verification.rejected
+        secret:
+          type: string
+          description: Custom webhook secret for HMAC signature verification
+          minLength: 16
+          maxLength: 128
+          example: whsec_custom_secret_123
+        active:
+          type: boolean
+          description: Activate immediately on creation
+          default: true
+          example: true
+        metadata:
+          type: object
+          description: Webhook metadata
+          additionalProperties:
+            type: string
+            maxLength: 512
+          example:
+            environment: production
+            team: onboarding
+
+    TenantConfig:
+      type: object
+      description: Tenant configuration settings
+      properties:
+        tenant_id:
+          type: string
+          example: tenant_acme
+        name:
+          type: string
+          description: Tenant display name
+          example: Acme Corporation
+        status:
+          type: string
+          enum: [active, suspended, disabled, provisioning]
+          example: active
+        plan:
+          type: string
+          enum: [starter, professional, enterprise, custom]
+          example: enterprise
+        configuration:
+          type: object
+          properties:
+            workflows:
+              type: array
+              items:
+                type: string
+              example: [standard-kyc-v3, enhanced-kyc-v2]
+            document_types:
+              type: array
+              items:
+                type: string
+                enum: [passport, drivers_license, national_id, residence_permit, visa, birth_certificate, other]
+              example: [passport, drivers_license, national_id]
+            biometric_modalities:
+              type: array
+              items:
+                type: string
+                enum: [facial, fingerprint, voice, iris]
+              example: [facial, fingerprint]
+            risk_thresholds:
+              type: object
+              properties:
+                low:
+                  type: number
+                  format: float
+                  example: 30.0
+                medium:
+                  type: number
+                  format: float
+                  example: 70.0
+                high:
+                  type: number
+                  format: float
+                  example: 90.0
+            data_retention_days:
+              type: integer
+              example: 2555
+            jurisdiction:
+              type: string
+              example: EU
+            webhook_timeout_seconds:
+              type: integer
+              example: 30
+            max_upload_size_mb:
+              type: integer
+              example: 50
+            supported_locales:
+              type: array
+              items:
+                type: string
+              example: [en-US, de-DE, fr-FR]
+        quotas:
+          type: object
+          properties:
+            verifications_per_month:
+              type: integer
+              example: 100000
+            used_this_month:
+              type: integer
+              example: 45231
+            reset_date:
+              type: string
+              format: date-time
+              example: '2026-08-01T00:00:00Z'
+        branding:
+          type: object
+          properties:
+            logo_url:
+              type: string
+              format: uri
+            primary_color:
+              type: string
+              pattern: '^#[0-9A-Fa-f]{6}$'
+            favicon_url:
+              type: string
+              format: uri
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Notification:
+      type: object
+      description: A notification sent to a user
+      properties:
+        id:
+          type: string
+          pattern: '^notif_[a-zA-Z0-9]{16,32}$'
+          example: notif_a1b2c3d4e5f6g7h8
+        tenant_id:
+          type: string
+        type:
+          type: string
+          enum: [email, sms, in_app, push]
+        recipient:
+          type: string
+        status:
+          type: string
+          enum: [pending, sent, delivered, failed, acknowledged]
+          example: sent
+        subject:
+          type: string
+        body_preview:
+          type: string
+          maxLength: 200
+        priority:
+          type: string
+          enum: [low, normal, high, urgent]
+        sent_at:
+          type: string
+          format: date-time
+          nullable: true
+        delivered_at:
+          type: string
+          format: date-time
+          nullable: true
+        acknowledged_at:
+          type: string
+          format: date-time
+          nullable: true
+        failed_at:
+          type: string
+          format: date-time
+          nullable: true
+        failure_reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    NotificationListResponse:
+      type: object
+      description: Paginated list of notifications
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    ComplianceValidationRequest:
+      type: object
+      description: Request to validate identity against compliance rules
+      required:
+        - full_name
+        - date_of_birth
+        - nationality
+      properties:
+        full_name:
+          type: string
+          description: Full name of the individual
+          maxLength: 255
+          example: John Michael Doe
+        date_of_birth:
+          type: string
+          format: date
+          description: Date of birth
+          example: '1990-05-15'
+        nationality:
+          type: string
+          description: ISO 3166-1 alpha-2 nationality code
+          minLength: 2
+          maxLength: 2
+          pattern: '^[A-Z]{2}$'
+          example: US
+        country_of_residence:
+          type: string
+          description: ISO 3166-1 alpha-2 country code
+          minLength: 2
+          maxLength: 2
+          pattern: '^[A-Z]{2}$'
+          example: US
+        document_number:
+          type: string
+          description: Identity document number
+          example: P123456789
+        lists_to_screen:
+          type: array
+          description: Watchlists to check against
+          items:
+            type: string
+            enum: [sanctions, pep, adverse_media, criminal, regulatory]
+          example: [sanctions, pep, adverse_media]
+        fuzzy_matching:
+          type: boolean
+          description: Enable fuzzy name matching
+          default: true
+        match_threshold:
+          type: number
+          format: float
+          description: Match threshold (0.0 to 1.0)
+          minimum: 0
+          maximum: 1
+          default: 0.85
+          example: 0.85
+
+    ComplianceValidationResponse:
+      type: object
+      description: Compliance validation results
+      properties:
+        screening_id:
+          type: string
+          example: scr_c9d0e1f2a3b4c5d6
+        tenant_id:
+          type: string
+          example: tenant_acme
+        status:
+          type: string
+          enum: [clear, pending_review, flagged, escalated]
+          example: clear
+        lists_screened:
+          type: array
+          items:
+            type: string
+          example: [sanctions, pep, adverse_media]
+        matches:
+          type: array
+          description: Watchlist matches (if any)
+          items:
+            type: object
+            properties:
+              match_id:
+                type: string
+              list:
+                type: string
+              match_score:
+                type: number
+                format: float
+              entity:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  date_of_birth:
+                    type: string
+                    format: date
+                  nationality:
+                    type: string
+                  position:
+                    type: string
+                  country:
+                    type: string
+                  pep_level:
+                    type: string
+              match_factors:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    field:
+                      type: string
+                    similarity:
+                      type: number
+                      format: float
+                    note:
+                      type: string
+              requires_review:
+                type: boolean
+        total_matches:
+          type: integer
+          example: 0
+        false_positive_probability:
+          type: number
+          format: float
+          example: 0.02
+        risk_level:
+          type: string
+          enum: [low, medium, high, critical]
+          example: low
+        screened_at:
+          type: string
+          format: date-time
+
+    Pagination:
+      type: object
+      description: Cursor-based pagination information
+      required:
+        - limit
+        - has_more
+      properties:
+        limit:
+          type: integer
+          description: Maximum number of items per page
+          example: 20
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque cursor for the next page (null if no more results)
+          example: eyJpZCI6InZlcl94eXoiLCJjcmVhdGVkX2F0IjoiMjAyNi0wNy0yMVQyMzowMDowMFoifQ
+        has_more:
+          type: boolean
+          description: Whether more results are available
+          example: true
+        total_count:
+          type: integer
+          nullable: true
+          description: Total number of items (may be estimated for large datasets)
+          example: 1543
+
+    HealthResponse:
+      type: object
+      description: Health check response
+      required:
+        - status
+        - service
+        - version
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+          example: healthy
+        service:
+          type: string
+          description: Service name
+          example: usora-api-gateway
+        version:
+          type: string
+          description: Service version
+          example: 1.0.0
+        uptime_seconds:
+          type: integer
+          description: Service uptime in seconds
+          example: 86400
+        checks:
+          type: object
+          description: Individual health check results
+          additionalProperties:
+            type: object
+            properties:
+              status:
+                type: string
+                enum: [healthy, degraded, unhealthy]
+              latency_ms:
+                type: integer
+              last_checked:
+                type: string
+                format: date-time
+          example:
+            database:
+              status: healthy
+              latency_ms: 3
+              last_checked: '2026-07-21T23:31:00Z'
+            redis:
+              status: healthy
+              latency_ms: 1
+              last_checked: '2026-07-21T23:31:00Z'
+            kafka:
+              status: healthy
+              latency_ms: 5
+              last_checked: '2026-07-21T23:31:00Z'
+            orchestration:
+              status: healthy
+              latency_ms: 12
+              last_checked: '2026-07-21T23:31:00Z'
+        timestamp:
+          type: string
+          format: date-time
+          example: '2026-07-21T23:31:00Z'
+
+  responses:
+    BadRequest:
+      description: Bad request — invalid input parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: INVALID_REQUEST
+              message: Request body contains invalid fields
+              target: workflow_id
+              details:
+                - code: INVALID_FORMAT
+                  message: workflow_id must be a non-empty string
+                  target: workflow_id
+              request_id: 550e8400-e29b-41d4-a716-446655440000
+              timestamp: '2026-07-21T23:31:00Z'
+    Unauthorized:
+      description: Authentication required or credentials invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or missing credentials
+              request_id: 550e8400-e29b-41d4-a716-446655440000
+              timestamp: '2026-07-21T23:31:00Z'
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: FORBIDDEN
+              message: Insufficient permissions for this action
+              target: scope
+              request_id: 550e8400-e29b-41d4-a716-446655440000
+              timestamp: '2026-07-21T23:31:00Z'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: VERIFICATION_NOT_FOUND
+              message: Verification ID not found
+              target: verification_id
+              request_id: 550e8400-e29b-41d4-a716-446655440000
+              timestamp: '2026-07-21T23:31:00Z'
+    UnprocessableEntity:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: INVALID_DOCUMENT
+              message: Document failed validation checks
+              target: document
+              details:
+                - code: UNSUPPORTED_DOCUMENT_TYPE
+                  message: Document type not enabled for tenant
+                  target: document_type
+              request_id: 550e8400-e29b-41d4-a716-446655440000
+              timestamp: '2026-07-21T23:31:00Z'
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: RATE_LIMITED
+              message: Rate limit exceeded. Retry after 60 seconds.
+              request_id: 550e8400-e29b-41d4-a716-446655440000
+              timestamp: '2026-07-21T23:31:00Z'
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: An unexpected error occurred
+              request_id: 550e8400-e29b-41d4-a716-446655440000
+              timestamp: '2026-07-21T23:31:00Z'
+    GatewayTimeout:
+      description: Upstream service timeout
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: GATEWAY_TIMEOUT
+              message: Upstream service did not respond in time
+              request_id: 550e8400-e29b-41d4-a716-446655440000
+              timestamp: '2026-07-21T23:31:00Z'

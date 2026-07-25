@@ -1,0 +1,45 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+
+  flyway:
+    enabled: false
+
+  data:
+    redis:
+      host: localhost
+      port: 16379
+
+  kafka:
+    bootstrap-servers: localhost:19092
+    consumer:
+      auto-offset-reset: earliest
+    listener:
+      auto-startup: false
+
+  mail:
+    host: localhost
+    port: 1025
+    username:
+    password:
+
+security:
+  jwt:
+    secret: testSecretKeyForUnitTestingPurposesOnly12345
+  encryption:
+    secret-key: dGVzdEVuY3J5cHRpb25LZXlGb3JUZXN0aW5nPT0=
+
+logging:
+  level:
+    com.usora: DEBUG

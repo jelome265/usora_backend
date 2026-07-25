@@ -1,0 +1,39 @@
+server:
+  port: 0
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
+  data:
+    redis:
+      host: localhost
+      port: 16379
+  kafka:
+    bootstrap-servers: localhost:19092
+    consumer:
+      auto-offset-reset: earliest
+
+compliance:
+  aml-screening:
+    host: localhost
+    port: 19090
+  security:
+    jwt-secret: test-secret-key-for-testing-only-32-characters-long
+
+logging:
+  level:
+    com.usora.compliance: DEBUG
+    org.springframework: WARN
+    org.hibernate: WARN

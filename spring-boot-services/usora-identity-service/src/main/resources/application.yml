@@ -1,0 +1,142 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: usora-identity-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/usora_identity
+    username: usora
+    password: usora_dev
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 10000
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: identity
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+        jdbc:
+          batch_size: 25
+          order_inserts: true
+          order_updates: true
+    show-sql: false
+  flyway:
+    enabled: true
+    schemas: identity
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 4
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+    consumer:
+      group-id: usora-identity-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+  threads:
+    virtual:
+      enabled: true
+
+identity:
+  jwt:
+    algorithm: RS256
+    access_token_ttl: 900
+    refresh_token_ttl: 604800
+    rotation_window: 86400
+    key_size: 2048
+  mfa:
+    required_roles:
+      - admin
+      - compliance_officer
+    adaptive_enabled: true
+    providers:
+      - totp
+      - webauthn
+      - sms_backup
+  opa:
+    url: http://opa.usora.svc.cluster.local:8181
+    policy_bundle_path: /policies
+    decision_cache_ttl: 60
+    timeout_ms: 500
+  brute_force:
+    max_attempts: 5
+    window_seconds: 300
+    lockout_duration: 900
+  session:
+    ttl: 24h
+    device_fingerprint_enabled: true
+    ip_subnet_binding: true
+  cleanup:
+    interval: 300000
+    brute-force-cron: 0 */5 * * * *
+    key-rotation-cron: 0 0 3 * * ?
+
+grpc:
+  server:
+    port: 50051
+  client:
+    usora-notification-service:
+      address: static://localhost:50055
+      enable-keep-alive: true
+      keep-alive-timeout: 20
+    usora-audit-service:
+      address: static://localhost:50056
+      enable-keep-alive: true
+      keep-alive-timeout: 20
+    usora-tenant-service:
+      address: static://localhost:50053
+      enable-keep-alive: true
+      keep-alive-timeout: 20
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    export:
+      prometheus:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 0.1
+
+logging:
+  level:
+    com.usora: DEBUG
+    org.springframework.security: INFO
+    org.springframework.web: INFO
+
+otel:
+  service_name: usora-identity-service
+  exporter:
+    otlp:
+      endpoint: http://localhost:4317

@@ -1,0 +1,72 @@
+server:
+  port: 8084
+
+spring:
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 10
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        generate_statistics: false
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 8
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    producer:
+      compression-type: snappy
+    consumer:
+      properties:
+        max.poll.records: 500
+
+grpc:
+  server:
+    port: 9095
+  client:
+    banking-service:
+      address: static://banking-service:9090
+      negotiation-type: TLS
+    government-service:
+      address: static://government-service:9091
+      negotiation-type: TLS
+    credit-service:
+      address: static://credit-service:9092
+      negotiation-type: TLS
+
+logging:
+  level:
+    com.usora: INFO
+    org.springframework: WARN
+
+management:
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_RATE:0.1}
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+        step: 30s
+
+integration:
+  webhook:
+    circuit-breaker:
+      failure-threshold: 10
+      wait-duration: 60000
+      half-open-max-calls: 5

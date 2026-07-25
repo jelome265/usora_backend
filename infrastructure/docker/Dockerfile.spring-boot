@@ -1,0 +1,24 @@
+# Stage 1: Build
+FROM eclipse-temurin:21-jdk-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends maven && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pom.xml ./
+COPY src ./src
+
+RUN mvn package -DskipTests -q
+
+# Stage 2: Runtime
+FROM eclipse-temurin:21-jre-bookworm
+
+LABEL maintainer="platform@usora.com"
+LABEL app="usora-spring-boot-service"
+LABEL version="1.0.0"
+
+USER 1000
+
+COPY --from=builder /app/target/*.jar /app.jar
+
+ENTRYPOINT ["java", "-XX:+UseZGC", "-XX:MaxRAMPercentage=75", "-jar", "/app.jar"]

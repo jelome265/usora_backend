@@ -1,0 +1,66 @@
+[package]
+name = "usora-api-gateway"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.7", features = ["macros", "multipart"] }
+axum-extra = { version = "0.9", features = ["typed-header"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "limit", "validate-request", "normalize-path", "set-header"] }
+tonic = "0.12"
+tonic-reflection = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+tokio = { version = "1.40", features = ["full"] }
+tokio-util = "0.7"
+tokio-rustls = "0.26"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+jsonwebtoken = "9"
+rustls = "0.23"
+rustls-pemfile = "2"
+rcgen = "0.13"
+tls-listener = "0.10"
+redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
+rdkafka = { version = "0.36", features = ["cmake-build"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+opentelemetry = { version = "0.25", features = ["trace", "metrics"] }
+opentelemetry-otlp = { version = "0.25", features = ["trace", "metrics", "grpc-tonic"] }
+tracing = "0.1"
+tracing-opentelemetry = "0.27"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+prometheus = { version = "0.13", features = ["process"] }
+metrics-exporter-prometheus = "0.15"
+thiserror = "2"
+anyhow = "1"
+futures = "0.3"
+dashmap = "6"
+arc-swap = "1"
+regex = "1"
+lru = "0.12"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+tonic-health = "0.12"
+base64 = "0.22"
+rand = "0.8"
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio"] }
+tokio-test = "0.4"
+http-body-util = "0.1"
+
+[build-dependencies]
+tonic-build = "0.12"
+prost-build = "0.13"
+
+[[bench]]
+name = "throughput"
+harness = false

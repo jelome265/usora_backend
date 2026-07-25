@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package usora.tenant.v1;
+
+option go_package = "github.com/usora/tenant/v1;usoratenantv1";
+option java_package = "com.usora.tenant.v1";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+enum TenantStatus {
+  TENANT_STATUS_UNSPECIFIED = 0;
+  ACTIVE = 1;
+  SUSPENDED = 2;
+  PROVISIONING = 3;
+  DELETED = 4;
+}
+
+message TenantConfig {
+  string tenant_id = 1;
+  string name = 2;
+  string domain = 3;
+  TenantStatus status = 4;
+  map<string, string> settings = 5;
+  repeated string features = 6;
+  int32 max_users = 7;
+  int32 max_verifications = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  google.protobuf.Struct metadata = 11;
+}
+
+message ProvisionTenantRequest {
+  string name = 1;
+  string domain = 2;
+  map<string, string> settings = 3;
+  repeated string features = 4;
+  int32 max_users = 5;
+  int32 max_verifications = 6;
+  google.protobuf.Struct metadata = 7;
+}
+
+message ProvisionTenantResponse {
+  TenantConfig tenant = 1;
+}
+
+message SuspendTenantRequest {
+  string tenant_id = 1;
+  string reason = 2;
+}
+
+message SuspendTenantResponse {
+  TenantConfig tenant = 1;
+}
+
+message ActivateTenantRequest {
+  string tenant_id = 1;
+}
+
+message ActivateTenantResponse {
+  TenantConfig tenant = 1;
+}
+
+message GetTenantConfigRequest {
+  string tenant_id = 1;
+}
+
+message GetTenantConfigResponse {
+  TenantConfig tenant = 1;
+}
+
+message UpdateTenantConfigRequest {
+  string tenant_id = 1;
+  string name = 2;
+  string domain = 3;
+  map<string, string> settings = 4;
+  repeated string features = 5;
+  int32 max_users = 6;
+  int32 max_verifications = 7;
+  google.protobuf.Struct metadata = 8;
+}
+
+message UpdateTenantConfigResponse {
+  TenantConfig tenant = 1;
+}
+
+message DeleteTenantRequest {
+  string tenant_id = 1;
+}
+
+message DeleteTenantResponse {
+  bool success = 1;
+}
+
+service TenantService {
+  rpc ProvisionTenant(ProvisionTenantRequest) returns (ProvisionTenantResponse);
+  rpc SuspendTenant(SuspendTenantRequest) returns (SuspendTenantResponse);
+  rpc ActivateTenant(ActivateTenantRequest) returns (ActivateTenantResponse);
+  rpc GetTenantConfig(GetTenantConfigRequest) returns (GetTenantConfigResponse);
+  rpc UpdateTenantConfig(UpdateTenantConfigRequest) returns (UpdateTenantConfigResponse);
+  rpc DeleteTenant(DeleteTenantRequest) returns (DeleteTenantResponse);
+}

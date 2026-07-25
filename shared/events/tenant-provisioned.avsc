@@ -1,0 +1,86 @@
+{
+  "namespace": "com.usora.events.tenant",
+  "type": "record",
+  "name": "TenantProvisioned",
+  "doc": "Event emitted when a new tenant has been provisioned in the system.",
+  "fields": [
+    {
+      "name": "event_id",
+      "type": "string",
+      "doc": "Unique identifier for the event (UUID)."
+    },
+    {
+      "name": "tenant_id",
+      "type": "string",
+      "doc": "Unique identifier assigned to the newly provisioned tenant."
+    },
+    {
+      "name": "tenant_name",
+      "type": "string",
+      "doc": "Human-readable name of the tenant organization."
+    },
+    {
+      "name": "tenant_domain",
+      "type": "string",
+      "doc": "Domain name associated with the tenant for tenancy routing."
+    },
+    {
+      "name": "provisioned_at",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp in milliseconds when the tenant was provisioned."
+    },
+    {
+      "name": "plan",
+      "type": {
+        "type": "enum",
+        "name": "TenantPlan",
+        "symbols": ["starter", "professional", "enterprise"]
+      },
+      "doc": "Pricing and feature plan assigned to the tenant."
+    },
+    {
+      "name": "region",
+      "type": {
+        "type": "enum",
+        "name": "TenantRegion",
+        "symbols": ["us-east", "eu-west", "ap-south"]
+      },
+      "doc": "Geographic region where the tenant is hosted."
+    },
+    {
+      "name": "features",
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "doc": "List of feature flags or enabled capabilities for the tenant."
+    },
+    {
+      "name": "admin_email",
+      "type": "string",
+      "doc": "Email address of the tenant administrator."
+    },
+    {
+      "name": "max_users",
+      "type": "int",
+      "doc": "Maximum number of users allowed under the tenant's plan."
+    },
+    {
+      "name": "storage_quota_bytes",
+      "type": "long",
+      "doc": "Total storage quota allocated to the tenant in bytes."
+    },
+    {
+      "name": "status",
+      "type": {
+        "type": "enum",
+        "name": "TenantStatus",
+        "symbols": ["ACTIVE", "PROVISIONING"]
+      },
+      "doc": "Current provisioning status of the tenant."
+    }
+  ]
+}

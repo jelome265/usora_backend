@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package usora.document.v1;
+
+option go_package = "github.com/usora/document/v1;usoradocumentv1";
+option java_package = "com.usora.document.v1";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+enum DocumentStatus {
+  DOCUMENT_STATUS_UNSPECIFIED = 0;
+  PENDING = 1;
+  PROCESSING = 2;
+  COMPLETED = 3;
+  FAILED = 4;
+  REJECTED = 5;
+}
+
+enum ExtractionMethod {
+  EXTRACTION_METHOD_UNSPECIFIED = 0;
+  OCR = 1;
+  MRZ = 2;
+  BARCODE = 3;
+  NFC = 4;
+}
+
+message ExtractedField {
+  string name = 1;
+  string value = 2;
+  float confidence = 3;
+  ExtractionMethod method = 4;
+  string raw_text = 5;
+  google.protobuf.Struct bounding_box = 6;
+}
+
+message DocumentData {
+  string document_id = 1;
+  repeated ExtractedField fields = 2;
+  string document_type = 3;
+  string country_code = 4;
+  string mrz_line = 5;
+  bytes encoded_face = 6;
+  map<string, string> raw_fields = 7;
+  google.protobuf.Struct metadata = 8;
+}
+
+message AuthenticityScore {
+  float overall_score = 1;
+  float tamper_detection_score = 2;
+  float hologram_verification_score = 3;
+  float font_analysis_score = 4;
+  float uv_check_score = 5;
+  float digital_signature_score = 6;
+  map<string, float> individual_checks = 7;
+}
+
+message DocumentValidationResult {
+  bool is_valid = 1;
+  bool is_tampered = 2;
+  AuthenticityScore authenticity = 3;
+  repeated string flags = 4;
+  repeated string warnings = 5;
+  string validation_summary = 6;
+}
+
+message ProcessDocumentRequest {
+  string document_id = 1;
+  string tenant_id = 2;
+  string verification_id = 3;
+  bytes document_image = 4;
+  string document_type = 5;
+  string country_code = 6;
+  repeated ExtractionMethod methods = 7;
+  bool run_forensics = 8;
+  google.protobuf.Struct options = 9;
+}
+
+message ProcessDocumentResponse {
+  string document_id = 1;
+  DocumentStatus status = 2;
+  DocumentData data = 3;
+  DocumentValidationResult validation = 4;
+  float processing_time_ms = 5;
+  repeated ExtractionMethod methods_used = 6;
+}
+
+message GetDocumentStatusRequest {
+  string document_id = 1;
+  string tenant_id = 2;
+}
+
+message GetDocumentStatusResponse {
+  string document_id = 1;
+  DocumentStatus status = 2;
+  DocumentData data = 3;
+  DocumentValidationResult validation = 4;
+}
+
+message ExtractDataRequest {
+  string document_id = 1;
+  string tenant_id = 2;
+  bytes document_image = 3;
+  repeated ExtractionMethod methods = 4;
+}
+
+message ExtractDataResponse {
+  string document_id = 1;
+  DocumentData data = 2;
+  repeated ExtractionMethod methods_used = 3;
+}
+
+message ValidateAuthenticityRequest {
+  string document_id = 1;
+  string tenant_id = 2;
+  bytes document_image = 3;
+  bool deep_analysis = 4;
+}
+
+message ValidateAuthenticityResponse {
+  string document_id = 1;
+  DocumentValidationResult result = 2;
+}
+
+service DocumentService {
+  rpc ProcessDocument(ProcessDocumentRequest) returns (ProcessDocumentResponse);
+  rpc GetDocumentStatus(GetDocumentStatusRequest) returns (GetDocumentStatusResponse);
+  rpc ExtractData(ExtractDataRequest) returns (ExtractDataResponse);
+  rpc ValidateAuthenticity(ValidateAuthenticityRequest) returns (ValidateAuthenticityResponse);
+}

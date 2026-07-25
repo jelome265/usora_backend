@@ -1,0 +1,52 @@
+package compliance.rules.jurisdiction
+
+import com.usora.compliance.entity.ComplianceRule;
+import java.util.Map;
+
+rule "GDPR Consent Required"
+    when
+        $rule: ComplianceRule(jurisdiction == "eu_gdpr")
+        $data: Map(this["consentObtained"] == false)
+    then
+        System.out.println("GDPR: Consent not obtained for " + $rule.getRuleId());
+end
+
+rule "AML5 Customer Due Diligence"
+    when
+        $rule: ComplianceRule(jurisdiction == "eu_gdpr" || jurisdiction == "uk_aml")
+        $data: Map(this["customerDueDiligence"] == false)
+    then
+        System.out.println("AML5: Customer due diligence not completed for " + $rule.getRuleId());
+end
+
+rule "Beneficial Owner Identification"
+    when
+        $rule: ComplianceRule(jurisdiction == "eu_gdpr" || jurisdiction == "uk_aml" || jurisdiction == "singapore_mas")
+        $data: Map(this["beneficialOwnerIdentified"] == false)
+    then
+        System.out.println("Beneficial owner not identified for " + $rule.getRuleId());
+end
+
+rule "US AML Travel Rule"
+    when
+        $rule: ComplianceRule(jurisdiction == "us_aml")
+        $data: Map(this["travelRuleCompliant"] == false)
+    then
+        System.out.println("US AML: Travel rule not compliant for " + $rule.getRuleId());
+end
+
+rule "Singapore MAS TRM"
+    when
+        $rule: ComplianceRule(jurisdiction == "singapore_mas")
+        $data: Map(this["trmCheck"] == false)
+    then
+        System.out.println("Singapore MAS: TRM check not completed for " + $rule.getRuleId());
+end
+
+rule "UAE Local Sponsor"
+    when
+        $rule: ComplianceRule(jurisdiction == "uae_central_bank")
+        $data: Map(this["localSponsor"] == false)
+    then
+        System.out.println("UAE: Local sponsor not identified for " + $rule.getRuleId());
+end

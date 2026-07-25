@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/usora_dev
+    username: usora_dev
+    password: usora_dev
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: update
+  kafka:
+    bootstrap-servers: localhost:9092
+  data:
+    redis:
+      host: localhost
+
+usora:
+  compute:
+    document:
+      host: localhost
+      port: 9091
+    biometric:
+      host: localhost
+      port: 9092
+    risk:
+      host: localhost
+      port: 9093
+  security:
+    jwk-set-uri: http://localhost:8081/oauth2/jwks
+
+logging:
+  level:
+    com.usora: DEBUG
+    org.springframework: INFO

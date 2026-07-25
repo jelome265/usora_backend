@@ -1,0 +1,155 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: usora-notification-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/usora_notifications
+    username: usora
+    password: usora_secret
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    schemas: public
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 4
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: notification-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    template:
+      default-topic: notification.events
+
+  mail:
+    host: smtp.sendgrid.net
+    port: 587
+    username: apikey
+    password: ${SENDGRID_API_KEY}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          timeout: 10000
+          connectiontimeout: 5000
+
+kafka:
+  topics:
+    notification-events: notification.events
+    compliance-alerts: compliance.alerts
+    verification-results: verification.results
+
+notification:
+  webhook:
+    retry:
+      max-attempts: 3
+      initial-delay-ms: 1000
+      multiplier: 2.0
+  cleanup:
+    retention-days: 90
+  async:
+    core-pool-size: 10
+    max-pool-size: 50
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+    instances:
+      notificationDelivery:
+        base-config: default
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 1s
+        retry-exceptions:
+          - java.net.ConnectException
+          - java.net.SocketTimeoutException
+    instances:
+      notificationRetry:
+        base-config: default
+
+grpc:
+  client:
+    tenant-service:
+      address: static://localhost:9090
+      negotiation-type: plaintext
+  server:
+    port: 9095
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:defaultSecretKeyMustBeOverriddenInProduction}
+  encryption:
+    secret-key: ${ENCRYPTION_SECRET_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      service: usora-notification-service
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    com.usora: DEBUG
+    org.springframework: INFO
+    org.hibernate.SQL: WARN

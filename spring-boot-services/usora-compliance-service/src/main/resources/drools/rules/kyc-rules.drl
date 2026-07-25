@@ -1,0 +1,36 @@
+package compliance.rules.kyc
+
+import com.usora.compliance.entity.ComplianceRule;
+import java.util.Map;
+
+rule "Identity Verification Required"
+    when
+        $rule: ComplianceRule(category == "kyc")
+        $data: Map(this["identityVerified"] == false)
+    then
+        System.out.println("KYC: Identity not verified for " + $rule.getRuleId());
+end
+
+rule "Document Verification Required"
+    when
+        $rule: ComplianceRule(category == "kyc")
+        $data: Map(this["documentVerified"] == false)
+    then
+        System.out.println("KYC: Documents not verified for " + $rule.getRuleId());
+end
+
+rule "Address Verification Required"
+    when
+        $rule: ComplianceRule(category == "kyc")
+        $data: Map(this["addressVerified"] == false)
+    then
+        System.out.println("KYC: Address not verified for " + $rule.getRuleId());
+end
+
+rule "Face Match Required"
+    when
+        $rule: ComplianceRule(category == "kyc", severity == "high")
+        $data: Map(this["faceMatched"] == false)
+    then
+        System.out.println("KYC: Face match not completed for " + $rule.getRuleId());
+end

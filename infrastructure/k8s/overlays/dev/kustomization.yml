@@ -1,0 +1,133 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: usora-platform
+namePrefix: dev-
+
+commonLabels:
+  environment: dev
+  managed-by: kustomize
+  app.kubernetes.io/environment: dev
+
+replicas:
+  - name: usora-gateway
+    count: 1
+  - name: usora-core
+    count: 1
+  - name: usora-document-processor
+    count: 1
+
+resources:
+  - ../../base
+
+configMapGenerator:
+  - name: gateway-config
+    behavior: replace
+    literals:
+      - LOG_LEVEL=debug
+      - RATE_LIMIT_ENABLED=false
+      - TLS_ENABLED=false
+      - OTEL_ENABLED=true
+      - OTEL_TRACES_SAMPLER_RATIO=1.0
+  - name: core-config
+    behavior: replace
+    literals:
+      - LOG_LEVEL=debug
+      - SPRING_PROFILES_ACTIVE=dev
+      - KAFKA_AUTO_OFFSET_RESET=earliest
+  - name: document-processor-config
+    behavior: replace
+    literals:
+      - LOG_LEVEL=debug
+      - RUST_LOG=debug
+      - KAFKA_AUTO_OFFSET_RESET=earliest
+
+patches:
+  - target:
+      kind: Deployment
+      name: usora-gateway
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "512Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "250m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "256Mi"
+  - target:
+      kind: Deployment
+      name: usora-core
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "2Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "500m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "1Gi"
+  - target:
+      kind: Deployment
+      name: usora-document-processor
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "2"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "4Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "1"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "2Gi"
+
+patchesStrategicMerge:
+  - |-
+    apiVersion: networking.istio.io/v1beta1
+    kind: VirtualService
+    metadata:
+      name: gateway-ingress
+    spec:
+      gateways:
+        - istio-system/dev-gateway
+  - |-
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: usora-core
+    spec:
+      maxReplicas: 3
+  - |-
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: usora-document-processor
+    spec:
+      maxReplicas: 3
+  - |-
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: usora-gateway
+    spec:
+      maxReplicas: 3

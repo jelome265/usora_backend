@@ -1,0 +1,93 @@
+{
+  "namespace": "com.usora.events.compliance",
+  "type": "record",
+  "name": "ComplianceChecked",
+  "doc": "Event emitted when a compliance and AML screening check completes.",
+  "fields": [
+    {
+      "name": "event_id",
+      "type": "string",
+      "doc": "Unique identifier for the event (UUID)."
+    },
+    {
+      "name": "tenant_id",
+      "type": "string",
+      "doc": "Identifier of the tenant the user belongs to."
+    },
+    {
+      "name": "verification_id",
+      "type": "string",
+      "doc": "Unique identifier for the verification request."
+    },
+    {
+      "name": "user_reference",
+      "type": "string",
+      "doc": "External reference or user identifier provided by the tenant."
+    },
+    {
+      "name": "checked_at",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp in milliseconds when the compliance check completed."
+    },
+    {
+      "name": "risk_level",
+      "type": {
+        "type": "enum",
+        "name": "RiskLevel",
+        "symbols": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+      },
+      "doc": "Overall risk level assigned after the compliance screening."
+    },
+    {
+      "name": "screening_status",
+      "type": {
+        "type": "enum",
+        "name": "ScreeningStatus",
+        "symbols": ["CLEAR", "PENDING_REVIEW", "FLAGGED", "ESCALATED"]
+      },
+      "doc": "Status of the compliance screening result."
+    },
+    {
+      "name": "sanctions_match_count",
+      "type": "int",
+      "doc": "Number of sanctions list matches found."
+    },
+    {
+      "name": "pep_match_count",
+      "type": "int",
+      "doc": "Number of politically exposed persons (PEP) matches found."
+    },
+    {
+      "name": "adverse_media_count",
+      "type": "int",
+      "doc": "Number of adverse media matches found."
+    },
+    {
+      "name": "screening_details",
+      "type": ["null", {
+        "type": "map",
+        "values": "string"
+      }],
+      "default": null,
+      "doc": "Optional map containing detailed screening results and contextual information."
+    },
+    {
+      "name": "reviewed_by",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Identifier of the reviewer who handled the compliance check, if applicable."
+    },
+    {
+      "name": "reviewed_at",
+      "type": ["null", {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      }],
+      "default": null,
+      "doc": "Timestamp in milliseconds when the review was completed, if applicable."
+    }
+  ]
+}

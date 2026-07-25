@@ -1,0 +1,68 @@
+{
+  "namespace": "com.usora.events.kyc",
+  "type": "record",
+  "name": "KYCSubmitted",
+  "doc": "Event emitted when a KYC verification is submitted by a user or system.",
+  "fields": [
+    {
+      "name": "event_id",
+      "type": "string",
+      "doc": "Unique identifier for the event (UUID)."
+    },
+    {
+      "name": "tenant_id",
+      "type": "string",
+      "doc": "Identifier of the tenant the user belongs to."
+    },
+    {
+      "name": "verification_id",
+      "type": "string",
+      "doc": "Unique identifier for the verification request."
+    },
+    {
+      "name": "workflow_id",
+      "type": "string",
+      "doc": "Workflow execution identifier associated with this submission."
+    },
+    {
+      "name": "user_reference",
+      "type": "string",
+      "doc": "External reference or user identifier provided by the tenant."
+    },
+    {
+      "name": "submitted_at",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp in milliseconds when the KYC was submitted."
+    },
+    {
+      "name": "metadata",
+      "type": ["null", {
+        "type": "map",
+        "values": "string"
+      }],
+      "default": null,
+      "doc": "Optional metadata key-value pairs associated with the submission."
+    },
+    {
+      "name": "source",
+      "type": {
+        "type": "enum",
+        "name": "SubmissionSource",
+        "symbols": ["api", "portal", "mobile"]
+      },
+      "doc": "Origin system through which the KYC was submitted."
+    },
+    {
+      "name": "priority",
+      "type": {
+        "type": "enum",
+        "name": "VerificationPriority",
+        "symbols": ["express", "standard", "batch"]
+      },
+      "doc": "Processing priority assigned to the verification."
+    }
+  ]
+}

@@ -1,0 +1,1051 @@
+openapi: 3.1.0
+info:
+  title: USORA KYC Platform API
+  version: 1.0.0
+  description: >
+    Enterprise-grade, multi-tenant Know Your Customer (KYC) platform API.
+    Supports identity verification workflows including document validation,
+    biometric matching, risk scoring, and compliance screening across
+    multiple tenants with isolated configuration and data.
+
+servers:
+  - url: https://api.usora.io
+    description: Production server
+  - url: https://staging.api.usora.io
+    description: Staging server
+
+security:
+  - BearerAuth: []
+  - ApiKeyAuth: []
+  - mTLS: []
+
+paths:
+  /v1/{tenantId}/verifications:
+    post:
+      operationId: createVerification
+      summary: Create a new verification
+      tags:
+        - Verifications
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The tenant identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationCreateRequest'
+      responses:
+        '201':
+          description: Verification created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      operationId: listVerifications
+      summary: List verifications for a tenant
+      tags:
+        - Verifications
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: page_token
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: user_reference
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of verifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/{tenantId}/verifications/{verificationId}:
+    get:
+      operationId: getVerification
+      summary: Get verification status
+      tags:
+        - Verifications
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: verificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Verification details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '404':
+          description: Verification not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/{tenantId}/verifications/{verificationId}/cancel:
+    post:
+      operationId: cancelVerification
+      summary: Cancel a verification
+      tags:
+        - Verifications
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: verificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Verification cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '404':
+          description: Verification not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/{tenantId}/verifications/{verificationId}/documents:
+    post:
+      operationId: uploadDocument
+      summary: Upload a document for verification
+      tags:
+        - Documents
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: verificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentUploadRequest'
+      responses:
+        '201':
+          description: Document uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '400':
+          description: Invalid document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/{tenantId}/verifications/{verificationId}/documents/{documentId}:
+    get:
+      operationId: getDocument
+      summary: Get document details
+      tags:
+        - Documents
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: verificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Document details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '404':
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/{tenantId}/verifications/{verificationId}/biometric:
+    post:
+      operationId: submitBiometric
+      summary: Submit biometric capture for verification
+      tags:
+        - Biometrics
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: verificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BiometricCaptureRequest'
+      responses:
+        '201':
+          description: Biometric submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '400':
+          description: Invalid biometric data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/{tenantId}/cases:
+    get:
+      operationId: listCases
+      summary: List cases for a tenant
+      tags:
+        - Cases
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: page_token
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: assigned_to
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of cases
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Case'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /v1/{tenantId}/cases/{caseId}:
+    get:
+      operationId: getCase
+      summary: Get case details
+      tags:
+        - Cases
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: caseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Case details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Case'
+        '404':
+          description: Case not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/{tenantId}/cases/{caseId}/status:
+    put:
+      operationId: updateCaseStatus
+      summary: Update case status
+      tags:
+        - Cases
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: caseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaseStatusUpdate'
+      responses:
+        '200':
+          description: Case updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Case'
+        '400':
+          description: Invalid status update
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/{tenantId}/webhooks:
+    get:
+      operationId: listWebhooks
+      summary: List webhook configurations
+      tags:
+        - Webhooks
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of webhooks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WebhookConfig'
+    post:
+      operationId: createWebhook
+      summary: Create a webhook configuration
+      tags:
+        - Webhooks
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookConfig'
+      responses:
+        '201':
+          description: Webhook created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookConfig'
+        '400':
+          description: Invalid webhook config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/{tenantId}/webhooks/{webhookId}:
+    delete:
+      operationId: deleteWebhook
+      summary: Delete a webhook configuration
+      tags:
+        - Webhooks
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Webhook deleted
+        '404':
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/{tenantId}/config:
+    get:
+      operationId: getTenantConfig
+      summary: Get tenant configuration
+      tags:
+        - Tenant Configuration
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Tenant configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantConfig'
+        '404':
+          description: Tenant not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      operationId: updateTenantConfig
+      summary: Update tenant configuration
+      tags:
+        - Tenant Configuration
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantConfig'
+      responses:
+        '200':
+          description: Configuration updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantConfig'
+        '400':
+          description: Invalid configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check endpoint
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  version:
+                    type: string
+                    example: 1.0.0
+                  uptime:
+                    type: string
+                    example: 72h15m
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained during tenant authentication
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: Tenant API key for server-to-server communication
+    mTLS:
+      type: mutualTLS
+      description: Mutual TLS for internal service-to-service communication
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Application-specific error code
+          example: VERIFICATION_NOT_FOUND
+        message:
+          type: string
+          description: Human-readable error message
+          example: The requested verification was not found
+        target:
+          type: string
+          description: The target of the error (field or resource)
+          example: verificationId
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+              target:
+                type: string
+        request_id:
+          type: string
+          format: uuid
+          description: Unique identifier for the request
+        timestamp:
+          type: string
+          format: date-time
+          description: When the error occurred
+        documentation_url:
+          type: string
+          format: uri
+          description: Link to documentation for this error
+          example: https://docs.usora.io/errors/VERIFICATION_NOT_FOUND
+
+    Verification:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        workflow_id:
+          type: string
+        user_reference:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - in_progress
+            - completed
+            - failed
+            - cancelled
+            - expired
+            - manual_review
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 100
+
+    VerificationCreateRequest:
+      type: object
+      required:
+        - workflow_id
+        - user_reference
+      properties:
+        workflow_id:
+          type: string
+          description: Identifier for the verification workflow to execute
+        user_reference:
+          type: string
+          description: Client-side user identifier
+        callback_url:
+          type: string
+          format: uri
+          description: URL to notify when verification completes
+        redirect_url:
+          type: string
+          format: uri
+          description: URL to redirect user after verification
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Arbitrary metadata key-value pairs
+        expires_in_minutes:
+          type: integer
+          default: 60
+          description: Time in minutes before the verification expires
+        priority:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 50
+          description: Processing priority (higher = more urgent)
+
+    VerificationListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Verification'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Pagination:
+      type: object
+      properties:
+        page_size:
+          type: integer
+          description: Number of items per page
+        page_token:
+          type: string
+          description: Token for the current page
+        next_page_token:
+          type: string
+          description: Token for the next page (empty if no more results)
+        total_count:
+          type: integer
+          description: Total number of items matching the query
+
+    Document:
+      type: object
+      required:
+        - id
+        - verification_id
+        - type
+        - status
+        - uploaded_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        verification_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - passport
+            - national_id
+            - drivers_license
+            - residence_permit
+            - utility_bill
+            - bank_statement
+            - selfie
+            - other
+        status:
+          type: string
+          enum:
+            - uploaded
+            - processing
+            - completed
+            - failed
+            - rejected
+        uploaded_at:
+          type: string
+          format: date-time
+        processed_at:
+          type: string
+          format: date-time
+          nullable: true
+        extracted_data:
+          type: object
+          additionalProperties:
+            type: object
+          description: Data extracted from the document (OCR, MRZ, etc.)
+
+    DocumentUploadRequest:
+      type: object
+      required:
+        - document_type
+        - file_content
+        - file_name
+      properties:
+        document_type:
+          type: string
+          enum:
+            - passport
+            - national_id
+            - drivers_license
+            - residence_permit
+            - utility_bill
+            - bank_statement
+            - selfie
+            - other
+        file_content:
+          type: string
+          format: byte
+          description: Base64-encoded file content
+        file_name:
+          type: string
+          description: Original file name
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    BiometricCaptureRequest:
+      type: object
+      required:
+        - image_data
+        - liveness_type
+      properties:
+        image_data:
+          type: string
+          format: byte
+          description: Base64-encoded image data
+        liveness_type:
+          type: string
+          enum:
+            - active
+            - passive
+          description: Type of liveness check
+        challenge_id:
+          type: string
+          format: uuid
+          description: Required for active liveness challenges
+
+    WebhookConfig:
+      type: object
+      required:
+        - url
+        - events
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        url:
+          type: string
+          format: uri
+          description: Endpoint to receive webhook events
+        events:
+          type: array
+          items:
+            type: string
+            enum:
+              - verification.created
+              - verification.completed
+              - verification.failed
+              - verification.expired
+              - document.processed
+              - document.failed
+              - case.created
+              - case.updated
+              - case.resolved
+          description: Event types to subscribe to
+        secret:
+          type: string
+          description: Secret used to sign webhook payloads
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+            - disabled
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    WebhookDelivery:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        webhook_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        status:
+          type: string
+          enum:
+            - delivered
+            - failed
+            - retrying
+        attempted_at:
+          type: string
+          format: date-time
+        response_code:
+          type: integer
+        retry_count:
+          type: integer
+
+    Case:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        verification_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - open
+            - under_review
+            - pending_info
+            - resolved_approved
+            - resolved_rejected
+            - escalated
+        assigned_to:
+          type: string
+          description: Reviewer identifier
+        created_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+
+    CaseStatusUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - open
+            - under_review
+            - pending_info
+            - resolved_approved
+            - resolved_rejected
+            - escalated
+        assigned_to:
+          type: string
+        notes:
+          type: string
+        reason:
+          type: string
+          description: Reason for the status change
+
+    TenantConfig:
+      type: object
+      required:
+        - tenant_id
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        features:
+          type: array
+          items:
+            type: string
+          description: Enabled feature flags for the tenant
+        rate_limits:
+          type: object
+          properties:
+            requests_per_second:
+              type: integer
+            burst_size:
+              type: integer
+            concurrent_verifications:
+              type: integer
+        webhook_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+        allowed_document_types:
+          type: array
+          items:
+            type: string
+        kyc_config:
+          type: object
+          properties:
+            document_verification:
+              type: boolean
+            biometric_matching:
+              type: boolean
+            liveness_check:
+              type: boolean
+            risk_scoring:
+              type: boolean
+            aml_screening:
+              type: boolean
+            min_confidence_score:
+              type: number
+              minimum: 0
+              maximum: 1
+        branding:
+          type: object
+          properties:
+            primary_color:
+              type: string
+            logo_url:
+              type: string
+              format: uri
+            company_name:
+              type: string
+
+x-tagGroups:
+  - name: Core Operations
+    tags:
+      - Verifications
+      - Documents
+      - Biometrics
+  - name: Review & Compliance
+    tags:
+      - Cases
+  - name: Configuration
+    tags:
+      - Webhooks
+      - Tenant Configuration
+  - name: Monitoring
+    tags:
+      - Health

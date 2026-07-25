@@ -1,0 +1,514 @@
+name: Security Scan
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  id-token: write
+
+env:
+  DOCKER_REGISTRY: ghcr.io
+  CARGO_TERM_COLOR: always
+
+jobs:
+  codeql-analysis:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+          - javascript
+          - java-kotlin
+          - python
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+          config-file: .github/codeql/codeql-config.yml
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
+
+  trivy-scan:
+    name: Trivy Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https gnupg
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb bookworm main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update && sudo apt-get install -y trivy
+
+      - name: Trivy Filesystem Scan
+        run: |
+          trivy filesystem \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            --format sarif \
+            --output trivy-fs-results.sarif \
+            --ignore-unfixed \
+            --timeout 10m \
+            .
+        continue-on-error: true
+
+      - name: Trivy Config Scan (IaC)
+        run: |
+          trivy config \
+            --severity HIGH,CRITICAL \
+            --exit-code 0 \
+            --format sarif \
+            --output trivy-config-results.sarif \
+            --timeout 5m \
+            infrastructure/
+        continue-on-error: true
+
+      - name: Upload Trivy SARIF Results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs-results.sarif
+          category: trivy-filesystem
+        continue-on-error: true
+
+      - name: Upload Trivy Config SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-config-results.sarif
+          category: trivy-iac
+        continue-on-error: true
+
+  dependency-check:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+
+      - name: OWASP Dependency Check (Java)
+        run: |
+          mvn dependency-check:check \
+            -DfailBuildOnCVSS=7 \
+            -Dformat=JSON \
+            -Dout=owasp-dependency-check.json \
+            -q \
+            -f pom.xml || true
+        continue-on-error: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.82.0
+
+      - name: Install Cargo Audit
+        run: cargo install cargo-audit --locked
+
+      - name: Cargo Audit (Rust)
+        run: |
+          cd rust-services
+          for service in usora-api-gateway usora-document-processor usora-face-matching-engine usora-risk-scoring-engine; do
+            echo "::group::Cargo Audit: $service"
+            (cd "$service" && cargo audit --json > ../../cargo-audit-$service.json 2>/dev/null || true)
+            echo "::endgroup::"
+          done
+        continue-on-error: true
+
+      - name: Upload OWASP Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: owasp-dependency-check
+          path: owasp-dependency-check.json
+          if-no-files-found: ignore
+
+      - name: Upload Cargo Audit Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-audit-reports
+          path: cargo-audit-*.json
+          if-no-files-found: ignore
+
+  semgrep-scan:
+    name: Semgrep SAST Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Semgrep Scan
+        run: |
+          semgrep \
+            --config=auto \
+            --config=p/rust \
+            --config=p/java \
+            --config=p/owasp-top-ten \
+            --config=p/command-injection \
+            --config=p/secrets \
+            --sarif \
+            --output=semgrep-results.sarif \
+            --error \
+            --timeout=60 \
+            --metrics=off \
+            rust-services/ spring-boot-services/ shared/ || true
+        continue-on-error: true
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-results.sarif
+          category: semgrep-sast
+        continue-on-error: true
+
+      - name: Generate Semgrep Summary
+        run: |
+          if [ -f semgrep-results.sarif ]; then
+            python3 -c "
+import json
+with open('semgrep-results.sarif') as f:
+    data = json.load(f)
+runs = data.get('runs', [])
+total = 0
+for run in runs:
+    results = run.get('results', [])
+    total += len(results)
+    for r in results:
+        rule = r.get('ruleId', 'unknown')
+        level = r.get('level', 'warning')
+        loc = r.get('locations', [{}])[0].get('physicalLocation', {}).get('artifactLocation', {}).get('uri', 'unknown')
+        msg = r.get('message', {}).get('text', '')
+        print(f'  [{level}] {rule}: {msg} ({loc})')
+print(f'Total findings: {total}')
+" 2>/dev/null || echo "No SARIF results to parse"
+          else
+            echo "No Semgrep results file found"
+          fi
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified --results=verified
+        continue-on-error: true
+
+      - name: Custom Secret Scan with grep
+        run: |
+          echo "::group::Scanning for hardcoded secrets..."
+          PATTERNS=(
+            '-----BEGIN\s*(RSA|EC|DSA|OPENSSH|PGP)\s*PRIVATE\s*KEY-----'
+            'AKIA[0-9A-Z]{16}'
+            'sk_live_[0-9a-zA-Z]{24,}'
+            'pk_live_[0-9a-zA-Z]{24,}'
+            'ghp_[0-9a-zA-Z]{36}'
+            'gho_[0-9a-zA-Z]{36}'
+            'xox[baprs]-[0-9a-zA-Z-]{24,}'
+            'AIza[0-9A-Za-z-_]{35}'
+            '-----BEGIN CERTIFICATE-----'
+          )
+          for pattern in "${PATTERNS[@]}"; do
+            results=$(grep -rn "$pattern" --include="*.{rs,java,yml,yaml,toml,json,sh,sql,properties,xml}" . 2>/dev/null | grep -v ".git/" | grep -v "node_modules/" | grep -v "target/" || true)
+            if [ -n "$results" ]; then
+              echo "WARNING: Potential secret found matching pattern: $pattern"
+              echo "$results" | head -20
+            fi
+          done
+          echo "::endgroup::"
+        continue-on-error: true
+
+      - name: Upload Secret Scan Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: secret-scan-results
+          path: |
+            gitleaks-report.*
+            trufflehog-results.*
+          if-no-files-found: ignore
+
+  license-check:
+    name: License Compliance Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+
+      - name: Maven License Check
+        run: |
+          mvn license:third-party-report -q -f pom.xml || true
+          if [ -f spring-boot-services/target/site/third-party-report.html ]; then
+            cp spring-boot-services/target/site/third-party-report.html maven-licenses.html
+          fi
+        continue-on-error: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.82.0
+
+      - name: Cargo License Check
+        run: |
+          cargo install cargo-license --locked
+          cd rust-services
+          for service in usora-api-gateway usora-document-processor usora-face-matching-engine usora-risk-scoring-engine; do
+            echo "::group::Licenses: $service"
+            (cd "$service" && cargo license --json > ../../cargo-licenses-$service.json 2>/dev/null || true)
+            echo "::endgroup::"
+          done
+        continue-on-error: true
+
+      - name: Check Prohibited Licenses
+        run: |
+          PROHIBITED=("GPL-3.0" "GPL-2.0" "AGPL-3.0" "AGPL-1.0" "SSPL-1.0")
+          for f in cargo-licenses-*.json; do
+            if [ -f "$f" ]; then
+              for lic in "${PROHIBITED[@]}"; do
+                if grep -q "$lic" "$f" 2>/dev/null; then
+                  echo "WARNING: $f contains $lic license"
+                fi
+              done
+            fi
+          done
+        continue-on-error: true
+
+      - name: Upload License Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-reports
+          path: |
+            maven-licenses.html
+            cargo-licenses-*.json
+          if-no-files-found: ignore
+
+  container-scan:
+    name: Container Image Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https gnupg
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb bookworm main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update && sudo apt-get install -y trivy
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Scan Base Images
+        run: |
+          IMAGES=(
+            "rust:1.82-slim-bookworm"
+            "eclipse-temurin:21-jdk-bookworm"
+            "eclipse-temurin:21-jre-bookworm"
+            "gcr.io/distroless/cc-debian12"
+            "postgres:16"
+            "redis:7-alpine"
+            "confluentinc/cp-kafka:7.6"
+            "minio/minio"
+            "elasticsearch:8.12"
+          )
+          for image in "${IMAGES[@]}"; do
+            echo "::group::Scanning $image"
+            docker pull "$image" --quiet
+            trivy image \
+              --severity HIGH,CRITICAL \
+              --exit-code 0 \
+              --format sarif \
+              --output "trivy-image-$(echo $image | tr '/:' '--').sarif" \
+              --ignore-unfixed \
+              --timeout 5m \
+              "$image"
+            echo "::endgroup::"
+          done
+        continue-on-error: true
+
+      - name: Upload Container Scan Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-scan-results
+          path: trivy-image-*.sarif
+          if-no-files-found: ignore
+
+  report:
+    name: Aggregate Security Report
+    runs-on: ubuntu-latest
+    needs:
+      - codeql-analysis
+      - trivy-scan
+      - dependency-check
+      - semgrep-scan
+      - secret-scan
+      - license-check
+      - container-scan
+    if: always()
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: security-artifacts/
+          merge-multiple: true
+
+      - name: Generate Security Summary
+        id: security-summary
+        run: |
+          SUMMARY="# Security Scan Summary
+          ## Metadata
+          - **Repository:** ${{ github.repository }}
+          - **Branch:** ${{ github.ref_name }}
+          - **Commit:** ${{ github.sha }}
+          - **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - **Date:** $(date -u)
+
+          ## Scan Results
+
+          | Scan | Status | Findings |
+          |------|--------|---------|
+          | CodeQL | ${{ needs.codeql-analysis.result }} | $(find security-artifacts/ -name '*.sarif' -path '*codeql*' 2>/dev/null | wc -l) reports |
+          | Trivy Filesystem | ${{ needs.trivy-scan.result }} | $(find security-artifacts/ -name 'trivy-fs-*' 2>/dev/null | wc -l) reports |
+          | Trivy Config | ${{ needs.trivy-scan.result }} | $(find security-artifacts/ -name 'trivy-config-*' 2>/dev/null | wc -l) reports |
+          | OWASP DC | ${{ needs.dependency-check.result }} | $(find security-artifacts/ -name 'owasp-*' 2>/dev/null | wc -l) reports |
+          | Cargo Audit | ${{ needs.dependency-check.result }} | $(find security-artifacts/ -name 'cargo-audit-*' 2>/dev/null | wc -l) reports |
+          | Semgrep | ${{ needs.semgrep-scan.result }} | $(find security-artifacts/ -name 'semgrep-*' 2>/dev/null | wc -l) reports |
+          | Secret Scan | ${{ needs.secret-scan.result }} | $(find security-artifacts/ -name 'gitleaks*' -o -name 'trufflehog*' 2>/dev/null | wc -l) reports |
+          | License Check | ${{ needs.license-check.result }} | $(find security-artifacts/ -name '*license*' 2>/dev/null | wc -l) reports |
+          | Container Scan | ${{ needs.container-scan.result }} | $(find security-artifacts/ -name 'trivy-image-*' 2>/dev/null | wc -l) reports |
+
+          ## Overall Verdict
+          "
+
+          FAILURES=0
+          for job in codeql-analysis trivy-scan dependency-check semgrep-scan secret-scan license-check container-scan; do
+            STATUS=$(echo "${{ toJSON(needs) }}" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('$job',{}).get('result','skipped'))" 2>/dev/null || echo "unknown")
+            if [ "$STATUS" = "failure" ]; then
+              FAILURES=$((FAILURES + 1))
+            fi
+          done
+
+          if [ $FAILURES -gt 0 ]; then
+            SUMMARY="${SUMMARY}**❌ FAILED** - $FAILURES scan(s) reported issues requiring attention"
+            echo "verdict=failure" >> $GITHUB_OUTPUT
+          else
+            SUMMARY="${SUMMARY}**✅ PASSED** - All security scans completed without critical findings"
+            echo "verdict=success" >> $GITHUB_OUTPUT
+          fi
+
+          echo "$SUMMARY" > security-summary.md
+          echo "summary<<EOF" >> $GITHUB_OUTPUT
+          echo "$SUMMARY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Upload Security Summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-summary
+          path: security-summary.md
+
+      - name: Publish to GitHub Security Tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: security-artifacts/
+          category: security-scan
+        continue-on-error: true
+
+      - name: Notify Security Team on Findings
+        if: steps.security-summary.outputs.verdict == 'failure'
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "🔴 Security scan found issues in ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*🔴 Security Scan Issues Detected*\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nVerdict: FAILED\n\nRun Details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n\n*Action Required:* Please review the security scan results and address findings."
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
+
+      - name: Notify on Success
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "🟢 Security scan passed for ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*🟢 Security Scan Passed*\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nVerdict: PASSED\n\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}

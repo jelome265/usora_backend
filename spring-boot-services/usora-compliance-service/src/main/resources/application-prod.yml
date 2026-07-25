@@ -1,0 +1,98 @@
+server:
+  port: 8083
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${COMPLIANCE_DB_HOST:compliance-db}:5432/usora_compliance
+    username: ${COMPLIANCE_DB_USER}
+    password: ${COMPLIANCE_DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      connection-timeout: 10000
+      max-lifetime: 1800000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 100
+  data:
+    redis:
+      host: ${REDIS_HOST:redis-cluster}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      timeout: 1000ms
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 8
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka-cluster:9092}
+    producer:
+      acks: all
+      compression-type: snappy
+      batch-size: 65536
+      linger-ms: 5
+    consumer:
+      group-id: compliance-service-prod
+      enable-auto-commit: false
+      max-poll-records: 500
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI}
+          jwk-set-uri: ${JWK_SET_URI}
+
+compliance:
+  aml-screening:
+    host: ${AML_SCREENING_HOST:aml-screening-service}
+    port: ${AML_SCREENING_PORT:9090}
+  security:
+    jwt-secret: ${COMPLIANCE_JWT_SECRET}
+  sanctions:
+    sources:
+      - name: "OFAC"
+        url: "https://www.treasury.gov/ofac/downloads/sanctions/1.0/sdn_advanced.xml"
+        refresh-interval: "24h"
+      - name: "EU Consolidated"
+        url: "https://webgate.ec.europa.eu/fsd/fsf/public/files/csvFullSanctionsList/content?path=EN"
+        refresh-interval: "24h"
+      - name: "UN"
+        url: "https://scsanctions.un.org/resources/xml/en/consolidated.xml"
+        refresh-interval: "24h"
+  audit:
+    blockchain-anchor: true
+
+management:
+  tracing:
+    sampling:
+      probability: 0.01
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      environment: production
+  endpoint:
+    health:
+      show-details: never
+    env:
+      enabled: false
+
+logging:
+  level:
+    com.usora.compliance: WARN
+    org.springframework: WARN
+    org.hibernate: WARN
+    org.drools: ERROR
+  file:
+    name: /var/log/compliance/compliance-service.log
+    max-size: 500MB
+    max-history: 90
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %logger{36} - %msg%n"

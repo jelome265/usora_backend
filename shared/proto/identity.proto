@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package usora.identity.v1;
+
+option go_package = "github.com/usora/identity/v1;usoraidentityv1";
+option java_package = "com.usora.identity.v1";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+enum VerificationStatus {
+  VERIFICATION_STATUS_UNSPECIFIED = 0;
+  PENDING = 1;
+  IN_PROGRESS = 2;
+  COMPLETED = 3;
+  FAILED = 4;
+  EXPIRED = 5;
+  CANCELLED = 6;
+}
+
+enum DocumentType {
+  DOCUMENT_TYPE_UNSPECIFIED = 0;
+  PASSPORT = 1;
+  DRIVERS_LICENSE = 2;
+  NATIONAL_ID = 3;
+  RESIDENCE_PERMIT = 4;
+  VISA = 5;
+  UTILITY_BILL = 6;
+  BANK_STATEMENT = 7;
+}
+
+message Verification {
+  string verification_id = 1;
+  string tenant_id = 2;
+  string user_reference = 3;
+  VerificationStatus status = 4;
+  repeated IdentityDocument documents = 5;
+  BiometricData biometric = 6;
+  float risk_score = 7;
+  map<string, string> metadata = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  google.protobuf.Timestamp expires_at = 11;
+}
+
+message IdentityDocument {
+  string document_id = 1;
+  DocumentType type = 2;
+  string country_code = 3;
+  string document_number = 4;
+  string full_name = 5;
+  string date_of_birth = 6;
+  string nationality = 7;
+  map<string, string> extracted_fields = 8;
+  google.protobuf.Struct raw_data = 9;
+  google.protobuf.Timestamp issued_at = 10;
+  google.protobuf.Timestamp expires_at = 11;
+}
+
+message BiometricData {
+  string biometric_id = 1;
+  string face_image_url = 2;
+  float liveness_confidence = 3;
+  float match_score = 4;
+  map<string, float> quality_scores = 5;
+  google.protobuf.Struct metadata = 6;
+}
+
+message VerifyIdentityRequest {
+  string tenant_id = 1;
+  string user_reference = 2;
+  string verification_id = 3;
+  repeated IdentityDocument documents = 4;
+  BiometricData biometric = 5;
+  map<string, string> metadata = 6;
+}
+
+message VerifyIdentityResponse {
+  Verification verification = 1;
+}
+
+message GetVerificationStatusRequest {
+  string verification_id = 1;
+  string tenant_id = 2;
+}
+
+message GetVerificationStatusResponse {
+  Verification verification = 1;
+}
+
+message ListVerificationsRequest {
+  string tenant_id = 1;
+  string user_reference = 2;
+  VerificationStatus status = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+}
+
+message ListVerificationsResponse {
+  repeated Verification verifications = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message StartKYCRequest {
+  string tenant_id = 1;
+  string user_reference = 2;
+  string workflow_id = 3;
+  string callback_url = 4;
+  map<string, string> metadata = 5;
+}
+
+message StartKYCResponse {
+  string verification_id = 1;
+  string session_url = 2;
+  VerificationStatus status = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message SubmitDocumentRequest {
+  string verification_id = 1;
+  string tenant_id = 2;
+  DocumentType document_type = 3;
+  bytes document_data = 4;
+  string filename = 5;
+  string content_type = 6;
+  map<string, string> metadata = 7;
+}
+
+message SubmitDocumentResponse {
+  string document_id = 1;
+  VerificationStatus status = 2;
+  bool accepted = 3;
+}
+
+message SubmitBiometricRequest {
+  string verification_id = 1;
+  string tenant_id = 2;
+  bytes face_image = 3;
+  bytes liveness_video = 4;
+  map<string, float> quality_scores = 5;
+  map<string, string> metadata = 6;
+}
+
+message SubmitBiometricResponse {
+  string biometric_id = 1;
+  VerificationStatus status = 2;
+  bool accepted = 3;
+  float liveness_confidence = 4;
+}
+
+service IdentityService {
+  rpc VerifyIdentity(VerifyIdentityRequest) returns (VerifyIdentityResponse);
+  rpc GetVerificationStatus(GetVerificationStatusRequest) returns (GetVerificationStatusResponse);
+  rpc ListVerifications(ListVerificationsRequest) returns (ListVerificationsResponse);
+  rpc StartKYC(StartKYCRequest) returns (StartKYCResponse);
+  rpc SubmitDocument(SubmitDocumentRequest) returns (SubmitDocumentResponse);
+  rpc SubmitBiometric(SubmitBiometricRequest) returns (SubmitBiometricResponse);
+}

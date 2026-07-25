@@ -1,0 +1,59 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        default_schema: PUBLIC
+  flyway:
+    enabled: false
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      auto-offset-reset: earliest
+    listener:
+      auto-startup: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 1000
+
+audit:
+  encryption:
+    key: test-encryption-key-32byte-padding!!!
+  siem:
+    enabled: false
+    url: http://localhost:8088
+    token: test-token
+  security:
+    jwt:
+      secret: test-jwt-secret-key-for-testing-minimum-32-chars
+  tenant:
+    tenants:
+      default:
+        hmac-key: test-hmac-key
+        hot-retention-days: 90
+        cold-retention-years: 1
+      test-tenant:
+        hmac-key: test-tenant-hmac-key
+        hot-retention-days: 30
+
+aws:
+  s3:
+    region: us-east-1
+    access-key-id: test
+    secret-access-key: test
+    endpoint: http://localhost:9000
+
+logging:
+  level:
+    com.usora: DEBUG
+    org.springframework: WARN

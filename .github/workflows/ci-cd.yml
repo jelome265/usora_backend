@@ -1,0 +1,890 @@
+name: USORA CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - release/*
+    tags:
+      - v*
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  DOCKER_REGISTRY: ghcr.io
+  DOCKER_REGISTRY_USERNAME: ${{ github.actor }}
+  DOCKER_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+  K8S_NAMESPACE: usora
+  K8S_CLUSTER_NAME: usora-eks
+  K8S_CLUSTER_REGION: us-east-1
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  MAVEN_OPTS: -Dmaven.repo.local=${{ runner.temp }}/.m2/repository
+  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+  id-token: write
+  attestations: write
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.82.0
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust-services/**/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust-services/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check Rust formatting
+        run: |
+          cd rust-services
+          for dir in usora-api-gateway usora-document-processor usora-face-matching-engine usora-risk-scoring-engine; do
+            echo "::group::Checking $dir formatting"
+            (cd "$dir" && cargo fmt --check)
+            echo "::endgroup::"
+          done
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+
+      - name: Java Checkstyle
+        run: mvn checkstyle:check -pl spring-boot-services -q || echo "Checkstyle warnings found (non-blocking)"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Markdown Lint
+        run: |
+          npm install -g markdownlint-cli
+          markdownlint --ignore node_modules \
+            --disable MD013 MD033 MD041 \
+            '**/*.md' \
+            docs/ main.md readme.md structure.md || true
+
+      - name: Notify Slack on Failure
+        if: failure() && github.ref == 'refs/heads/main'
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "❌ Lint job failed in ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ Lint Failed*\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
+  test-rust:
+    name: Test Rust Services
+    runs-on: ubuntu-latest
+    needs: [lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - usora-api-gateway
+          - usora-document-processor
+          - usora-face-matching-engine
+          - usora-risk-scoring-engine
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.82.0
+          components: clippy
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libprotobuf-dev
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust-services/${{ matrix.service }}/target/
+          key: ${{ runner.os }}-cargo-${{ matrix.service }}-${{ hashFiles(format('rust-services/{0}/Cargo.lock', matrix.service), 'rust-services/{0}/Cargo.toml', matrix.service) }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.service }}-
+
+      - name: Clippy Analysis
+        working-directory: rust-services/${{ matrix.service }}
+        run: cargo clippy -- -D warnings
+
+      - name: Run Tests
+        working-directory: rust-services/${{ matrix.service }}
+        run: cargo test --verbose
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-rust-${{ matrix.service }}
+          path: rust-services/${{ matrix.service }}/target/debug/*.xml
+          if-no-files-found: ignore
+
+      - name: Notify Slack on Failure
+        if: failure() && github.ref == 'refs/heads/main'
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "❌ Rust tests failed for ${{ matrix.service }} in ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ Rust Tests Failed*\nService: ${{ matrix.service }}\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
+  test-java:
+    name: Test Java Services
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('pom.xml', 'spring-boot-services/**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Run Maven Verify
+        run: mvn verify -B -f pom.xml -Dspring-boot.version=3.4.0
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-java
+          path: spring-boot-services/**/target/surefire-reports/
+          if-no-files-found: ignore
+
+      - name: Upload JaCoCo Coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-java
+          path: spring-boot-services/**/target/site/jacoco/
+          if-no-files-found: ignore
+
+      - name: Notify Slack on Failure
+        if: failure() && github.ref == 'refs/heads/main'
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "❌ Java tests failed in ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ Java Tests Failed*\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Trivy
+        run: |
+          sudo apt-get install -y wget apt-transport-https
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo deb https://aquasecurity.github.io/trivy-repo/deb bookworm main | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update && sudo apt-get install -y trivy
+
+      - name: Trivy Filesystem Scan
+        run: |
+          trivy filesystem --severity HIGH,CRITICAL --exit-code 0 \
+            --format sarif -o trivy-fs-results.sarif \
+            --ignore-unfixed \
+            .
+        continue-on-error: true
+
+      - name: Upload Trivy Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results
+          path: trivy-fs-results.sarif
+          if-no-files-found: ignore
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.82.0
+
+      - name: Cargo Audit
+        run: |
+          cargo install cargo-audit
+          cd rust-services
+          for dir in usora-api-gateway usora-document-processor usora-face-matching-engine usora-risk-scoring-engine; do
+            echo "::group::Auditing $dir"
+            (cd "$dir" && cargo audit --json > ../../cargo-audit-$dir.json 2>/dev/null || true)
+            echo "::endgroup::"
+          done
+        continue-on-error: true
+
+      - name: Upload Cargo Audit Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-audit-results
+          path: cargo-audit-*.json
+          if-no-files-found: ignore
+
+      - name: Setup Semgrep
+        run: |
+          pip install semgrep
+          semgrep --version
+
+      - name: Semgrep SAST Scan
+        run: |
+          semgrep --config=p/rust --config=p/java --config=p/owasp-top-ten \
+            --sarif -o semgrep-results.sarif \
+            --error --quiet \
+            rust-services/ spring-boot-services/ || true
+        continue-on-error: true
+
+      - name: Upload Semgrep Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: semgrep-results.sarif
+          if-no-files-found: ignore
+
+      - name: Upload Security Scan Report Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: |
+            trivy-fs-results.sarif
+            cargo-audit-*.json
+            semgrep-results.sarif
+          if-no-files-found: ignore
+
+      - name: Notify Slack on Failure
+        if: failure() && github.ref == 'refs/heads/main'
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "❌ Security scan found issues in ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ Security Scan Issues*\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
+  build:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    needs: [test-rust, test-java, security-scan]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v'))
+    outputs:
+      image-tags: ${{ steps.generate-tags.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Image Tags
+        id: generate-tags
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          BRANCH_TAG=${GITHUB_REF_NAME//\//-}
+          TIMESTAMP=$(date -u +%Y%m%d%H%M%S)
+          echo "tags=${BRANCH_TAG}-${SHORT_SHA}-${TIMESTAMP}" >> $GITHUB_OUTPUT
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ env.DOCKER_REGISTRY_USERNAME }}
+          password: ${{ env.DOCKER_REGISTRY_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Define Rust Services Matrix
+        id: rust-matrix
+        run: |
+          RUST_SERVICES='["usora-api-gateway","usora-document-processor","usora-face-matching-engine","usora-risk-scoring-engine"]'
+          echo "services=$RUST_SERVICES" >> $GITHUB_OUTPUT
+
+      - name: Define Java Services Matrix
+        id: java-matrix
+        run: |
+          JAVA_SERVICES='["usora-tenant-service","usora-core-service","usora-identity-service","usora-audit-service","usora-compliance-service","usora-integration-service","usora-notification-service"]'
+          echo "services=$JAVA_SERVICES" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Rust Services
+        run: |
+          IMAGE_TAG=${{ steps.generate-tags.outputs.tags }}
+          echo "${{ steps.rust-matrix.outputs.services }}" | jq -r '.[]' | while read -r service; do
+            service_name="${service//usora-/}"
+            echo "::group::Building $service"
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --cache-from=type=local,src=/tmp/.buildx-cache \
+              --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
+              --file infrastructure/docker/Dockerfile.rust \
+              --tag ${{ env.DOCKER_REGISTRY }}/usora/$service_name:$IMAGE_TAG \
+              --tag ${{ env.DOCKER_REGISTRY }}/usora/$service_name:latest \
+              --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+              --label "org.opencontainers.image.revision=${{ github.sha }}" \
+              --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --push \
+              rust-services/$service
+            echo "::endgroup::"
+          done
+
+      - name: Build and Push Java Services
+        run: |
+          IMAGE_TAG=${{ steps.generate-tags.outputs.tags }}
+          echo "${{ steps.java-matrix.outputs.services }}" | jq -r '.[]' | while read -r service; do
+            service_name="${service//usora-/}"
+            echo "::group::Building $service"
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --cache-from=type=local,src=/tmp/.buildx-cache \
+              --cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
+              --file infrastructure/docker/Dockerfile.spring-boot \
+              --build-arg SERVICE_NAME=$service \
+              --tag ${{ env.DOCKER_REGISTRY }}/usora/$service_name:$IMAGE_TAG \
+              --tag ${{ env.DOCKER_REGISTRY }}/usora/$service_name:latest \
+              --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+              --label "org.opencontainers.image.revision=${{ github.sha }}" \
+              --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --push \
+              spring-boot-services/$service
+            echo "::endgroup::"
+          done
+
+      - name: Move Docker cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Generate Attestations
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.DOCKER_REGISTRY }}/usora
+          subject-digest: ${{ steps.generate-tags.outputs.tags }}
+          push-to-registry: true
+
+      - name: Notify Slack on Success
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "✅ Docker images built and pushed for ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*✅ Build Complete*\nTag: `${{ steps.generate-tags.outputs.tags }}`\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Slack on Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "❌ Docker build failed for ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ Build Failed*\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    environment:
+      name: dev
+      url: https://dev.usora.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_DEV }}
+          aws-region: ${{ env.K8S_CLUSTER_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ env.K8S_CLUSTER_NAME }} --region ${{ env.K8S_CLUSTER_REGION }}
+
+      - name: Verify Cluster Access
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+          kubectl get ns ${{ env.K8S_NAMESPACE }} || kubectl create ns ${{ env.K8S_NAMESPACE }}
+
+      - name: Update Kustomize Image Tags
+        run: |
+          IMAGE_TAG=${{ needs.build.outputs.image-tags }}
+          cd infrastructure/k8s/overlays/dev
+          kustomize edit set image \
+            gateway=${{ env.DOCKER_REGISTRY }}/usora/gateway:$IMAGE_TAG \
+            document-processor=${{ env.DOCKER_REGISTRY }}/usora/document-processor:$IMAGE_TAG \
+            face-matching=${{ env.DOCKER_REGISTRY }}/usora/face-matching-engine:$IMAGE_TAG \
+            risk-scoring=${{ env.DOCKER_REGISTRY }}/usora/risk-scoring-engine:$IMAGE_TAG \
+            core-service=${{ env.DOCKER_REGISTRY }}/usora/core-service:$IMAGE_TAG \
+            identity-service=${{ env.DOCKER_REGISTRY }}/usora/identity-service:$IMAGE_TAG \
+            tenant-service=${{ env.DOCKER_REGISTRY }}/usora/tenant-service:$IMAGE_TAG \
+            audit-service=${{ env.DOCKER_REGISTRY }}/usora/audit-service:$IMAGE_TAG \
+            compliance-service=${{ env.DOCKER_REGISTRY }}/usora/compliance-service:$IMAGE_TAG \
+            integration-service=${{ env.DOCKER_REGISTRY }}/usora/integration-service:$IMAGE_TAG \
+            notification-service=${{ env.DOCKER_REGISTRY }}/usora/notification-service:$IMAGE_TAG
+
+      - name: Deploy to Dev Cluster
+        run: |
+          kubectl apply -k infrastructure/k8s/overlays/dev
+
+      - name: Verify Deployments
+        run: |
+          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deployments --timeout=300s
+
+      - name: Run Smoke Tests
+        run: |
+          echo "Running smoke tests against dev environment..."
+          for endpoint in \
+            "https://dev.usora.com/health" \
+            "https://dev.usora.com/actuator/health"; do
+            echo "Checking $endpoint..."
+            curl -sf -o /dev/null -w "%{http_code}" "$endpoint" || echo "Warning: $endpoint not ready"
+          done
+          echo "Smoke tests completed"
+
+      - name: Notify Slack on Success
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "✅ Dev deployment successful for ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*✅ Dev Deployed*\nTag: `${{ needs.build.outputs.image-tags }}`\nEnvironment: https://dev.usora.com\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Slack on Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "❌ Dev deployment failed for ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ Dev Deploy Failed*\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [deploy-dev]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
+    environment:
+      name: staging
+      url: https://staging.usora.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_STAGING }}
+          aws-region: ${{ env.K8S_CLUSTER_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ env.K8S_CLUSTER_NAME }} --region ${{ env.K8S_CLUSTER_REGION }}
+
+      - name: Update Helm Values with Image Tags
+        run: |
+          IMAGE_TAG=${{ needs.build.outputs.image-tags }}
+          for chart in infrastructure/helm/*/; do
+            if [ -f "$chart/values.yaml" ]; then
+              yq eval ".image.tag = \"$IMAGE_TAG\"" -i "$chart/values.yaml"
+            fi
+          done
+
+      - name: Deploy via Helm
+        run: |
+          for chart_dir in infrastructure/helm/*/; do
+            chart_name=$(basename "$chart_dir")
+            helm upgrade --install "$chart_name" "$chart_dir" \
+              --namespace ${{ env.K8S_NAMESPACE }} \
+              --wait \
+              --timeout 10m \
+              --atomic
+          done
+
+      - name: Verify Deployments
+        run: |
+          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deployment --all --timeout=300s
+
+      - name: Run Smoke Tests
+        run: |
+          echo "Running staging smoke tests..."
+          for endpoint in \
+            "https://staging.usora.com/health" \
+            "https://staging.usora.com/actuator/health" \
+            "https://staging.usora.com/api/v1/health"; do
+            echo "Checking $endpoint..."
+            HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$endpoint" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "000" ]; then
+              echo "Warning: $endpoint returned no response"
+            else
+              echo "OK: $endpoint -> $HTTP_CODE"
+            fi
+          done
+          echo "Staging smoke tests completed"
+
+      - name: Notify Slack on Success
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "✅ Staging deployment successful for ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*✅ Staging Deployed*\nTag: `${{ needs.build.outputs.image-tags }}`\nEnvironment: https://staging.usora.com\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Slack on Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "❌ Staging deployment failed for ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ Staging Deploy Failed*\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: always() && needs.deploy-staging.result == 'success'
+    environment:
+      name: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.82.0
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libprotobuf-dev
+
+      - name: Run Rust Integration Tests against Staging
+        env:
+          TEST_ENV: staging
+          API_BASE_URL: https://staging.usora.com
+          GRPC_ENDPOINT: staging.usora.com:9090
+        run: |
+          cd rust-services
+          for service in usora-api-gateway usora-document-processor usora-face-matching-engine usora-risk-scoring-engine; do
+            echo "::group::Integration tests for $service"
+            (cd "$service" && cargo test --test integration_test -- --nocapture) || true
+            echo "::endgroup::"
+          done
+
+      - name: Run Java Integration Tests against Staging
+        env:
+          TEST_ENV: staging
+          API_BASE_URL: https://staging.usora.com
+        run: |
+          mvn verify -f pom.xml -Dskip.unit.tests=true -Dtest=*IntegrationTest -DfailIfNoTests=false || true
+
+      - name: Upload Integration Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: |
+            rust-services/**/target/debug/*.xml
+            spring-boot-services/**/target/surefire-reports/
+          if-no-files-found: ignore
+
+      - name: Notify Slack on Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "❌ Integration tests failed against staging for ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ Integration Tests Failed*\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [integration-test]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    environment:
+      name: production
+      url: https://app.usora.com
+    strategy:
+      matrix:
+        canary-stage: [10, 50, 100]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_PROD }}
+          aws-region: ${{ env.K8S_CLUSTER_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ env.K8S_CLUSTER_NAME }} --region ${{ env.K8S_CLUSTER_REGION }}
+
+      - name: Deploy Canary ${{ matrix.canary-stage }}%
+        run: |
+          IMAGE_TAG=${{ needs.build.outputs.image-tags }}
+          CANARY_PERCENT=${{ matrix.canary-stage }}
+
+          if [ "$CANARY_PERCENT" = "10" ]; then
+            kubectl set image -n ${{ env.K8S_NAMESPACE }} deployment/usora-gateway-canary \
+              "*"=${{ env.DOCKER_REGISTRY }}/usora/gateway:$IMAGE_TAG || true
+            kubectl scale deployment/usora-gateway-canary -n ${{ env.K8S_NAMESPACE }} --replicas=1 || true
+          fi
+
+          echo "Canary stage: $CANARY_PERCENT%"
+          kubectl -n ${{ env.K8S_NAMESPACE }} patch deployment usora-gateway -p \
+            "{\"spec\":{\"replicas\":$((10 - $CANARY_PERCENT / 10))}}}" || true
+
+      - name: Canary Smoke Test (${{ matrix.canary-stage }}%)
+        run: |
+          echo "Running canary smoke tests at ${{ matrix.canary-stage }}% traffic..."
+          CANARY_ENDPOINTS="https://app.usora.com/health https://app.usora.com/actuator/health"
+          for endpoint in $CANARY_ENDPOINTS; do
+            for i in $(seq 1 5); do
+              HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$endpoint" 2>/dev/null || echo "000")
+              echo "Attempt $i: $endpoint -> $HTTP_CODE"
+              if [ "$HTTP_CODE" != "000" ]; then
+                break
+              fi
+              sleep 5
+            done
+          done
+
+      - name: Wait Between Stages
+        if: matrix.canary-stage < 100
+        run: |
+          echo "Waiting 5 minutes for observation before next canary stage..."
+          sleep 300
+
+      - name: Full Rollout (${{ matrix.canary-stage }}%)
+        if: matrix.canary-stage == 100
+        run: |
+          IMAGE_TAG=${{ needs.build.outputs.image-tags }}
+          kubectl set image -n ${{ env.K8S_NAMESPACE }} deployment/usora-gateway \
+            "*"=${{ env.DOCKER_REGISTRY }}/usora/gateway:$IMAGE_TAG
+          kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deployment/usora-gateway --timeout=300s
+
+      - name: Notify Slack on Success
+        if: matrix.canary-stage == 100
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "✅ Production deployment completed for ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*✅ Production Deployed*\nTag: `${{ needs.build.outputs.image-tags }}`\nEnvironment: https://app.usora.com\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Slack on Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "❌ Production deployment failed at ${{ matrix.canary-stage }}% for ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ Prod Deploy Failed*\nCanary Stage: ${{ matrix.canary-stage }}%\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}

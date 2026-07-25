@@ -1,0 +1,58 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=require
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 100
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS}
+    producer:
+      compression-type: snappy
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+      ssl:
+        enabled: true
+
+audit:
+  encryption:
+    key: ${AUDIT_ENCRYPTION_KEY}
+  siem:
+    url: ${SIEM_URL}
+    token: ${SIEM_TOKEN}
+    batch_size: 500
+    flush_interval: 2s
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      issuer: usora-audit
+  blockchain:
+    grpc:
+      host: ${BLOCKCHAIN_GRPC_HOST}
+      port: ${BLOCKCHAIN_GRPC_PORT}
+
+aws:
+  s3:
+    region: ${AWS_REGION}
+    access-key-id: ${AWS_ACCESS_KEY_ID}
+    secret-access-key: ${AWS_SECRET_ACCESS_KEY}
+    endpoint: ${AWS_S3_ENDPOINT}
+
+logging:
+  level:
+    com.usora: WARN
+
+management:
+  tracing:
+    sampling:
+      probability: 0.1

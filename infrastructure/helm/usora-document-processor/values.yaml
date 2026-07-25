@@ -1,0 +1,122 @@
+replicaCount: 5
+
+image:
+  repository: usora/document-processor
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: usora-document-processor
+  annotations:
+    eks.amazonaws.com/role-arn: ""
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+
+service:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+
+resources:
+  requests:
+    cpu: "4"
+    memory: "8Gi"
+  limits:
+    cpu: "8"
+    memory: "16Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 5
+  maxReplicas: 50
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: 85
+
+kafka:
+  bootstrapServers: usora-kafka:9092
+  consumerGroupId: usora-document-processor
+  autoOffsetReset: earliest
+  maxPollRecords: 100
+  fetchMinBytes: 1024
+  fetchMaxWaitMs: 500
+  sessionTimeoutMs: 45000
+  heartbeatIntervalMs: 3000
+  maxPartitionFetchBytes: 10485760
+  topics:
+    input: document.process
+    output: document.processed
+    deadLetter: document.dead.letter
+    retry: document.retry
+  retryCount: 3
+  retryBackoffMs: 1000
+
+models:
+  path: /models
+  ocrModel: tesseract
+  classifierModel: document-classifier.onnx
+  extractorModel: field-extractor.onnx
+
+tesseract:
+  dataPath: /usr/share/tesseract-ocr/4.00/tessdata
+  languages: "eng+spa+fra+deu+ara+zho"
+  psm: 3
+  oem: 3
+
+tempStorage:
+  enabled: true
+  size: 100Gi
+  storageClass: gp3
+  mountPath: /tmp/processing
+
+readinessProbe:
+  exec:
+    command:
+      - /bin/grpc_health_probe
+      - -addr=:9090
+  initialDelaySeconds: 15
+  periodSeconds: 10
+
+livenessProbe:
+  exec:
+    command:
+      - /bin/grpc_health_probe
+      - -addr=:9090
+  initialDelaySeconds: 30
+  periodSeconds: 30
+
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values:
+                - usora-document-processor
+        topologyKey: kubernetes.io/hostname
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node-type
+              operator: In
+              values:
+                - compute
+
+tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "compute"
+    effect: "NoSchedule"
+
+nodeSelector:
+  node-type: compute

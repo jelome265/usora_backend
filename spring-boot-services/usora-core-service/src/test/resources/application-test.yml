@@ -1,0 +1,51 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+    show-sql: false
+  flyway:
+    enabled: false
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      acks: all
+    consumer:
+      group-id: test-group
+      auto-offset-reset: earliest
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      timeout: 2000
+
+usora:
+  security:
+    encryption-key: AAAAAAAAAAAAAAAAAAAAAA==
+    jwk-set-uri: http://localhost:8080/oauth2/jwks
+  kafka:
+    topics:
+      verification-events: verification.events.test
+  compute:
+    document:
+      host: localhost
+      port: 9091
+    biometric:
+      host: localhost
+      port: 9092
+    risk:
+      host: localhost
+      port: 9093
+
+logging:
+  level:
+    com.usora: DEBUG
+    org.springframework: WARN
