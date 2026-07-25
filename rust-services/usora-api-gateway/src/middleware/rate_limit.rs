@@ -32,6 +32,7 @@ impl<S> Layer<S> for RateLimitLayer {
         RateLimitMiddleware {
             inner,
             buckets: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(10000).unwrap()))),
+            redis: None,
             default_rps: self.default_rps,
             burst_size: self.burst_size,
             window_ms: self.window_ms,
@@ -43,9 +44,17 @@ impl<S> Layer<S> for RateLimitLayer {
 pub struct RateLimitMiddleware<S> {
     inner: S,
     buckets: Arc<Mutex<LruCache<String, TokenBucket>>>,
+    redis: Option<redis::aio::ConnectionManager>,
     default_rps: u64,
     burst_size: u64,
     window_ms: u64,
+}
+
+impl<S> RateLimitMiddleware<S> {
+    pub fn with_redis(mut self, redis: redis::aio::ConnectionManager) -> Self {
+        self.redis = Some(redis);
+        self
+    }
 }
 
 impl<S> Service<Request> for RateLimitMiddleware<S>
@@ -62,28 +71,90 @@ where
     }
 
     fn call(&mut self, req: Request) -> Self::Future {
-        let bucket_key = req
+        let tenant_id = req
             .headers()
             .get("X-Tenant-ID")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("default")
             .to_string();
 
-        let allowed = {
-            let mut buckets = self.buckets.blocking_lock();
-            let bucket = buckets.get_or_insert(&bucket_key, || {
-                TokenBucket::new(self.default_rps, self.burst_size, self.window_ms)
-            });
-            bucket.consume(1)
-        };
+        let client_ip = req
+            .headers()
+            .get("X-Forwarded-For")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("unknown")
+            .to_string();
 
-        if !allowed {
-            return Box::pin(async move {
-                Ok(axum::http::StatusCode::TOO_MANY_REQUESTS.into_response())
-            });
-        }
+        let endpoint = req.uri().path().to_string();
+        let bucket_key = format!("{tenant_id}:{client_ip}:{endpoint}");
 
-        let fut = self.inner.call(req);
-        Box::pin(async move { fut.await })
+        let buckets = self.buckets.clone();
+        let redis = self.redis.clone();
+        let default_rps = self.default_rps;
+        let burst_size = self.burst_size;
+        let window_ms = self.window_ms;
+
+        let inner = self.inner.call(req);
+
+        Box::pin(async move {
+            let allowed = if let Some(ref redis_conn) = redis {
+                let key = format!("rl:{bucket_key}");
+                redis_rate_limit_check(redis_conn, &key, default_rps, burst_size).await
+            } else {
+                let mut buckets = buckets.lock().await;
+                let bucket = buckets.get_or_insert(&bucket_key, || {
+                    TokenBucket::new(default_rps, burst_size, window_ms)
+                });
+                bucket.consume(1)
+            };
+
+            if !allowed {
+                let resp = (
+                    axum::http::StatusCode::TOO_MANY_REQUESTS,
+                    [("Retry-After", "1")],
+                ).into_response();
+                return Ok(resp);
+            }
+
+            inner.await
+        })
     }
+}
+
+async fn redis_rate_limit_check(
+    conn: &redis::aio::ConnectionManager,
+    key: &str,
+    max_rps: u64,
+    burst: u64,
+) -> bool {
+    let mut conn = conn.clone();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let window_ms = 1000u64;
+    let window_key = format!("{key}:{}", now / window_ms);
+
+    let count: u64 = redis::cmd("GET")
+        .arg(&window_key)
+        .query_async(&mut conn)
+        .await
+        .unwrap_or(0);
+
+    if count >= burst {
+        return false;
+    }
+
+    let _: Result<(), _> = redis::cmd("INCR")
+        .arg(&window_key)
+        .query_async(&mut conn)
+        .await;
+
+    let _: Result<(), _> = redis::cmd("EXPIRE")
+        .arg(&window_key)
+        .arg(2u64)
+        .query_async(&mut conn)
+        .await;
+
+    true
 }

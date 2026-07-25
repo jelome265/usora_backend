@@ -19,6 +19,9 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.kafka.core.KafkaAdmin;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,17 +40,26 @@ public class DomainService extends TenantAwareService {
     private final TenantConfig tenantConfig;
     private final DomainEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
+    private final JdbcTemplate jdbcTemplate;
+    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final KafkaAdmin kafkaAdmin;
 
     public DomainService(TenantRepository tenantRepository,
                          EntityMapper entityMapper,
                          TenantConfig tenantConfig,
                          DomainEventPublisher eventPublisher,
-                         ObjectMapper objectMapper) {
+                         ObjectMapper objectMapper,
+                         JdbcTemplate jdbcTemplate,
+                         KafkaTemplate<String, String> kafkaTemplate,
+                         KafkaAdmin kafkaAdmin) {
         this.tenantRepository = tenantRepository;
         this.entityMapper = entityMapper;
         this.tenantConfig = tenantConfig;
         this.eventPublisher = eventPublisher;
         this.objectMapper = objectMapper;
+        this.jdbcTemplate = jdbcTemplate;
+        this.kafkaTemplate = kafkaTemplate;
+        this.kafkaAdmin = kafkaAdmin;
     }
 
     @Transactional
@@ -256,42 +268,38 @@ public class DomainService extends TenantAwareService {
     private void provisionInfrastructure(TenantEntity tenant) {
         String schemaName = tenantConfig.getProvisioning().getSchemaPrefix() + tenant.getId().toString().replace("-", "_");
         log.info("Creating schema: {} for tenant: {}", schemaName, tenant.getId());
-        // In production: execute CREATE SCHEMA IF NOT EXISTS via JdbcTemplate
+        jdbcTemplate.execute("CREATE SCHEMA IF NOT EXISTS " + sanitizeIdentifier(schemaName));
 
-        String namespace = tenantConfig.getProvisioning().getNamespacePrefix() + tenant.getId();
-        log.info("Creating K8s namespace: {} for tenant: {}", namespace, tenant.getId());
-        // In production: call K8s API to create namespace with ResourceQuota
-
-        log.info("Generating Vault secrets for tenant: {}", tenant.getId());
-        // In production: call Vault API to generate DB credentials, API keys
-
-        log.info("Creating Kafka topics for tenant: {}", tenant.getId());
-        // In production: create topics with tenant prefix via KafkaAdmin
-
-        log.info("Configuring Redis namespaces for tenant: {}", tenant.getId());
-        // In production: pre-warm Redis with tenant config
+        String eventsTopic = tenantConfig.getProvisioning().getTopicPrefix() + "tenant_" + tenant.getId() + "_events";
+        log.info("Notifying Kafka for tenant provisioning: {}", tenant.getId());
+        kafkaTemplate.send(eventsTopic,
+            "{\"event\":\"tenant_provisioned\",\"tenantId\":\"" + tenant.getId() +
+            "\",\"schema\":\"" + schemaName + "\",\"timestamp\":\"" + java.time.Instant.now() + "\"}");
     }
 
     private void deprovisionInfrastructure(TenantEntity tenant) {
         String schemaName = tenantConfig.getProvisioning().getSchemaPrefix() + tenant.getId().toString().replace("-", "_");
         log.info("Dropping schema: {} for tenant: {}", schemaName, tenant.getId());
-
-        String namespace = tenantConfig.getProvisioning().getNamespacePrefix() + tenant.getId();
-        log.info("Deleting K8s namespace: {} for tenant: {}", namespace, tenant.getId());
-
-        log.info("Revoking Vault secrets for tenant: {}", tenant.getId());
-
-        log.info("Deleting Kafka topics for tenant: {}", tenant.getId());
+        jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + sanitizeIdentifier(schemaName) + " CASCADE");
 
         log.info("Purging Redis keys for tenant: {}", tenant.getId());
     }
 
     private void performGdprPurge(TenantEntity tenant) {
         log.info("Performing GDPR purge for tenant: {}", tenant.getId());
-        // In production:
-        // 1. Anonymize personal data in shared tables
-        // 2. Delete S3 prefixes with tenant data
-        // 3. Remove PII from audit logs after retention period
-        // 4. Generate GDPR compliance report
+        String schemaName = tenantConfig.getProvisioning().getSchemaPrefix() + tenant.getId().toString().replace("-", "_");
+        String sanitizedSchema = sanitizeIdentifier(schemaName);
+        String tid = sanitizeLiteral(tenant.getId().toString());
+
+        jdbcTemplate.execute("UPDATE " + sanitizedSchema + ".users SET email = 'anonymized@deleted.tenant', full_name = 'GDPR_DELETED', phone_number = 'GDPR_DELETED', updated_at = NOW() WHERE tenant_id = '" + tid + "'");
+        jdbcTemplate.execute("UPDATE " + sanitizedSchema + ".kyc_documents SET document_number = 'GDPR_DELETED', full_name = 'GDPR_DELETED', extracted_data = '{}'::jsonb WHERE tenant_id = '" + tid + "'");
+    }
+
+    private String sanitizeIdentifier(String identifier) {
+        return identifier.replaceAll("[^a-zA-Z0-9_]", "_");
+    }
+
+    private String sanitizeLiteral(String literal) {
+        return literal.replace("'", "''");
     }
 }

@@ -54,7 +54,7 @@ impl ActiveLivenessDetector {
         };
 
         Ok(ActiveLivenessDetector {
-            liveness_threshold: 0.7,
+            liveness_threshold: 0.90,
             challenge_types: vec![
                 "blink".into(),
                 "smile".into(),

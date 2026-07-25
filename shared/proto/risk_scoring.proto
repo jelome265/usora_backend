@@ -1,0 +1,153 @@
+syntax = "proto3";
+
+package risk_scoring;
+
+option go_package = "github.com/usora/risk_scoring/v1;risk_scoring";
+option java_package = "com.usora.risk_scoring";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+enum RiskLevel {
+  RISK_LEVEL_UNSPECIFIED = 0;
+  LOW = 1;
+  MEDIUM = 2;
+  HIGH = 3;
+  CRITICAL = 4;
+}
+
+message FeatureValue {
+  oneof value {
+    string string_val = 1;
+    int64 int_val = 2;
+    double float_val = 3;
+    bool bool_val = 4;
+  }
+}
+
+message FeatureContribution {
+  string feature_name = 1;
+  double importance = 2;
+  double shap_value = 3;
+}
+
+message ScoreExplanation {
+  string method = 1;
+  double base_score = 2;
+  repeated FeatureContribution feature_contributions = 3;
+  repeated string top_risk_drivers = 4;
+  double confidence = 5;
+}
+
+message RiskFactor {
+  string factor_id = 1;
+  string factor_type = 2;
+  double severity = 3;
+  string description = 4;
+  string source = 5;
+}
+
+message ScoringResponse {
+  string score_id = 1;
+  string applicant_id = 2;
+  string tenant_id = 3;
+  double composite_score = 4;
+  string risk_level = 5;
+  double ml_score = 6;
+  double rule_score = 7;
+  string model_version = 8;
+  string rule_version = 9;
+  double processing_time_ms = 10;
+  string computed_at = 11;
+  ScoreExplanation explanation = 12;
+}
+
+message ApplicantScoringRequest {
+  string applicant_id = 1;
+  string tenant_id = 2;
+  map<string, FeatureValue> features = 3;
+  bool include_explanation = 4;
+}
+
+message ApplicantScoringResponse {
+  ScoringResponse response = 1;
+}
+
+message TransactionScoringRequest {
+  string transaction_id = 1;
+  string applicant_id = 2;
+  string tenant_id = 3;
+  double amount = 4;
+  string currency = 5;
+  string transaction_type = 6;
+  map<string, FeatureValue> features = 7;
+  int64 timestamp_seconds = 8;
+}
+
+message TransactionScoringResponse {
+  ScoringResponse response = 1;
+}
+
+message RiskFactorsRequest {
+  string score_id = 1;
+  string applicant_id = 2;
+  string tenant_id = 3;
+}
+
+message RiskFactorsResponse {
+  string score_id = 1;
+  repeated RiskFactor risk_factors = 2;
+  double total_risk_score = 3;
+  string risk_level = 4;
+}
+
+message ModelUpdateRequest {
+  string model_id = 1;
+  string tenant_id = 2;
+  string new_version = 3;
+  string model_path = 4;
+  string checksum = 5;
+  bool force = 6;
+}
+
+message ModelUpdateResponse {
+  string model_id = 1;
+  string previous_version = 2;
+  string current_version = 3;
+  string status = 4;
+  string reloaded_at = 5;
+}
+
+message ExplainabilityRequest {
+  string score_id = 1;
+  string applicant_id = 2;
+  string tenant_id = 3;
+  uint32 max_features = 4;
+  double min_importance = 5;
+}
+
+message ExplainabilityResponse {
+  string score_id = 1;
+  ScoreExplanation explanation = 2;
+  string model_version = 3;
+  string rule_version = 4;
+}
+
+message BatchScoringRequest {
+  string tenant_id = 1;
+  repeated ApplicantScoringRequest requests = 2;
+}
+
+message BatchScoringResponse {
+  repeated ScoringResponse responses = 1;
+}
+
+service RiskScoringService {
+  rpc ScoreApplicant(ApplicantScoringRequest) returns (ApplicantScoringResponse);
+  rpc ScoreTransaction(TransactionScoringRequest) returns (TransactionScoringResponse);
+  rpc GetRiskFactors(RiskFactorsRequest) returns (RiskFactorsResponse);
+  rpc UpdateRiskModel(ModelUpdateRequest) returns (ModelUpdateResponse);
+  rpc ExplainRiskScore(ExplainabilityRequest) returns (ExplainabilityResponse);
+  rpc BatchScoreApplicants(BatchScoringRequest) returns (BatchScoringResponse);
+}

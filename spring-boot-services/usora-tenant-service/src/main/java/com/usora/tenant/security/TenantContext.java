@@ -10,22 +10,26 @@ import java.util.UUID;
 @Builder
 public class TenantContext {
 
-    private static final ThreadLocal<TenantContext> CONTEXT_HOLDER = new ThreadLocal<>();
+    private static final ScopedValue<TenantContext> CONTEXT_HOLDER = ScopedValue.newInstance();
 
     private String userId;
     private UUID currentTenantId;
     private List<String> roles;
 
-    public static void set(TenantContext context) {
-        CONTEXT_HOLDER.set(context);
+    public static void runWith(TenantContext context, Runnable action) {
+        ScopedValue.where(CONTEXT_HOLDER, context).run(action);
+    }
+
+    public static <T> T callWith(TenantContext context, java.util.concurrent.Callable<T> action) throws Exception {
+        return ScopedValue.where(CONTEXT_HOLDER, context).call(action);
     }
 
     public static TenantContext get() {
         return CONTEXT_HOLDER.get();
     }
 
-    public static void clear() {
-        CONTEXT_HOLDER.remove();
+    public static boolean isBound() {
+        return CONTEXT_HOLDER.isBound();
     }
 
     public static String getCurrentUserId() {

@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package usora.gateway.v1;
+
+option go_package = "github.com/usora/gateway/v1;usoragatewayv1";
+option java_package = "com.usora.gateway.v1";
+option java_multiple_files = true;
+
+import "google/protobuf/struct.proto";
+
+message TenantContext {
+  string tenant_id = 1;
+  string domain = 2;
+  string api_key_hash = 3;
+  string client_ip = 4;
+}
+
+message TenantResolution {
+  string tenant_id = 1;
+  string name = 2;
+  string schema_name = 3;
+  bool active = 4;
+  map<string, string> settings = 5;
+  repeated string features = 6;
+  int32 max_rps = 7;
+  int32 burst_size = 8;
+}
+
+message RateLimitRequest {
+  string tenant_id = 1;
+  string client_id = 2;
+  string endpoint = 3;
+  string client_ip = 4;
+}
+
+message RateLimitResponse {
+  bool allowed = 1;
+  int32 remaining = 2;
+  int32 reset_after_ms = 3;
+  int32 retry_after_ms = 4;
+}
+
+message TokenValidationRequest {
+  string token = 1;
+  string expected_audience = 2;
+  string tenant_id = 3;
+}
+
+message TokenValidationResponse {
+  bool valid = 1;
+  string subject = 2;
+  string tenant_id = 3;
+  repeated string roles = 4;
+  repeated string permissions = 5;
+  int64 expires_at = 6;
+  string token_type = 7;
+}
+
+message HealthCheckRequest {
+  string service = 1;
+}
+
+message HealthCheckResponse {
+  string status = 1;
+  string version = 2;
+  int64 uptime_seconds = 3;
+}
+
+service GatewayService {
+  rpc ResolveTenant(TenantContext) returns (TenantResolution);
+  rpc CheckRateLimit(RateLimitRequest) returns (RateLimitResponse);
+  rpc ValidateToken(TokenValidationRequest) returns (TokenValidationResponse);
+  rpc CheckHealth(HealthCheckRequest) returns (HealthCheckResponse);
+}

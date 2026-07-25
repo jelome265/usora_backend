@@ -3,7 +3,7 @@ use tokio::signal;
 use tonic::transport::Server;
 use tracing::{error, info};
 
-use usora_document_processor::generated::usora::document::v1::document_service_server::DocumentServiceServer;
+use usora_document_processor::generated::usora::document::v1::document_analysis_service_server::DocumentAnalysisServiceServer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -13,16 +13,16 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Starting {} on {}", config.service_name, config.grpc_bind_address);
 
-    let doc_service = usora_document_processor::grpc::DocumentServiceImpl::new(config.clone());
+    let doc_service = Arc::new(usora_document_processor::grpc::DocumentAnalysisServiceImpl::new(config.clone()));
 
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
-    health_reporter.set_serving::<DocumentServiceServer<usora_document_processor::grpc::DocumentServiceImpl>>().await;
+    health_reporter.set_serving::<DocumentAnalysisServiceServer<_>>().await;
 
     let grpc_addr = config.grpc_bind_address.parse()?;
 
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(
-            usora_document_processor::generated::usora::document::v1::DOCUMENT_SERVICE_FILE_DESCRIPTOR_SET,
+            usora_document_processor::generated::usora::document::v1::DOCUMENT_ANALYSIS_SERVICE_FILE_DESCRIPTOR_SET,
         )
         .build()?;
 
@@ -33,11 +33,29 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    let rest_addr = config.rest_bind_address.clone().unwrap_or_else(|| "0.0.0.0:8081".to_string());
+    let rest_state = usora_document_processor::routes::AppState {
+        service: doc_service.clone(),
+    };
+    let rest_app = usora_document_processor::routes::router(rest_state);
+
+    let rest_listener = tokio::net::TcpListener::bind(&rest_addr).await?;
+    info!("REST server listening on {}", rest_addr);
+
+    let rest_handle = tokio::spawn(async move {
+        axum::serve(rest_listener, rest_app)
+            .with_graceful_shutdown(async {
+                signal::ctrl_c().await.ok();
+            })
+            .await
+            .expect("REST server failed");
+    });
+
     info!("gRPC server listening on {}", grpc_addr);
     Server::builder()
         .add_service(health_service)
         .add_service(reflection_service)
-        .add_service(DocumentServiceServer::new(doc_service))
+        .add_service(DocumentAnalysisServiceServer::new(doc_service.as_ref().clone()))
         .serve_with_shutdown(grpc_addr, async {
             signal::ctrl_c().await.ok();
             info!("Shutdown signal received");
@@ -45,6 +63,7 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     kafka_handle.abort();
+    rest_handle.abort();
     Ok(())
 }
 

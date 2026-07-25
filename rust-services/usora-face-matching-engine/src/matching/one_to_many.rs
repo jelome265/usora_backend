@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::{info, info_span, warn};
 use uuid::Uuid;
 
@@ -9,12 +11,17 @@ use crate::config::FaissConfig;
 use crate::embedding::FaceEmbedding;
 use crate::matching::{MatchResult, Matcher};
 
+const MAX_PENDING_SAVES: usize = 100;
+
 pub struct FaissMatcher {
-    index: Mutex<Box<dyn faiss::Index>>,
+    indices: Mutex<HashMap<String, Box<dyn faiss::Index>>>,
+    pending_additions: Mutex<HashMap<String, usize>>,
     threshold: f64,
     top_k_default: usize,
     dimension: usize,
     nprobe: u32,
+    index_path: std::path::PathBuf,
+    save_counter: AtomicUsize,
 }
 
 impl FaissMatcher {
@@ -34,56 +41,118 @@ impl FaissMatcher {
             Box::new(flat)
         };
 
+        let mut indices = HashMap::new();
+        indices.insert("__default__".to_string(), index);
+
         Ok(FaissMatcher {
-            index: Mutex::new(index),
+            indices: Mutex::new(indices),
+            pending_additions: Mutex::new(HashMap::new()),
             threshold,
             top_k_default,
             dimension: config.dimension,
             nprobe: config.nprobe,
+            index_path: config.index_path.clone(),
+            save_counter: AtomicUsize::new(0),
         })
     }
 
-    pub fn add_embedding(&self, embedding: &FaceEmbedding, user_id: &str) -> Result<()> {
-        let mut index = self.index.lock().unwrap();
-        let vec = embedding.vector.clone();
-        let id = Self::user_id_to_faiss_id(user_id);
+    fn get_or_create_tenant_index(
+        indices: &mut HashMap<String, Box<dyn faiss::Index>>,
+        tenant_id: &str,
+        dimension: usize,
+    ) -> Result<&mut Box<dyn faiss::Index>> {
+        if !indices.contains_key(tenant_id) {
+            let flat = faiss::IndexFlatIP::new(dimension as i32)?;
+            indices.insert(tenant_id.to_string(), Box::new(flat));
+        }
+        Ok(indices.get_mut(tenant_id).unwrap())
+    }
 
-        index.add_with_ids(vec.as_slice(), &[id])
+    pub fn add_embedding(&self, embedding: &FaceEmbedding, user_id: &str, tenant_id: &str) -> Result<()> {
+        let mut indices = self.indices.lock().unwrap();
+        let index = Self::get_or_create_tenant_index(
+            &mut indices, tenant_id, self.dimension,
+        )?;
+
+        let vec = embedding.vector.clone();
+        let id = Self::user_id_to_faiss_id(user_id, tenant_id);
+        let ids = [id];
+
+        index.add_with_ids(vec.as_slice(), &ids)
             .context("Failed to add embedding to index")?;
+
+        let mut pending = self.pending_additions.lock().unwrap();
+        *pending.entry(tenant_id.to_string()).or_insert(0) += 1;
+
+        let count = self.save_counter.fetch_add(1, Ordering::SeqCst);
+        if count >= MAX_PENDING_SAVES {
+            drop(pending);
+            drop(indices);
+            if let Err(e) = self.flush_all() {
+                warn!("Failed to auto-save FAISS indices: {e}");
+            }
+            self.save_counter.store(0, Ordering::SeqCst);
+        }
 
         Ok(())
     }
 
-    pub fn remove_embedding(&self, user_id: &str) -> Result<()> {
-        let id = Self::user_id_to_faiss_id(user_id);
-        let mut index = self.index.lock().unwrap();
-        let selector = faiss::IDSelectorRange::new(id, id + 1)?;
-        index.remove_ids(&selector)?;
+    pub fn remove_embedding(&self, user_id: &str, tenant_id: &str) -> Result<()> {
+        let id = Self::user_id_to_faiss_id(user_id, tenant_id);
+        let mut indices = self.indices.lock().unwrap();
+        if let Some(index) = indices.get_mut(tenant_id) {
+            let selector = faiss::IDSelectorRange::new(id, id + 1)?;
+            index.remove_ids(&selector)?;
+        }
+        Ok(())
+    }
+
+    pub fn flush_all(&self) -> Result<()> {
+        let indices = self.indices.lock().unwrap();
+        for (tenant_id, index) in indices.iter() {
+            let path = if tenant_id == "__default__" {
+                self.index_path.clone()
+            } else {
+                let parent = self.index_path.parent().unwrap_or(Path::new("data"));
+                let stem = self.index_path.file_stem().unwrap_or_default();
+                let ext = self.index_path.extension().unwrap_or_default();
+                parent.join(format!("{}_{}.{}", stem.to_string_lossy(), tenant_id, ext.to_string_lossy()))
+            };
+            faiss::write_index(index.as_ref(), &path.to_string_lossy())
+                .context(format!("Failed to write FAISS index for tenant {tenant_id}"))?;
+            info!(tenant = %tenant_id, path = %path.display(), "FAISS index saved");
+        }
         Ok(())
     }
 
     pub fn save_index(&self, path: &Path) -> Result<()> {
-        let index = self.index.lock().unwrap();
-        faiss::write_index(index.as_ref(), &path.to_string_lossy())
-            .context("Failed to write FAISS index")?;
+        let index = self.indices.lock().unwrap();
+        if let Some(idx) = index.get("__default__") {
+            faiss::write_index(idx.as_ref(), &path.to_string_lossy())
+                .context("Failed to write FAISS index")?;
+        }
         Ok(())
     }
 
-    pub fn index_size(&self) -> usize {
-        let index = self.index.lock().unwrap();
-        index.ntotal() as usize
+    pub fn index_size(&self, tenant_id: &str) -> usize {
+        let indices = self.indices.lock().unwrap();
+        indices.get(tenant_id)
+            .map(|idx| idx.ntotal() as usize)
+            .unwrap_or(0)
     }
 
-    pub fn train_index(&self, embeddings: &[f32]) -> Result<()> {
-        let mut index = self.index.lock().unwrap();
+    pub fn train_index(&self, embeddings: &[f32], tenant_id: &str) -> Result<()> {
+        let mut indices = self.indices.lock().unwrap();
+        let index = Self::get_or_create_tenant_index(&mut indices, tenant_id, self.dimension)?;
         if !index.is_trained() {
             index.train(embeddings)?;
         }
         Ok(())
     }
 
-    fn user_id_to_faiss_id(user_id: &str) -> i64 {
-        let hash = blake3::hash(user_id.as_bytes());
+    fn user_id_to_faiss_id(user_id: &str, tenant_id: &str) -> i64 {
+        let combined = format!("{}:{}", tenant_id, user_id);
+        let hash = blake3::hash(combined.as_bytes());
         let bytes = hash.as_bytes();
         i64::from_ne_bytes([
             bytes[0], bytes[1], bytes[2], bytes[3],
@@ -130,16 +199,32 @@ impl Matcher for FaissMatcher {
         probe: &FaceEmbedding,
         top_k: usize,
     ) -> Result<Vec<MatchResult>> {
-        let _span = info_span!("search_one_to_many", top_k = top_k).entered();
+        self.search_one_to_many_with_tenant(probe, top_k, "__default__").await
+    }
+}
+
+impl FaissMatcher {
+    pub async fn search_one_to_many_with_tenant(
+        &self,
+        probe: &FaceEmbedding,
+        top_k: usize,
+        tenant_id: &str,
+    ) -> Result<Vec<MatchResult>> {
+        let _span = info_span!("search_one_to_many", top_k = top_k, tenant = %tenant_id).entered();
 
         let k = top_k.min(1000);
         let query_slice = probe.vector.as_slice();
 
         let (distances, labels) = {
-            let mut index = self.index.lock().unwrap();
+            let indices = self.indices.lock().unwrap();
+            let index = match indices.get(tenant_id) {
+                Some(idx) => idx,
+                None => return Ok(Vec::new()),
+            };
 
-            if let Some(ivf) = index.as_any_mut().downcast_mut::<faiss::IndexIVFFlat>() {
-                ivf.nprobe = self.nprobe;
+            if let Some(ivf) = index.as_any().downcast_ref::<faiss::IndexIVFFlat>() {
+                let mut mutable_ivf = ivf.clone();
+                mutable_ivf.nprobe = self.nprobe;
             }
 
             let ntotal = index.ntotal();
@@ -195,12 +280,6 @@ impl Matcher for FaissMatcher {
                 r
             })
             .collect();
-
-        info!(
-            query_results = final_results.len(),
-            threshold = %self.threshold,
-            "One-to-many search completed"
-        );
 
         Ok(final_results)
     }

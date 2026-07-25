@@ -20,11 +20,44 @@ use proto::{
 
 pub struct IdentityVerificationServiceImpl {
     engine: Arc<FaceMatchingEngine>,
+    document_client: Option<Arc<dyn DocumentProcessingClient>>,
+}
+
+#[async_trait::async_trait]
+pub trait DocumentProcessingClient: Send + Sync {
+    async fn verify_document(&self, req: DocumentVerificationRequest) -> Result<DocumentVerificationResponse, String>;
+    async fn extract_document_data(&self, req: DocumentExtractionRequest) -> Result<DocumentExtractionResponse, String>;
+    async fn verify_authenticity(&self, req: AuthenticityRequest) -> Result<AuthenticityResponse, String>;
+}
+
+pub struct GrpcDocumentClient {
+    client: proto::document_service_client::DocumentServiceClient<tonic::transport::Channel>,
+}
+
+#[async_trait::async_trait]
+impl DocumentProcessingClient for GrpcDocumentClient {
+    async fn verify_document(&self, req: DocumentVerificationRequest) -> Result<DocumentVerificationResponse, String> {
+        Err("Document verification requires document processor service".to_string())
+    }
+    async fn extract_document_data(&self, req: DocumentExtractionRequest) -> Result<DocumentExtractionResponse, String> {
+        Err("Document data extraction requires document processor service".to_string())
+    }
+    async fn verify_authenticity(&self, req: AuthenticityRequest) -> Result<AuthenticityResponse, String> {
+        Err("Document authenticity verification requires document processor service".to_string())
+    }
 }
 
 impl IdentityVerificationServiceImpl {
     pub fn new(engine: Arc<FaceMatchingEngine>) -> Self {
-        IdentityVerificationServiceImpl { engine }
+        IdentityVerificationServiceImpl {
+            engine,
+            document_client: None,
+        }
+    }
+
+    pub fn with_document_client(mut self, client: Arc<dyn DocumentProcessingClient>) -> Self {
+        self.document_client = Some(client);
+        self
     }
 }
 
@@ -174,32 +207,62 @@ impl IdentityVerificationService for IdentityVerificationServiceImpl {
         &self,
         request: Request<DocumentVerificationRequest>,
     ) -> Result<Response<DocumentVerificationResponse>, Status> {
-        warn!(
-            request_id = %request.get_ref().request_id,
-            "Document verification not implemented in face matching engine"
+        let req = request.into_inner();
+        info!(
+            request_id = %req.request_id,
+            "Forwarding document verification to document processor"
         );
-        Err(Status::unimplemented("Document verification not available in this service"))
+
+        if let Some(ref client) = self.document_client {
+            match client.verify_document(req).await {
+                Ok(resp) => Ok(Response::new(resp)),
+                Err(e) => Err(Status::internal(format!("Document verification failed: {e}"))),
+            }
+        } else {
+            warn!("No document processor client configured");
+            Err(Status::unimplemented("Document verification not available - no document processor configured"))
+        }
     }
 
     async fn extract_document_data(
         &self,
         request: Request<DocumentExtractionRequest>,
     ) -> Result<Response<DocumentExtractionResponse>, Status> {
-        warn!(
-            request_id = %request.get_ref().request_id,
-            "Document extraction not implemented in face matching engine"
+        let req = request.into_inner();
+        info!(
+            request_id = %req.request_id,
+            "Forwarding document extraction to document processor"
         );
-        Err(Status::unimplemented("Document extraction not available in this service"))
+
+        if let Some(ref client) = self.document_client {
+            match client.extract_document_data(req).await {
+                Ok(resp) => Ok(Response::new(resp)),
+                Err(e) => Err(Status::internal(format!("Document extraction failed: {e}"))),
+            }
+        } else {
+            warn!("No document processor client configured");
+            Err(Status::unimplemented("Document extraction not available - no document processor configured"))
+        }
     }
 
     async fn verify_document_authenticity(
         &self,
         request: Request<AuthenticityRequest>,
     ) -> Result<Response<AuthenticityResponse>, Status> {
-        warn!(
-            request_id = %request.get_ref().request_id,
-            "Document authenticity not implemented in face matching engine"
+        let req = request.into_inner();
+        info!(
+            request_id = %req.request_id,
+            "Forwarding document authenticity check to document processor"
         );
-        Err(Status::unimplemented("Document authenticity not available in this service"))
+
+        if let Some(ref client) = self.document_client {
+            match client.verify_authenticity(req).await {
+                Ok(resp) => Ok(Response::new(resp)),
+                Err(e) => Err(Status::internal(format!("Document authenticity check failed: {e}"))),
+            }
+        } else {
+            warn!("No document processor client configured");
+            Err(Status::unimplemented("Document authenticity check not available - no document processor configured"))
+        }
     }
 }

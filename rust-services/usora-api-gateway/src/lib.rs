@@ -9,6 +9,10 @@ pub mod routes;
 pub mod utils;
 
 pub mod proto {
+    pub mod gateway {
+        tonic::include_proto!("usora.gateway.v1");
+        pub use usora::gateway::v1::*;
+    }
     pub mod identity {
         tonic::include_proto!("usora.identity.v1");
         pub use usora::identity::v1::*;
@@ -34,6 +38,8 @@ pub mod proto {
         pub use usora::notification::v1::*;
     }
 }
+
+pub mod gateway_service;
 
 use std::sync::Arc;
 use axum::extract::FromRef;

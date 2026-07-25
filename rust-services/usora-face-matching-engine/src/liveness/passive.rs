@@ -53,7 +53,7 @@ impl PassiveLivenessDetector {
         };
 
         Ok(PassiveLivenessDetector {
-            liveness_threshold: 0.7,
+            liveness_threshold: 0.90,
             model,
         })
     }

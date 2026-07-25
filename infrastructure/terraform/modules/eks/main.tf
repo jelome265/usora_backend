@@ -170,8 +170,8 @@ resource "aws_eks_cluster" "main" {
   vpc_config {
     subnet_ids              = distinct(concat(var.private_subnet_ids, var.public_subnet_ids))
     endpoint_private_access = true
-    endpoint_public_access  = true
-    public_access_cidrs     = ["0.0.0.0/0"]
+    endpoint_public_access  = false
+    public_access_cidrs     = []
     security_group_ids      = [aws_security_group.cluster.id]
   }
 
@@ -559,7 +559,7 @@ resource "kubernetes_config_map_v1" "aws_auth" {
         {
           rolearn  = aws_iam_role.ebs_csi.arn
           username = "ebs-csi-controller-sa"
-          groups   = ["system:masters"]
+          groups   = ["ebs-csi"]
         },
       ]
     ))

@@ -5,6 +5,7 @@ pub mod pipeline;
 pub mod validation;
 pub mod models;
 pub mod grpc;
+pub mod routes;
 pub mod utils;
 
 pub mod generated {

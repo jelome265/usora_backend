@@ -42,8 +42,10 @@ bytes = "1"
 base64 = "0.22"
 sha2 = "0.10"
 hex = "0.4"
+rxing = "0.5"
 lazy_static = "1"
 strum = { version = "0.26", features = ["derive"] }
+axum = "0.7"
 
 [build-dependencies]
 tonic-build = "0.12"

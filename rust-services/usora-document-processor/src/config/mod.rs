@@ -16,6 +16,7 @@ pub struct Config {
     pub temp_dir: PathBuf,
     pub otlp_endpoint: Option<String>,
     pub service_name: String,
+    pub rest_bind_address: Option<String>,
 }
 
 impl Config {
@@ -51,6 +52,7 @@ impl Config {
             otlp_endpoint: std::env::var("OTLP_ENDPOINT").ok(),
             service_name: std::env::var("SERVICE_NAME")
                 .unwrap_or_else(|_| "usora-document-processor".to_string()),
+            rest_bind_address: std::env::var("REST_BIND_ADDRESS").ok(),
         })
     }
 

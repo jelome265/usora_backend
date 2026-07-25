@@ -1,9 +1,10 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("cargo:rerun-if-changed=proto/");
+    let shared = std::path::PathBuf::from("../../shared/proto");
+    println!("cargo:rerun-if-changed=../../shared/proto/risk_scoring.proto");
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
         .out_dir("src/grpc")
-        .compile(&["proto/risk_scoring.proto"], &["proto"])?;
+        .compile(&[shared.join("risk_scoring.proto")], &[shared])?;
     Ok(())
 }

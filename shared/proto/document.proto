@@ -9,123 +9,192 @@ option java_multiple_files = true;
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/struct.proto";
 
-enum DocumentStatus {
-  DOCUMENT_STATUS_UNSPECIFIED = 0;
-  PENDING = 1;
-  PROCESSING = 2;
-  COMPLETED = 3;
-  FAILED = 4;
-  REJECTED = 5;
+service DocumentAnalysisService {
+  rpc AnalyzeDocument(DocumentAnalysisRequest) returns (DocumentAnalysisResponse);
+  rpc DetectForgery(ForgeryDetectionRequest) returns (ForgeryDetectionResponse);
+  rpc ExtractMetadata(MetadataExtractionRequest) returns (MetadataExtractionResponse);
+  rpc ValidateCrossReference(CrossReferenceRequest) returns (CrossReferenceResponse);
+  rpc CheckSecurityFeatures(SecurityFeaturesRequest) returns (SecurityFeaturesResponse);
+  rpc GetDocumentTemplate(TemplateRequest) returns (TemplateResponse);
 }
 
-enum ExtractionMethod {
-  EXTRACTION_METHOD_UNSPECIFIED = 0;
-  OCR = 1;
-  MRZ = 2;
-  BARCODE = 3;
-  NFC = 4;
-}
-
-message ExtractedField {
-  string name = 1;
-  string value = 2;
-  float confidence = 3;
-  ExtractionMethod method = 4;
-  string raw_text = 5;
-  google.protobuf.Struct bounding_box = 6;
-}
-
-message DocumentData {
-  string document_id = 1;
-  repeated ExtractedField fields = 2;
-  string document_type = 3;
-  string country_code = 4;
-  string mrz_line = 5;
-  bytes encoded_face = 6;
-  map<string, string> raw_fields = 7;
-  google.protobuf.Struct metadata = 8;
-}
-
-message AuthenticityScore {
-  float overall_score = 1;
-  float tamper_detection_score = 2;
-  float hologram_verification_score = 3;
-  float font_analysis_score = 4;
-  float uv_check_score = 5;
-  float digital_signature_score = 6;
-  map<string, float> individual_checks = 7;
-}
-
-message DocumentValidationResult {
-  bool is_valid = 1;
-  bool is_tampered = 2;
-  AuthenticityScore authenticity = 3;
-  repeated string flags = 4;
-  repeated string warnings = 5;
-  string validation_summary = 6;
-}
-
-message ProcessDocumentRequest {
+message DocumentAnalysisRequest {
   string document_id = 1;
   string tenant_id = 2;
   string verification_id = 3;
   bytes document_image = 4;
   string document_type = 5;
   string country_code = 6;
-  repeated ExtractionMethod methods = 7;
-  bool run_forensics = 8;
+  bool run_forensics = 7;
+  bool extract_metadata = 8;
   google.protobuf.Struct options = 9;
 }
 
-message ProcessDocumentResponse {
+message DocumentAnalysisResponse {
   string document_id = 1;
-  DocumentStatus status = 2;
-  DocumentData data = 3;
-  DocumentValidationResult validation = 4;
-  float processing_time_ms = 5;
-  repeated ExtractionMethod methods_used = 6;
+  string status = 2;
+  ExtractedData extracted_data = 3;
+  ForgeryResult forgery_result = 4;
+  MetadataResult metadata_result = 5;
+  CrossReferenceResult cross_reference_result = 6;
+  SecurityFeaturesResult security_features_result = 7;
+  double overall_authenticity_score = 8;
+  repeated string warnings = 9;
+  double processing_time_ms = 10;
 }
 
-message GetDocumentStatusRequest {
-  string document_id = 1;
-  string tenant_id = 2;
+message ExtractedData {
+  string document_type = 1;
+  string country_code = 2;
+  string document_number = 3;
+  string full_name = 4;
+  string date_of_birth = 5;
+  string nationality = 6;
+  string sex = 7;
+  string date_of_expiry = 8;
+  string date_of_issue = 9;
+  string address = 10;
+  string mrz_line = 11;
+  bytes encoded_face = 12;
+  map<string, string> raw_fields = 13;
+  map<string, double> field_confidences = 14;
+  google.protobuf.Struct metadata = 15;
 }
 
-message GetDocumentStatusResponse {
-  string document_id = 1;
-  DocumentStatus status = 2;
-  DocumentData data = 3;
-  DocumentValidationResult validation = 4;
-}
-
-message ExtractDataRequest {
-  string document_id = 1;
-  string tenant_id = 2;
-  bytes document_image = 3;
-  repeated ExtractionMethod methods = 4;
-}
-
-message ExtractDataResponse {
-  string document_id = 1;
-  DocumentData data = 2;
-  repeated ExtractionMethod methods_used = 3;
-}
-
-message ValidateAuthenticityRequest {
+message ForgeryDetectionRequest {
   string document_id = 1;
   string tenant_id = 2;
   bytes document_image = 3;
-  bool deep_analysis = 4;
+  string document_type = 4;
+  bool deep_analysis = 5;
+  google.protobuf.Struct options = 6;
 }
 
-message ValidateAuthenticityResponse {
+message ForgeryDetectionResponse {
   string document_id = 1;
-  DocumentValidationResult result = 2;
+  bool is_forgery = 2;
+  double forgery_confidence = 3;
+  repeated string forgery_indicators = 4;
+  map<string, double> model_scores = 5;
+  double tamper_detection_score = 6;
+  double manipulation_score = 7;
+  double print_analysis_score = 8;
+  double font_analysis_score = 9;
+  double texture_analysis_score = 10;
+  repeated string warnings = 11;
 }
 
-service DocumentService {
-  rpc ProcessDocument(ProcessDocumentRequest) returns (ProcessDocumentResponse);
-  rpc GetDocumentStatus(GetDocumentStatusRequest) returns (GetDocumentStatusResponse);
-  rpc ExtractData(ExtractDataRequest) returns (ExtractDataResponse);
-  rpc ValidateAuthenticity(ValidateAuthenticityRequest) returns (ValidateAuthenticityResponse);
+message MetadataExtractionRequest {
+  string document_id = 1;
+  string tenant_id = 2;
+  bytes document_image = 3;
+  bool strip_exif = 4;
+}
+
+message MetadataExtractionResponse {
+  string document_id = 1;
+  map<string, string> exif_data = 2;
+  string file_format = 3;
+  int32 image_width = 4;
+  int32 image_height = 5;
+  double file_size_kb = 6;
+  string color_space = 7;
+  int32 dpi = 8;
+  bool has_embedded_thumbnail = 9;
+  repeated string detected_software = 10;
+  google.protobuf.Timestamp creation_date = 11;
+  repeated string warnings = 12;
+}
+
+message CrossReferenceRequest {
+  string document_id = 1;
+  string tenant_id = 2;
+  ExtractedData extracted_data = 3;
+  bytes document_image = 4;
+}
+
+message CrossReferenceResponse {
+  string document_id = 1;
+  bool all_fields_consistent = 2;
+  repeated FieldConsistency field_consistencies = 3;
+  repeated string cross_reference_warnings = 4;
+  double overall_consistency_score = 5;
+}
+
+message FieldConsistency {
+  string field_name = 1;
+  bool consistent = 2;
+  double confidence = 3;
+  string details = 4;
+}
+
+message SecurityFeaturesRequest {
+  string document_id = 1;
+  string tenant_id = 2;
+  bytes document_image = 3;
+  string document_type = 4;
+  bool check_uv = 5;
+  bool check_ir = 6;
+  bool check_hologram = 7;
+  bool check_microprint = 8;
+  bool check_watermark = 9;
+}
+
+message SecurityFeaturesResponse {
+  string document_id = 1;
+  bool all_features_present = 2;
+  double overall_security_score = 3;
+  FeatureCheckResult uv_check = 4;
+  FeatureCheckResult ir_check = 5;
+  FeatureCheckResult hologram_check = 6;
+  FeatureCheckResult microprint_check = 7;
+  FeatureCheckResult watermark_check = 8;
+  repeated string warnings = 9;
+}
+
+message FeatureCheckResult {
+  string feature_name = 1;
+  bool present = 2;
+  double confidence = 3;
+  string details = 4;
+}
+
+message TemplateRequest {
+  string tenant_id = 1;
+  string country_code = 2;
+  string document_type = 3;
+}
+
+message TemplateResponse {
+  string template_id = 1;
+  string country_code = 2;
+  string document_type = 3;
+  TemplateLayout layout = 4;
+  repeated TemplateField fields = 5;
+  string version = 6;
+  google.protobuf.Timestamp valid_from = 7;
+  google.protobuf.Timestamp valid_to = 8;
+  double match_confidence = 9;
+}
+
+message TemplateLayout {
+  int32 width_mm = 1;
+  int32 height_mm = 2;
+  string orientation = 3;
+  repeated string security_zones = 4;
+}
+
+message TemplateField {
+  string name = 1;
+  string type = 2;
+  string expected_format = 3;
+  bool mandatory = 4;
+  Position position = 5;
+}
+
+message Position {
+  double x_rel = 1;
+  double y_rel = 2;
+  double width_rel = 3;
+  double height_rel = 4;
 }

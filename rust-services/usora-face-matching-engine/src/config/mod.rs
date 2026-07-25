@@ -186,8 +186,8 @@ impl Config {
                 batch_size: env_or_default("BATCH_SIZE", "16"),
             },
             matching: MatchingConfig {
-                one_to_one_threshold: env_or_default("ONE_TO_ONE_THRESHOLD", "0.6"),
-                one_to_many_threshold: env_or_default("ONE_TO_MANY_THRESHOLD", "0.5"),
+                one_to_one_threshold: env_or_default("ONE_TO_ONE_THRESHOLD", "0.85"),
+                one_to_many_threshold: env_or_default("ONE_TO_MANY_THRESHOLD", "0.85"),
                 top_k_results: env_or_default("TOP_K_RESULTS", "10"),
                 score_normalization: env_or_default("SCORE_NORMALIZATION", "true"),
                 enable_score_calibration: env_or_default("ENABLE_SCORE_CALIBRATION", "true"),

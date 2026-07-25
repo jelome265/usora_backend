@@ -25,8 +25,9 @@ async fn main() -> anyhow::Result<()> {
     let app = routes::create_router(state.clone());
 
     let grpc_addr = config.grpc_bind_address.clone();
+    let grpc_state = state.clone();
     tokio::spawn(async move {
-        if let Err(e) = serve_grpc(&grpc_addr).await {
+        if let Err(e) = serve_grpc(grpc_state, &grpc_addr).await {
             tracing::error!("gRPC server error: {e}");
         }
     });
@@ -72,16 +73,21 @@ async fn shutdown_signal() {
     }
 }
 
-async fn serve_grpc(address: &str) -> anyhow::Result<()> {
+async fn serve_grpc(state: Arc<AppState>, address: &str) -> anyhow::Result<()> {
     let addr: SocketAddr = address.parse()?;
 
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
     health_reporter.set_serving("").await;
 
+    let gateway_service = usora_api_gateway::proto::gateway::gateway_service_server::GatewayServiceServer::new(
+        usora_api_gateway::gateway_service::GatewayServiceImpl::new(state),
+    );
+
     tracing::info!("internal gRPC server starting on {address}");
 
     tonic::transport::Server::builder()
         .add_service(health_service)
+        .add_service(gateway_service)
         .serve(addr)
         .await?;
 

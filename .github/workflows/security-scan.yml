@@ -79,7 +79,7 @@ jobs:
             --ignore-unfixed \
             --timeout 10m \
             .
-        continue-on-error: true
+        continue-on-error: false
 
       - name: Trivy Config Scan (IaC)
         run: |
