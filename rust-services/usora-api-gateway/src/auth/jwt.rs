@@ -50,8 +50,29 @@ impl JwtValidator {
     pub async fn validate_token(&self, token: &str) -> Result<JwtClaims, jwt::Error> {
         {
             let mut cache = self.cache.lock().await;
-            if let Some(claims) = cache.get(token) {
-                return Ok(claims.clone());
+            // Clone out of the cache immediately (rather than holding a
+            // borrow across the possible `pop` below) to keep the
+            // lock-scoped borrow checking simple and unambiguous.
+            let cached_claims = cache.get(token).cloned();
+
+            if let Some(claims) = cached_claims {
+                // SECURITY: the LRU cache has no time-based eviction, only a
+                // capacity limit — so a cache hit alone does not mean the
+                // token is still valid. Re-check `exp` against wall-clock
+                // time on every hit; otherwise an expired token can keep
+                // validating successfully until it happens to be evicted.
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as usize)
+                    .unwrap_or(usize::MAX);
+
+                if claims.exp > now {
+                    return Ok(claims);
+                }
+
+                // Expired: drop the stale entry so it doesn't keep getting
+                // hit (and treated as a cache "hit") on every subsequent call.
+                cache.pop(token);
             }
         }
 

@@ -66,23 +66,54 @@ where
     }
 }
 
-fn resolve_tenant(req: &Request) -> Option<String> {
-    if let Some(header_val) = req
-        .headers()
-        .get("X-Tenant-ID")
-        .and_then(|v| v.to_str().ok())
-    {
-        if !header_val.is_empty() {
-            return Some(header_val.to_string());
-        }
-    }
+/// Permission required to act on behalf of a tenant other than the one in
+/// the caller's own verified JWT claim. Only present on trusted internal/
+/// admin principals — never granted to ordinary tenant users.
+const CROSS_TENANT_OVERRIDE_PERMISSION: &str = "tenant:cross_tenant_override";
 
-    if let Some(user) = req.extensions().get::<AuthenticatedUser>() {
+fn resolve_tenant(req: &Request) -> Option<String> {
+    // SECURITY: the tenant claim embedded in the verified JWT is always the
+    // source of truth for an authenticated caller. It MUST be resolved
+    // before any client-supplied header is even considered — a request
+    // header is fully attacker-controlled and must never be trusted to
+    // select which tenant's data a request operates against.
+    let authenticated_user = req.extensions().get::<AuthenticatedUser>();
+
+    if let Some(user) = authenticated_user {
         if let Some(ref tid) = user.tenant_id {
+            // A caller may only override their own tenant via the
+            // X-Tenant-ID header if they hold an explicit cross-tenant
+            // override permission (e.g. a platform admin/support tool).
+            // This is intentionally opt-in and narrow, not the default path.
+            let has_override_permission = user
+                .permissions
+                .iter()
+                .any(|p| p == CROSS_TENANT_OVERRIDE_PERMISSION);
+
+            if has_override_permission {
+                if let Some(header_val) = req
+                    .headers()
+                    .get("X-Tenant-ID")
+                    .and_then(|v| v.to_str().ok())
+                {
+                    if !header_val.is_empty() {
+                        // TODO(security-team, USORA-XXX, 2026-07-31): write this
+                        // override to the immutable audit trail (who, target
+                        // tenant, from where) before this ships to production.
+                        return Some(header_val.to_string());
+                    }
+                }
+            }
+
             return Some(tid.clone());
         }
     }
 
+    // Unauthenticated / no tenant claim on the token: the X-Tenant-ID header
+    // and the URL path segment are equally untrusted at this point, so we
+    // do NOT fall back to the header here either — only a routing hint
+    // from the URL path is used, which downstream authorization checks
+    // must still independently validate against the caller's identity.
     let path = req.uri().path();
     let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
     if parts.len() >= 2 && parts[0] == "v1" {

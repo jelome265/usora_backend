@@ -22,13 +22,13 @@ impl MrzEngine {
     }
 
     fn validate_checksum(data: &str, check_digit: char) -> bool {
-        let data = &data[..data.len().min(data.len())];
-        let check = check_digit;
-        if check == '<' {
-            return true;
-        }
+        // SECURITY: per ICAO 9303, a check-digit position must contain a
+        // computed digit (0-9). '<' is the MRZ filler character, not a
+        // valid checksum value — it must NOT be treated as an automatic
+        // pass, or a forged/corrupted MRZ line with '<' in the check-digit
+        // position would bypass the very tamper check it's meant to enforce.
         let expected = Self::compute_checksum(data);
-        expected == Self::character_value(check).unwrap_or(-1)
+        expected == Self::character_value(check_digit).unwrap_or(-1)
     }
 
     fn compute_checksum(data: &str) -> i32 {

@@ -1,7 +1,6 @@
 package com.usora.tenant.client;
 
 import io.grpc.ManagedChannel;
-import io.grpc.StatusRuntimeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -22,38 +21,29 @@ public class GrpcClient {
         this.complianceServiceChannel = complianceServiceChannel;
     }
 
-    public boolean checkIdentity(String userId, String tenantId) {
-        try {
-            // In production: use generated protobuf stubs
-            // IdentityServiceGrpc.IdentityServiceBlockingStub stub =
-            //     IdentityServiceGrpc.newBlockingStub(identityServiceChannel);
-            // var request = UserCheckRequest.newBuilder().setUserId(userId).setTenantId(tenantId).build();
-            // var response = stub.checkUserAccess(request);
-            // return response.getAccessGranted();
+    // TODO(platform-team, USORA-XXX, 2026-07-31): wire these up to the real
+    // generated protobuf stubs (IdentityServiceGrpc / ComplianceServiceGrpc).
+    // Until then, both methods intentionally throw rather than silently
+    // returning `true` — this method is not currently called from anywhere
+    // in the codebase (verified at time of writing), but a method named
+    // `checkIdentity`/`checkCompliance` that quietly grants access is exactly
+    // the kind of landmine that gets wired into a real authorization check
+    // later by someone who reasonably assumes it does what its name says.
+    // Failing loudly here means a caller finds out immediately, at
+    // integration time, rather than shipping an always-true auth check.
 
-            log.debug("Checking identity for user: {} in tenant: {}", userId, tenantId);
-            return true;
-        } catch (StatusRuntimeException e) {
-            log.error("gRPC call to identity service failed: {}", e.getMessage());
-            return false;
-        }
+    public boolean checkIdentity(String userId, String tenantId) {
+        throw new UnsupportedOperationException(
+                "GrpcClient.checkIdentity is not yet implemented against the identity-service "
+                        + "protobuf stubs (see USORA-XXX) — it must not be treated as a working "
+                        + "authorization check.");
     }
 
     public boolean checkCompliance(String tenantId) {
-        try {
-            // In production: use generated protobuf stubs
-            // ComplianceServiceGrpc.ComplianceServiceBlockingStub stub =
-            //     ComplianceServiceGrpc.newBlockingStub(complianceServiceChannel);
-            // var request = ComplianceCheckRequest.newBuilder().setTenantId(tenantId).build();
-            // var response = stub.checkCompliance(request);
-            // return response.getCompliant();
-
-            log.debug("Checking compliance for tenant: {}", tenantId);
-            return true;
-        } catch (StatusRuntimeException e) {
-            log.error("gRPC call to compliance service failed: {}", e.getMessage());
-            return false;
-        }
+        throw new UnsupportedOperationException(
+                "GrpcClient.checkCompliance is not yet implemented against the compliance-service "
+                        + "protobuf stubs (see USORA-XXX) — it must not be treated as a working "
+                        + "compliance check.");
     }
 
     public void shutdown() {

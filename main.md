@@ -145,22 +145,32 @@ All page specs are in `/usora-pages/`:
 
 ### 4.3 Compliance Frameworks
 
-| Framework | Status |
+> **Status key change (2026-07-31):** this table previously stated several
+> frameworks as "Certified"/"Compliant" in present tense. Per
+> `docs/architecture-security-review-2026-07-31.md`, several controls this
+> platform's compliance posture depends on (tenant isolation, AML/sanctions
+> screening gating, audit-trail signing) were found to be bypassable or
+> non-functional as implemented, and have since been patched but not yet
+> independently re-verified. Until re-verified, this table reflects
+> **target state**, not evidenced current compliance — do not present it to
+> an auditor, customer, or investor as proof of current certification.
+
+| Framework | Status (target — pending independent verification) |
 |-----------|--------|
-| SOC 2 Type II | Certified |
-| ISO 27001:2022 | In Progress (Q4 2026) |
-| ISO 27701 | In Progress (Q4 2026) |
-| PCI DSS Level 1 | In Progress (Q1 2027) |
-| GDPR | Compliant |
-| CCPA/CPRA | Compliant |
-| LGPD | Compliant |
-| PIPEDA | Compliant |
-| PDPA (Singapore) | Compliant |
-| FATF Recommendations | Compliant |
-| EU AML5/AML6 | Compliant |
-| US BSA/Patriot Act | Compliant |
-| PSD2/SCA | Compliant |
-| MiFID II | Compliant |
+| SOC 2 Type II | Target — not yet certified |
+| ISO 27001:2022 | Target — In Progress (Q4 2026) |
+| ISO 27701 | Target — In Progress (Q4 2026) |
+| PCI DSS Level 1 | Target — In Progress (Q1 2027) |
+| GDPR | Target — controls patched, not yet independently verified |
+| CCPA/CPRA | Target — controls patched, not yet independently verified |
+| LGPD | Target — controls patched, not yet independently verified |
+| PIPEDA | Target — controls patched, not yet independently verified |
+| PDPA (Singapore) | Target — controls patched, not yet independently verified |
+| FATF Recommendations | Target — controls patched, not yet independently verified |
+| EU AML5/AML6 | Target — controls patched, not yet independently verified |
+| US BSA/Patriot Act | Target — controls patched, not yet independently verified |
+| PSD2/SCA | Target — controls patched, not yet independently verified |
+| MiFID II | Target — controls patched, not yet independently verified |
 
 ---
 
