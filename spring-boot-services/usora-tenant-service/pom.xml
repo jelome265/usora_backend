@@ -22,8 +22,8 @@
         <mapstruct.version>1.6.3</mapstruct.version>
         <grpc-starter.version>3.1.0.RELEASE</grpc-starter.version>
         <resilience4j.version>2.3.0</resilience4j.version>
-        <opentelemetry.version>1.48.0</opentelemetry.version>
-        <jackson.version>2.18.3</jackson.version>
+        <opentelemetry.version>1.62.0</opentelemetry.version>
+        <jackson.version>2.18.9</jackson.version>
     </properties>
 
     <dependencies>

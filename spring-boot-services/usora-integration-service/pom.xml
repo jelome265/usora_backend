@@ -24,7 +24,7 @@
         <mapstruct.version>1.6.3</mapstruct.version>
         <resilience4j.version>2.2.0</resilience4j.version>
         <grpc-spring-boot.version>3.0.0</grpc-spring-boot.version>
-        <opentelemetry.version>1.44.0</opentelemetry.version>
+        <opentelemetry.version>1.62.0</opentelemetry.version>
         <lombok.version>1.18.36</lombok.version>
         <testcontainers.version>1.20.4</testcontainers.version>
     </properties>
