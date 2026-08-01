@@ -38,9 +38,40 @@ impl MtlsValidator {
             return Err(anyhow::anyhow!("no client certificate provided"));
         }
 
-        let der = &peer_certs[0].0;
-        let cn = extract_cn_from_der(der).unwrap_or_else(|| "unknown".to_string());
-        let tenant_id = extract_san_from_der(der).or_else(|| Some(cn.clone()));
+        // SECURITY: parse the certificate properly via x509-parser rather
+        // than treating the raw DER bytes as text and searching for a
+        // literal "CN=" / "DNS:" substring. DER is a binary ASN.1 encoding
+        // — a naive byte-string search is not bound to the actual Subject
+        // field structure and can be misled by a crafted certificate that
+        // places an unrelated matching substring elsewhere in the DER
+        // (e.g. in an extension or the Issuer field), which is especially
+        // risky here since client CSR subject fields are often
+        // client-controlled even under a trusted CA.
+        let (_, cert) = x509_parser::parse_x509_certificate(&peer_certs[0].0)
+            .map_err(|e| anyhow::anyhow!("failed to parse client certificate: {e}"))?;
+
+        let cn = cert
+            .subject()
+            .iter_common_name()
+            .next()
+            .and_then(|cn| cn.as_str().ok())
+            .map(str::to_string)
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let tenant_id = cert
+            .subject_alternative_name()
+            .ok()
+            .flatten()
+            .and_then(|san| {
+                san.value.general_names.iter().find_map(|name| {
+                    if let x509_parser::extensions::GeneralName::DNSName(dns) = name {
+                        dns.split('.').next().map(str::to_string)
+                    } else {
+                        None
+                    }
+                })
+            })
+            .or_else(|| Some(cn.clone()));
 
         Ok(AuthenticatedUser {
             sub: cn,
@@ -50,34 +81,4 @@ impl MtlsValidator {
             auth_method: super::AuthMethod::Mtls,
         })
     }
-}
-
-fn extract_cn_from_der(der: &[u8]) -> Option<String> {
-    let Ok(pem) = std::str::from_utf8(der) else {
-        return None;
-    };
-    if pem.contains("CN=") {
-        let start = pem.find("CN=")?;
-        let end = pem[start..].find(|c: char| c == ',' || c == '/' || c == '\n')?;
-        Some(pem[start + 3..start + end].trim().to_string())
-    } else {
-        None
-    }
-}
-
-fn extract_san_from_der(der: &[u8]) -> Option<String> {
-    let Ok(pem) = std::str::from_utf8(der) else {
-        return None;
-    };
-    if pem.contains("DNS:") {
-        let start = pem.find("DNS:")?;
-        let rest = &pem[start + 4..];
-        let end = rest.find(|c: char| c == ',' || c == ' ' || c == '\n').unwrap_or(rest.len());
-        let dns = rest[..end].trim();
-        let parts: Vec<&str> = dns.split('.').collect();
-        if !parts.is_empty() {
-            return Some(parts[0].to_string());
-        }
-    }
-    None
 }
