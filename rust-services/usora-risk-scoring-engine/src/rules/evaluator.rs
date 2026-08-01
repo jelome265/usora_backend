@@ -175,8 +175,37 @@ impl RuleEvaluator {
                     tracing::warn!(
                         rule_id = %rule.rule_id(),
                         error = %e,
-                        "Rule evaluation failed"
+                        "Rule evaluation failed — escalating rather than silently dropping"
                     );
+                    // SECURITY/COMPLIANCE: do not silently drop a rule that
+                    // failed to evaluate — that's indistinguishable from a
+                    // rule that ran and found no risk. A rule error (often
+                    // caused by missing/malformed feature data, which is
+                    // itself frequently correlated with a higher-risk
+                    // applicant) is an *unknown*, not a clean result, and
+                    // must not be able to quietly lower the composite score
+                    // relative to what it would have been had the rule run.
+                    // Recorded as a High-risk-level-override with
+                    // triggered=true so it participates in `calculate()`'s
+                    // rule_level escalation and short-circuit logic, and is
+                    // clearly tagged in metadata for audit/debugging.
+                    let mut metadata = HashMap::new();
+                    metadata.insert("evaluation_failed".to_string(), "true".to_string());
+                    metadata.insert("error".to_string(), e.to_string());
+                    results.push(crate::models::RuleResult {
+                        triggered: true,
+                        rule_id: rule.rule_id().to_string(),
+                        rule_name: format!("{} (EVALUATION FAILED)", rule.rule_id()),
+                        priority: rule.priority(),
+                        score_delta: 0.0,
+                        risk_level_override: Some(crate::models::RiskLevel::High),
+                        explanation: format!(
+                            "Rule could not be evaluated and is being treated as \
+                             unresolved, requiring manual review: {e}"
+                        ),
+                        metadata,
+                        execution_time_ms: sw.elapsed_ms(),
+                    });
                 }
             }
         }
