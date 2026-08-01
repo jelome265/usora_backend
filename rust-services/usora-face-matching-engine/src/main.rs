@@ -271,11 +271,18 @@ async fn process_kafka_message(payload: &[u8], engine: &FaceMatchingEngine) -> R
         "identify_face" => {
             let probe_b64 = task["payload"]["probe_image"].as_str().ok_or_else(|| anyhow::anyhow!("Missing probe_image"))?;
             let top_k = task["payload"]["top_k"].as_u64().unwrap_or(10) as usize;
+            // SECURITY: must come from the task itself, never defaulted —
+            // silently falling back to a placeholder tenant here would
+            // reproduce the tenant-isolation bug fixed in identify_face's
+            // signature (see lib.rs / grpc/mod.rs).
+            let tenant_id = task["tenant_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing tenant_id on identify_face task"))?;
 
             let probe_bytes = usora_face_matching_engine::utils::decode_image_base64(probe_b64)?;
             let probe_img = usora_face_matching_engine::utils::load_image_from_bytes(&probe_bytes)?;
 
-            let identify_result = engine.identify_face(&probe_img, top_k).await?;
+            let identify_result = engine.identify_face(&probe_img, top_k, tenant_id).await?;
             serde_json::to_value(&identify_result)?
         }
         "liveness_check" => {

@@ -132,8 +132,9 @@ impl FaceMatchingEngine {
         &self,
         probe: &DynamicImage,
         top_k: usize,
+        tenant_id: &str,
     ) -> Result<Vec<MatchResult>> {
-        let _span = info_span!("identify_face").entered();
+        let _span = info_span!("identify_face", tenant = %tenant_id).entered();
 
         let faces = self.detect_and_extract(probe, true).await?;
         let best_face = faces
@@ -145,8 +146,15 @@ impl FaceMatchingEngine {
             .generate_embedding(probe, &best_face)
             .await?;
 
+        // SECURITY/CORRECTNESS: must search the caller's own tenant index,
+        // not the "__default__" bucket that the tenant-less
+        // search_one_to_many() falls back to. Previously tenant_id from the
+        // request was dropped before reaching this call, meaning 1:N
+        // identification silently searched an index that real enrollments
+        // are never written to — effectively disabling duplicate/fraud
+        // identity detection rather than failing loudly.
         let results = self.faiss_matcher
-            .search_one_to_many(&embedding, top_k)
+            .search_one_to_many_with_tenant(&embedding, top_k, tenant_id)
             .await?;
 
         Ok(results)
