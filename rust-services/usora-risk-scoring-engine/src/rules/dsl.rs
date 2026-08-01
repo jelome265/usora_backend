@@ -130,6 +130,39 @@ impl DslRule {
     pub fn script(&self) -> &str {
         &self.script
     }
+
+    // These accessors were previously missing entirely, despite
+    // rules/evaluator.rs calling rule.rule_id(), rule.priority(), and
+    // rule.enabled() throughout — meaning this crate could not compile
+    // as shipped. Implemented as inherent methods (rather than the
+    // `Rule` trait in rules/mod.rs, which declares an *async* evaluate())
+    // since every existing call site here invokes DslRule::evaluate
+    // synchronously, without `.await`; implementing the trait as well
+    // would require reconciling that signature mismatch, which is a
+    // separate, larger change out of scope for this fix.
+    pub fn rule_id(&self) -> &str {
+        &self.rule_id
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+
+    pub fn priority(&self) -> i32 {
+        self.priority
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn tags(&self) -> &[String] {
+        &self.tags
+    }
 }
 
 fn feature_value_to_dynamic(value: &FeatureValue) -> Dynamic {

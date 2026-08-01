@@ -213,14 +213,25 @@ impl ScoringEngine for PipelineScoringEngine {
                     tracing::error!(
                         applicant_id = %req.applicant_id,
                         error = %e,
-                        "Batch scoring failed for applicant"
+                        "Batch scoring failed for applicant — reporting as Critical/unscored, \
+                         not a fabricated neutral result"
                     );
+                    // SECURITY/COMPLIANCE: do NOT report a scoring failure as
+                    // composite_score=0.5 / RiskLevel::Medium — that is
+                    // indistinguishable from a genuine "proceed with normal
+                    // review" outcome to any caller that only reads
+                    // risk_level (rather than separately checking
+                    // model_version == "error"). Fail closed to Critical so
+                    // an ML/feature-store/rule-evaluation outage can never
+                    // silently look like an acceptable applicant; combined
+                    // with model_version/rule_version == "error" this should
+                    // route to mandatory manual review, not auto-approval.
                     results.push(ScoringResponse {
                         score_id: Uuid::new_v4(),
                         applicant_id: req.applicant_id.clone(),
                         tenant_id: req.tenant_id.clone(),
-                        composite_score: 0.5,
-                        risk_level: RiskLevel::Medium,
+                        composite_score: 1.0,
+                        risk_level: RiskLevel::Critical,
                         ml_score: None,
                         ml_risk_level: None,
                         rule_score: None,
