@@ -147,7 +147,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust-services/${{ matrix.service }}/target/
-          key: ${{ runner.os }}-cargo-${{ matrix.service }}-${{ hashFiles(format('rust-services/{0}/Cargo.lock', matrix.service), 'rust-services/{0}/Cargo.toml', matrix.service) }}
+          key: ${{ runner.os }}-cargo-${{ matrix.service }}-${{ hashFiles(format('rust-services/{0}/Cargo.lock', matrix.service), format('rust-services/{0}/Cargo.toml', matrix.service)) }}
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.service }}-
 
