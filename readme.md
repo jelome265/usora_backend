@@ -38,3 +38,7 @@ Enterprise-grade, multi-tenant Know Your Customer (KYC) platform for identity ve
 1. Start infrastructure: `make run-dev`
 2. Build all services: `make build`
 3. Run tests: `make test`
+
+
+
+### with love, made by USORA. 
