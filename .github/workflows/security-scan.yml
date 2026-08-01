@@ -199,22 +199,22 @@ jobs:
         run: |
           if [ -f semgrep-results.sarif ]; then
             python3 -c "
-import json
-with open('semgrep-results.sarif') as f:
-    data = json.load(f)
-runs = data.get('runs', [])
-total = 0
-for run in runs:
-    results = run.get('results', [])
-    total += len(results)
-    for r in results:
-        rule = r.get('ruleId', 'unknown')
-        level = r.get('level', 'warning')
-        loc = r.get('locations', [{}])[0].get('physicalLocation', {}).get('artifactLocation', {}).get('uri', 'unknown')
-        msg = r.get('message', {}).get('text', '')
-        print(f'  [{level}] {rule}: {msg} ({loc})')
-print(f'Total findings: {total}')
-" 2>/dev/null || echo "No SARIF results to parse"
+          import json
+          with open('semgrep-results.sarif') as f:
+              data = json.load(f)
+          runs = data.get('runs', [])
+          total = 0
+          for run in runs:
+              results = run.get('results', [])
+              total += len(results)
+              for r in results:
+                  rule = r.get('ruleId', 'unknown')
+                  level = r.get('level', 'warning')
+                  loc = r.get('locations', [{}])[0].get('physicalLocation', {}).get('artifactLocation', {}).get('uri', 'unknown')
+                  msg = r.get('message', {}).get('text', '')
+                  print(f'  [{level}] {rule}: {msg} ({loc})')
+          print(f'Total findings: {total}')
+          " 2>/dev/null || echo "No SARIF results to parse"
           else
             echo "No Semgrep results file found"
           fi
