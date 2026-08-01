@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import com.usora.integration.util.EgressUrlGuard;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -37,6 +38,11 @@ public class RestClient {
     @Retry(name = "restClient")
     @TimeLimiter(name = "restClient")
     public CompletableFuture<JsonNode> post(String url, Object body, Map<String, String> headers) {
+        // SECURITY: re-validated on every call (not just when the URL/webhook
+        // config was saved) so a DNS-rebinding attack — where the hostname
+        // resolved to a safe address at config time but an internal address
+        // at request time — is also caught. See EgressUrlGuard for details.
+        EgressUrlGuard.assertSafeDestination(url);
         return webClient.post()
                 .uri(url)
                 .headers(h -> {
@@ -57,6 +63,7 @@ public class RestClient {
     @Retry(name = "restClient")
     @TimeLimiter(name = "restClient")
     public CompletableFuture<JsonNode> get(String url, Map<String, String> headers) {
+        EgressUrlGuard.assertSafeDestination(url);
         return webClient.get()
                 .uri(url)
                 .headers(h -> {
@@ -75,6 +82,7 @@ public class RestClient {
     @Retry(name = "restClient")
     @TimeLimiter(name = "restClient")
     public CompletableFuture<JsonNode> put(String url, Object body, Map<String, String> headers) {
+        EgressUrlGuard.assertSafeDestination(url);
         return webClient.put()
                 .uri(url)
                 .headers(h -> {

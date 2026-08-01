@@ -217,48 +217,70 @@ impl Validator for AuthenticityCheckEngine {
 
         let mut results = Vec::new();
 
-        let (hologram_detected, hologram_conf) = Self::detect_hologram_pattern(&gray);
+        // See note below on uv_fluorescence/ir_absorption: this is a local
+        // pixel-variance heuristic on a standard visible-light capture, not
+        // a genuine optical hologram-detection check (which would require
+        // multi-angle or specialized capture). Capped and labeled the same way.
+        const HOLOGRAM_HEURISTIC_MAX_CONFIDENCE: f32 = 0.4;
+        let (hologram_detected, hologram_conf_raw) = Self::detect_hologram_pattern(&gray);
+        let hologram_conf = hologram_conf_raw.min(HOLOGRAM_HEURISTIC_MAX_CONFIDENCE);
         results.push(ValidationResult {
-            field: "hologram".to_string(),
+            field: "hologram_heuristic".to_string(),
             passed: hologram_detected,
             confidence: hologram_conf,
             details: vec![
                 if hologram_detected {
-                    "Hologram pattern detected".to_string()
+                    "Pixel-variance pattern suggestive of a hologram region (NOT a genuine optical hologram check)".to_string()
                 } else {
-                    "No hologram pattern found".to_string()
+                    "No hologram-like pixel-variance pattern found".to_string()
                 },
-                format!("Confidence: {:.2}", hologram_conf),
+                format!("Confidence: {:.2} (capped — heuristic, not a genuine hologram forensic check)", hologram_conf),
             ],
         });
 
-        let (uv_detected, uv_conf) = Self::detect_uv_fluorescence(&rgb);
+        // NOTE: genuine UV fluorescence and IR absorption anti-forgery
+        // features require a capture actually illuminated with UV/IR light;
+        // they cannot be reliably determined from an ordinary visible-light
+        // (RGB) photo. This pipeline does not currently receive or track
+        // capture-illumination metadata, so these two checks are RGB-pixel
+        // heuristics only — correlated with lighting/sensor conditions, not
+        // a real forensic UV/IR signal. They are named and confidence-capped
+        // accordingly so they cannot be mistaken for a true UV/IR check by
+        // API consumers or reviewers. See
+        // docs/architecture-security-review-2026-07-31.md §3.6 for the full
+        // writeup and the product decision needed to properly gate these on
+        // confirmed UV/IR capture metadata.
+        const HEURISTIC_MAX_CONFIDENCE: f32 = 0.4;
+
+        let (uv_detected, uv_conf_raw) = Self::detect_uv_fluorescence(&rgb);
+        let uv_conf = uv_conf_raw.min(HEURISTIC_MAX_CONFIDENCE);
         results.push(ValidationResult {
-            field: "uv_fluorescence".to_string(),
+            field: "uv_fluorescence_heuristic".to_string(),
             passed: uv_detected,
             confidence: uv_conf,
             details: vec![
                 if uv_detected {
-                    "UV fluorescence detected".to_string()
+                    "Visible-light color heuristic suggestive of UV fluorescence (NOT a true UV-illuminated capture check)".to_string()
                 } else {
-                    "No UV fluorescence found".to_string()
+                    "No UV-fluorescence-like color pattern found (visible-light heuristic only)".to_string()
                 },
-                format!("Confidence: {:.2}", uv_conf),
+                format!("Confidence: {:.2} (capped — heuristic, not a genuine UV forensic check)", uv_conf),
             ],
         });
 
-        let (ir_valid, ir_conf) = Self::detect_ir_absorption(&gray);
+        let (ir_valid, ir_conf_raw) = Self::detect_ir_absorption(&gray);
+        let ir_conf = ir_conf_raw.min(HEURISTIC_MAX_CONFIDENCE);
         results.push(ValidationResult {
-            field: "ir_absorption".to_string(),
+            field: "ir_absorption_heuristic".to_string(),
             passed: ir_valid,
             confidence: ir_conf,
             details: vec![
                 if ir_valid {
-                    "IR absorption pattern valid".to_string()
+                    "Luminance-histogram heuristic within expected range (NOT a true IR-illuminated capture check)".to_string()
                 } else {
-                    "IR absorption pattern abnormal".to_string()
+                    "Luminance-histogram heuristic abnormal (visible-light heuristic only)".to_string()
                 },
-                format!("Confidence: {:.2}", ir_conf),
+                format!("Confidence: {:.2} (capped — heuristic, not a genuine IR forensic check)", ir_conf),
             ],
         });
 

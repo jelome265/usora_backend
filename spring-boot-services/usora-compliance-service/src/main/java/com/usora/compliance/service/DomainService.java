@@ -36,6 +36,9 @@ public class DomainService {
     private static final Logger log = LoggerFactory.getLogger(DomainService.class);
     private static final String COMPLIANCE_TOPIC = "compliance.checked";
 
+    @org.springframework.beans.factory.annotation.Value("${compliance.security.rule-signing-secret}")
+    private String ruleSigningSecret;
+
     private final ComplianceRuleRepository ruleRepository;
     private final EvidenceRecordRepository evidenceRepository;
     private final JurisdictionConfigRepository jurisdictionRepository;
@@ -104,6 +107,12 @@ public class DomainService {
         }
 
         // 2. AML screening via gRPC
+        //
+        // SECURITY/COMPLIANCE: a sanctions/PEP/watchlist hit here MUST be
+        // able to block approval on its own — it cannot be allowed to be
+        // purely informational, and a screening failure/timeout MUST fail
+        // closed (recorded as a violation requiring manual review), never
+        // silently skipped as if screening had passed clean.
         for (var listType : request.watchlistTypes()) {
             try {
                 var amlResult = grpcClient.screenIndividual(
@@ -112,8 +121,36 @@ public class DomainService {
                         listType,
                         request.includeAdverseMedia());
                 amlResults.add(amlResult);
+
+                if (Boolean.TRUE.equals(amlResult.isMatch())) {
+                    var ruleResult = new ComplianceValidationResponse.RuleResult(
+                            "aml-screening:" + listType,
+                            "AML/Watchlist match: " + listType,
+                            severityForAmlRiskLevel(amlResult.riskLevel()),
+                            false,
+                            "Screening match against " + listType
+                                    + (amlResult.matchedName() != null ? " for '" + amlResult.matchedName() + "'" : "")
+                                    + " (risk level: " + amlResult.riskLevel() + ")",
+                            List.of());
+
+                    if ("critical".equals(ruleResult.severity()) || "high".equals(ruleResult.severity())) {
+                        violations.add(ruleResult);
+                    } else {
+                        warnings.add(ruleResult);
+                    }
+                }
             } catch (Exception e) {
-                log.warn("AML screening failed for {}: {}", listType, e.getMessage());
+                log.error("AML screening failed for {}: {} — failing closed", listType, e.getMessage());
+                // Fail closed: a screening call we couldn't complete is a
+                // violation requiring manual review, not a pass-through.
+                violations.add(new ComplianceValidationResponse.RuleResult(
+                        "aml-screening:" + listType,
+                        "AML/Watchlist screening unavailable: " + listType,
+                        "high",
+                        false,
+                        "Screening could not be completed for " + listType
+                                + " — treated as unresolved and requires manual review: " + e.getMessage(),
+                        List.of()));
             }
         }
 
@@ -210,9 +247,14 @@ public class DomainService {
         rule.setActive(true);
         currentVersion.ifPresent(c -> rule.setPreviousVersionId(c.getId()));
 
-        // Sign the rule
+        // Sign the rule.
+        // SECURITY: this MUST be a keyed HMAC, not a bare hash of public
+        // data (rule content + version + tenant ID are all knowable to
+        // anyone) — a bare hash proves nothing about who approved the
+        // change and can be trivially recomputed/forged. The HMAC secret
+        // is held only by this service (sourced from Vault/KMS in prod).
         var contentToSign = request.drlContent() + "::" + newVersion + "::" + tenantId;
-        var signatureHash = HashingUtil.sha256(contentToSign);
+        var signatureHash = HashingUtil.hmacSha256(contentToSign, ruleSigningSecret);
         rule.setSignatureHash(signatureHash);
         rule.setSignedBy("dual_auth");
         rule.setOfficerApprovedBy(extractPrincipal(officerToken));
@@ -364,6 +406,26 @@ public class DomainService {
     }
 
     // Private helpers
+
+    /**
+     * Maps an AML screening result's risk level to the severity taxonomy
+     * used elsewhere in this service ("critical"/"high" -> violation,
+     * anything else -> warning). Defaults to "high" (fail toward stricter
+     * handling) for unrecognized/missing risk levels rather than silently
+     * downgrading an unrecognized value to a warning.
+     */
+    private String severityForAmlRiskLevel(String riskLevel) {
+        if (riskLevel == null) {
+            return "high";
+        }
+        return switch (riskLevel.toLowerCase(Locale.ROOT)) {
+            case "critical" -> "critical";
+            case "high" -> "high";
+            case "medium", "moderate" -> "medium";
+            case "low" -> "low";
+            default -> "high";
+        };
+    }
 
     private ComplianceValidationResponse.RuleResult executeDroolsRule(ComplianceRule rule, Map<String, Object> entityData) {
         try {
