@@ -122,3 +122,127 @@ fn resolve_tenant(req: &Request) -> Option<String> {
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::AuthMethod;
+    use axum::body::Body;
+    use axum::http::Request as HttpRequest;
+
+    fn request_with(
+        header: Option<&str>,
+        user: Option<AuthenticatedUser>,
+        path: &str,
+    ) -> Request {
+        let mut builder = HttpRequest::builder().uri(path);
+        if let Some(h) = header {
+            builder = builder.header("X-Tenant-ID", h);
+        }
+        let mut req = builder.body(Body::empty()).unwrap();
+        if let Some(u) = user {
+            req.extensions_mut().insert(u);
+        }
+        req
+    }
+
+    fn authenticated_user(tenant_id: &str, permissions: Vec<&str>) -> AuthenticatedUser {
+        AuthenticatedUser {
+            sub: "user-1".to_string(),
+            tenant_id: Some(tenant_id.to_string()),
+            roles: vec![],
+            permissions: permissions.into_iter().map(|p| p.to_string()).collect(),
+            auth_method: AuthMethod::Jwt,
+        }
+    }
+
+    /// SECURITY REGRESSION TEST: a client-supplied X-Tenant-ID header must
+    /// never override an authenticated user's own verified tenant claim
+    /// unless that user explicitly holds the cross-tenant override
+    /// permission. This is the exact bypass described in
+    /// docs/architecture-security-review-2026-07-31.md §3.1 — if this test
+    /// starts failing, the tenant-isolation bypass has come back.
+    #[test]
+    fn header_does_not_override_jwt_tenant_without_permission() {
+        let user = authenticated_user("tenant-legit", vec!["some:other:permission"]);
+        let req = request_with(Some("tenant-attacker"), Some(user), "/v1/tenant-attacker/resource");
+
+        let resolved = resolve_tenant(&req);
+
+        assert_eq!(
+            resolved,
+            Some("tenant-legit".to_string()),
+            "the verified JWT tenant claim must win over an attacker-supplied X-Tenant-ID header"
+        );
+    }
+
+    /// A caller with no cross-tenant permission at all (no permissions list)
+    /// must also be pinned to their own tenant, regardless of any header.
+    #[test]
+    fn header_ignored_for_user_with_no_permissions() {
+        let user = authenticated_user("tenant-legit", vec![]);
+        let req = request_with(Some("tenant-attacker"), Some(user), "/v1/anything");
+
+        assert_eq!(resolve_tenant(&req), Some("tenant-legit".to_string()));
+    }
+
+    /// A caller that DOES hold the explicit override permission may use the
+    /// header — this is the one narrow, intentional exception.
+    #[test]
+    fn header_honored_only_with_explicit_override_permission() {
+        let user = authenticated_user("tenant-admin-home", vec![CROSS_TENANT_OVERRIDE_PERMISSION]);
+        let req = request_with(Some("tenant-target"), Some(user), "/v1/anything");
+
+        assert_eq!(resolve_tenant(&req), Some("tenant-target".to_string()));
+    }
+
+    /// An authenticated user with a tenant claim but an empty header value
+    /// still resolves to their own tenant (empty header must not be treated
+    /// as "use the header").
+    #[test]
+    fn empty_header_value_does_not_break_jwt_resolution() {
+        let user = authenticated_user("tenant-legit", vec![CROSS_TENANT_OVERRIDE_PERMISSION]);
+        let req = request_with(Some(""), Some(user), "/v1/anything");
+
+        assert_eq!(resolved_or_panic(&req), "tenant-legit");
+    }
+
+    fn resolved_or_panic(req: &Request) -> String {
+        resolve_tenant(req).expect("expected a resolved tenant")
+    }
+
+    /// No authenticated user at all: falls back to the URL path segment
+    /// (an unauthenticated routing hint only — downstream authorization
+    /// must independently validate it), and must NOT trust the header.
+    #[test]
+    fn unauthenticated_request_uses_path_not_header() {
+        let req = request_with(Some("tenant-attacker"), None, "/v1/tenant-from-path/resource");
+
+        assert_eq!(resolve_tenant(&req), Some("tenant-from-path".to_string()));
+    }
+
+    /// No authenticated user, no matching path shape: resolves to nothing.
+    #[test]
+    fn unauthenticated_request_with_no_path_hint_resolves_none() {
+        let req = request_with(Some("tenant-attacker"), None, "/health");
+
+        assert_eq!(resolve_tenant(&req), None);
+    }
+
+    /// An authenticated user whose token has no tenant claim at all falls
+    /// through to the path-based hint, same as an unauthenticated request —
+    /// it must not pick up the header either.
+    #[test]
+    fn authenticated_user_without_tenant_claim_falls_back_to_path() {
+        let user = AuthenticatedUser {
+            sub: "service-account".to_string(),
+            tenant_id: None,
+            roles: vec![],
+            permissions: vec![],
+            auth_method: AuthMethod::Jwt,
+        };
+        let req = request_with(Some("tenant-attacker"), Some(user), "/v1/tenant-from-path/resource");
+
+        assert_eq!(resolve_tenant(&req), Some("tenant-from-path".to_string()));
+    }
+}

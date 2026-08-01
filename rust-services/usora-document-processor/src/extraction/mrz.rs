@@ -374,3 +374,53 @@ fn perform_mrz_ocr(image: &image::GrayImage) -> anyhow::Result<String> {
 
     Ok(text)
 }
+
+#[cfg(test)]
+mod checksum_tests {
+    use super::*;
+
+    /// Known-good ICAO 9303 worked example (document number "L898902C3",
+    /// check digit "6") — confirms the core weighted checksum algorithm
+    /// itself is still correct after the '<' fix below.
+    #[test]
+    fn valid_check_digit_passes() {
+        assert!(MrzEngine::validate_checksum("L898902C3", '6'));
+    }
+
+    #[test]
+    fn wrong_check_digit_fails() {
+        assert!(!MrzEngine::validate_checksum("L898902C3", '5'));
+    }
+
+    /// SECURITY REGRESSION TEST: a filler character '<' in a check-digit
+    /// position must NOT be treated as an automatic pass. This is the bypass
+    /// described in docs/architecture-security-review-2026-07-31.md §3.5 —
+    /// a forged/corrupted MRZ line with '<' where the check digit belongs
+    /// must fail validation, not succeed by default.
+    #[test]
+    fn filler_character_in_check_digit_position_fails() {
+        assert!(
+            !MrzEngine::validate_checksum("L898902C3", '<'),
+            "'<' must not auto-pass checksum validation"
+        );
+    }
+
+    #[test]
+    fn filler_character_fails_even_for_all_filler_data() {
+        // Degenerate case: an all-filler data field with a filler check
+        // digit must also fail (compute_checksum of all-'<' data is 0,
+        // character_value('<') is Some(0) for DATA characters, but the
+        // check digit position specifically must never accept '<').
+        assert!(!MrzEngine::validate_checksum("<<<<<<<<<", '<'));
+    }
+
+    #[test]
+    fn character_value_digits_and_letters() {
+        assert_eq!(MrzEngine::character_value('0'), Some(0));
+        assert_eq!(MrzEngine::character_value('9'), Some(9));
+        assert_eq!(MrzEngine::character_value('A'), Some(10));
+        assert_eq!(MrzEngine::character_value('Z'), Some(35));
+        assert_eq!(MrzEngine::character_value('<'), Some(0));
+        assert_eq!(MrzEngine::character_value('!'), None);
+    }
+}
