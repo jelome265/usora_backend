@@ -167,7 +167,7 @@ impl IdentityVerificationService for IdentityVerificationServiceImpl {
         let top_k = if req.top_k > 0 { req.top_k as usize } else { 10 };
 
         let result = self.engine
-            .identify_face(&probe_image, top_k)
+            .identify_face(&probe_image, top_k, &req.tenant_id)
             .await
             .map_err(|e| Status::internal(format!("Biometric match failed: {}", e)))?;
 
