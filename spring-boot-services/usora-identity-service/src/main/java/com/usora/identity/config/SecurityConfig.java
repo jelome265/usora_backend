@@ -35,6 +35,9 @@ import org.springframework.security.oauth2.server.authorization.settings.OAuth2T
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
@@ -85,8 +88,18 @@ public class SecurityConfig {
         return http.build();
     }
 
+    @Value("${OAUTH_API_CLIENT_SECRET:}")
+    private String oauthApiClientSecret;
+
     @Bean
-    public RegisteredClientRepository registeredClientRepository() {
+    public PasswordEncoder passwordEncoder() {
+        // Work factor 12 matches the floor used elsewhere in this codebase
+        // (see identity-service HashingUtil) -- keep them consistent.
+        return new BCryptPasswordEncoder(12);
+    }
+
+    @Bean
+    public RegisteredClientRepository registeredClientRepository(PasswordEncoder passwordEncoder) {
         RegisteredClient publicClient = RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId("usora-web")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
@@ -110,9 +123,24 @@ public class SecurityConfig {
                         .build())
                 .build();
 
+        // SECURITY: this secret was previously hardcoded in plaintext in
+        // source control using the "{noop}" prefix, meaning it was compared
+        // with NO hashing at all -- since this repo is public, that secret
+        // (and the admin scope it grants via client_credentials) was
+        // effectively public too. It must now be supplied via the
+        // OAUTH_API_CLIENT_SECRET environment variable (sourced from
+        // Vault/KMS in real deployments) and is hashed with the injected
+        // PasswordEncoder (BCrypt) before being registered. Fails fast at
+        // startup rather than silently falling back to an insecure default.
+        if (oauthApiClientSecret == null || oauthApiClientSecret.isBlank()) {
+            throw new IllegalStateException(
+                    "OAUTH_API_CLIENT_SECRET must be set -- refusing to start with no client secret "
+                            + "configured for the usora-api confidential client (admin/tenant/users scopes).");
+        }
+
         RegisteredClient confidentialClient = RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId("usora-api")
-                .clientSecret("{noop}usora-api-secret")
+                .clientSecret(passwordEncoder.encode(oauthApiClientSecret))
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
                 .scope("admin")

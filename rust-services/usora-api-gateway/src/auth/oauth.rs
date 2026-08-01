@@ -62,9 +62,29 @@ pub fn verify_pkce(verifier: &str, challenge: &str, method: &str) -> bool {
             hasher.update(verifier.as_bytes());
             let result = hasher.finalize();
             let computed = general_purpose::URL_SAFE_NO_PAD.encode(result);
-            computed == challenge
+            constant_time_eq(computed.as_bytes(), challenge.as_bytes())
         }
-        "plain" => verifier == challenge,
+        // SECURITY: the "plain" PKCE method (RFC 7636) sends the verifier
+        // itself as the challenge, so it provides no protection at all
+        // against authorization-code interception -- the entire point of
+        // PKCE is defeated. OAuth 2.1 explicitly disallows "plain" for this
+        // reason; this gateway only accepts S256. Not currently called
+        // anywhere in the codebase, but hardened now so it's safe by
+        // default whenever it is wired into a real authorization flow.
         _ => false,
     }
+}
+
+/// Constant-time byte comparison to avoid a timing side-channel on the
+/// PKCE challenge check (and any other future caller). Short-circuits only
+/// on length mismatch, which is not itself sensitive information here.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff: u8 = 0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
