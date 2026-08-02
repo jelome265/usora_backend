@@ -1,20 +1,20 @@
-use rustls::{Certificate, ServerConfig};
+use rustls::pki_types::CertificateDer;
+use rustls::server::danger::ClientCertVerifier;
+use rustls::ServerConfig;
 use std::sync::Arc;
 
 use super::AuthenticatedUser;
 
 pub struct MtlsValidator {
     ca_cert_path: String,
-    ca_certs: Vec<Certificate>,
+    ca_certs: Vec<CertificateDer<'static>>,
 }
 
 impl MtlsValidator {
     pub fn new(ca_cert_path: &str) -> anyhow::Result<Self> {
-        let ca_certs = rustls_pemfile::certs(&mut std::fs::File::open(ca_cert_path)?)
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .map(Certificate)
-            .collect();
+        let mut reader = std::io::BufReader::new(std::fs::File::open(ca_cert_path)?);
+        let ca_certs = rustls_pemfile::certs(&mut reader)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             ca_cert_path: ca_cert_path.to_string(),
@@ -22,17 +22,17 @@ impl MtlsValidator {
         })
     }
 
-    pub fn client_verifier(&self) -> anyhow::Result<Arc<rustls::server::ClientCertVerified>> {
+    pub fn client_verifier(&self) -> anyhow::Result<Arc<dyn ClientCertVerifier>> {
         let mut root_store = rustls::RootCertStore::empty();
         for cert in &self.ca_certs {
-            root_store.add(cert)?;
+            root_store.add(cert.clone())?;
         }
 
         Ok(rustls::server::WebPkiClientVerifier::builder(Arc::new(root_store)).build()?)
     }
 
     pub fn extract_client_certificate(
-        peer_certs: &[Certificate],
+        peer_certs: &[CertificateDer<'static>],
     ) -> anyhow::Result<AuthenticatedUser> {
         if peer_certs.is_empty() {
             return Err(anyhow::anyhow!("no client certificate provided"));
@@ -47,7 +47,7 @@ impl MtlsValidator {
         // (e.g. in an extension or the Issuer field), which is especially
         // risky here since client CSR subject fields are often
         // client-controlled even under a trusted CA.
-        let (_, cert) = x509_parser::parse_x509_certificate(&peer_certs[0].0)
+        let (_, cert) = x509_parser::parse_x509_certificate(peer_certs[0].as_ref())
             .map_err(|e| anyhow::anyhow!("failed to parse client certificate: {e}"))?;
 
         let cn = cert

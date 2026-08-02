@@ -4,7 +4,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
-use prometheus::{Counter, Histogram, TextEncoder, register_counter, register_histogram};
+use prometheus::{Counter, Encoder, Histogram, TextEncoder, register_counter, register_histogram};
 use serde_json::json;
 use std::sync::Arc;
 

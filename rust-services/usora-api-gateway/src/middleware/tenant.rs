@@ -54,7 +54,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: Request) -> Self::Future {
+    fn call(&mut self, mut req: Request) -> Self::Future {
         let tenant_id = resolve_tenant(&req);
 
         if let Some(tid) = tenant_id {

@@ -29,7 +29,7 @@ pub fn create_router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .layer(AuthLayer::new())
         .layer(RateLimitLayer::new(rate_cfg.default_rps, rate_cfg.burst_size, rate_cfg.window_ms))
         .layer(TraceLayer::new_for_http())
-        .layer(NormalizePathLayer::normalize_path_trailing_slash())
+        .layer(NormalizePathLayer::trim_trailing_slash())
         .layer(RequestBodyLimitLayer::new(50 * 1024 * 1024))
         .layer(
             SetResponseHeaderLayer::overriding(

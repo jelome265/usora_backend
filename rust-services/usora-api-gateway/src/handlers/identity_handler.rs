@@ -189,7 +189,7 @@ pub async fn start_kyc(
 ) -> Result<axum::response::Response, (StatusCode, Json<ApiResponse<()>>)> {
     let request_id = utils::uuid_v7();
 
-    let req = proto::identity::StartKYCRequest {
+    let req = proto::identity::StartKycRequest {
         tenant_id: body.tenant_id,
         user_reference: body.user_reference,
         workflow_id: String::new(),

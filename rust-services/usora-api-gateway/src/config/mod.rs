@@ -181,7 +181,7 @@ impl Config {
         Ok(cfg)
     }
 
-    pub fn tls_min_version(&self) -> rustls::SupportedProtocolVersion {
+    pub fn tls_min_version(&self) -> &'static rustls::SupportedProtocolVersion {
         match self.tls.min_version.to_lowercase().as_str() {
             "tlsv1.2" => &rustls::version::TLS12,
             "tlsv1.3" => &rustls::version::TLS13,
@@ -190,13 +190,14 @@ impl Config {
     }
 
     pub fn load_tls_config(&self) -> anyhow::Result<rustls::ServerConfig> {
-        let certs = rustls_pemfile::certs(&mut std::fs::File::open(&self.tls.cert_path)?)
+        let mut cert_reader = std::io::BufReader::new(std::fs::File::open(&self.tls.cert_path)?);
+        let certs = rustls_pemfile::certs(&mut cert_reader)
             .collect::<Result<Vec<_>, _>>()?;
-        let key = rustls_pemfile::private_key(&mut std::fs::File::open(&self.tls.key_path)?)?
+        let mut key_reader = std::io::BufReader::new(std::fs::File::open(&self.tls.key_path)?);
+        let key = rustls_pemfile::private_key(&mut key_reader)?
             .ok_or_else(|| anyhow::anyhow!("no private key found"))?;
 
-        let mut config = rustls::ServerConfig::builder()
-            .with_protocol_versions(&[self.tls_min_version()])?
+        let mut config = rustls::ServerConfig::builder_with_protocol_versions(&[self.tls_min_version()])
             .with_no_client_auth()
             .with_single_cert(certs, key)?;
 

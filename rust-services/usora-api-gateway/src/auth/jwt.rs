@@ -76,19 +76,11 @@ impl JwtValidator {
             }
         }
 
-        let header = decode_header(token).map_err(|e| {
-            jwt::Error::from(jsonwebtoken::errors::Error::from(
-                std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
-            ))
-        })?;
+        let header = decode_header(token)?;
 
         let kid = header.kid.clone().unwrap_or_default();
         let jwks = self.jwks.load();
-        let key = jwks.get(&kid).ok_or_else(|| {
-            jwt::Error::from(jsonwebtoken::errors::Error::from(
-                std::io::Error::new(std::io::ErrorKind::NotFound, "key not found in JWKS"),
-            ))
-        })?;
+        let key = jwks.get(&kid).ok_or(jwt::Error::MissingKey)?;
 
         let token_data = decode::<JwtClaims>(token, key, &self.validation)?;
         let claims = token_data.claims;

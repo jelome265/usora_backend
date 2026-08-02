@@ -11,31 +11,24 @@ pub mod utils;
 pub mod proto {
     pub mod gateway {
         tonic::include_proto!("usora.gateway.v1");
-        pub use usora::gateway::v1::*;
     }
     pub mod identity {
         tonic::include_proto!("usora.identity.v1");
-        pub use usora::identity::v1::*;
     }
     pub mod document {
         tonic::include_proto!("usora.document.v1");
-        pub use usora::document::v1::*;
     }
     pub mod tenant {
         tonic::include_proto!("usora.tenant.v1");
-        pub use usora::tenant::v1::*;
     }
     pub mod audit {
         tonic::include_proto!("usora.audit.v1");
-        pub use usora::audit::v1::*;
     }
     pub mod compliance {
         tonic::include_proto!("usora.compliance.v1");
-        pub use usora::compliance::v1::*;
     }
     pub mod notification {
         tonic::include_proto!("usora.notification.v1");
-        pub use usora::notification::v1::*;
     }
 }
 

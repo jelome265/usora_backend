@@ -4,26 +4,36 @@ use std::task::{Context, Poll};
 
 use axum::extract::Request;
 use axum::response::{IntoResponse, Response};
-use http::StatusCode;
+use axum::http::StatusCode;
 use tower::{Layer, Service};
 
 use crate::auth::jwt::JwtValidator;
-use crate::auth::AuthenticatedUser;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct AuthLayer {
     bypass_paths: Vec<String>,
+    validator: JwtValidator,
 }
 
 impl AuthLayer {
     pub fn new() -> Self {
         Self {
             bypass_paths: vec!["/health".into(), "/metrics".into()],
+            validator: JwtValidator::new(None, None),
         }
     }
 
     pub fn with_bypass_paths(paths: Vec<String>) -> Self {
-        Self { bypass_paths: paths }
+        Self {
+            bypass_paths: paths,
+            validator: JwtValidator::new(None, None),
+        }
+    }
+}
+
+impl Default for AuthLayer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -34,6 +44,7 @@ impl<S> Layer<S> for AuthLayer {
         AuthMiddleware {
             inner,
             bypass_paths: self.bypass_paths.clone(),
+            validator: self.validator.clone(),
         }
     }
 }
@@ -42,11 +53,12 @@ impl<S> Layer<S> for AuthLayer {
 pub struct AuthMiddleware<S> {
     inner: S,
     bypass_paths: Vec<String>,
+    validator: JwtValidator,
 }
 
 impl<S> Service<Request> for AuthMiddleware<S>
 where
-    S: Service<Request, Response = Response> + Send + 'static,
+    S: Service<Request, Response = Response> + Clone + Send + 'static,
     S::Future: Send + 'static,
 {
     type Response = Response;
@@ -61,12 +73,21 @@ where
         let path = req.uri().path().to_string();
         let bypass = self.bypass_paths.iter().any(|p| path == *p || path.starts_with(p));
 
+        // Clone the inner service (cheap -- tower services are designed for
+        // this) so `self.inner` isn't consumed before we know whether we're
+        // even going to call it, and so the same `req` value can be fully
+        // validated and mutated (auth/tenant extensions attached) before the
+        // single call to inner.call() -- the previous version called
+        // self.inner.call(req) unconditionally before the auth check even
+        // ran, then tried to reuse the already-moved `req` afterward, and
+        // the inner service never actually saw the auth-derived extensions.
+        let mut inner = self.inner.clone();
+
         if bypass {
-            let fut = self.inner.call(req);
-            return Box::pin(async move { fut.await });
+            return Box::pin(async move { inner.call(req).await });
         }
 
-        let inner = self.inner.call(req);
+        let validator = self.validator.clone();
 
         Box::pin(async move {
             let (mut parts, body) = req.into_parts();
@@ -78,14 +99,14 @@ where
                 .map(|s| s.to_string());
 
             let token = match auth_header {
-                Some(ref v) if v.starts_with("Bearer ") => &v[7..],
+                Some(ref v) if v.starts_with("Bearer ") => v[7..].to_string(),
                 _ => {
                     let resp = (StatusCode::UNAUTHORIZED, "Missing or invalid Authorization header").into_response();
                     return Ok(resp);
                 }
             };
 
-            match JwtValidator::validate(token) {
+            match validator.validate_token(&token).await {
                 Ok(claims) => {
                     let user = JwtValidator::extract_claims(&claims);
                     let tid = claims.tid.clone().unwrap_or_default();
@@ -96,7 +117,7 @@ where
                     }
 
                     let req = Request::from_parts(parts, body);
-                    inner.await
+                    inner.call(req).await
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "JWT validation failed");
