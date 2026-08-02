@@ -138,7 +138,7 @@ jobs:
       - name: Install protoc
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler libprotobuf-dev libcurl4-openssl-dev libsasl2-dev libleptonica-dev libtesseract-dev clang libclang-dev llvm-dev pkg-config libopencv-dev
+          sudo apt-get install -y protobuf-compiler libprotobuf-dev libcurl4-openssl-dev libsasl2-dev libleptonica-dev libtesseract-dev clang libclang-dev llvm-dev pkg-config libopencv-dev cmake
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4
@@ -724,7 +724,7 @@ jobs:
       - name: Install protoc
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler libprotobuf-dev libcurl4-openssl-dev libsasl2-dev libleptonica-dev libtesseract-dev clang libclang-dev llvm-dev pkg-config libopencv-dev
+          sudo apt-get install -y protobuf-compiler libprotobuf-dev libcurl4-openssl-dev libsasl2-dev libleptonica-dev libtesseract-dev clang libclang-dev llvm-dev pkg-config libopencv-dev cmake
 
       - name: Run Rust Integration Tests against Staging
         env:
