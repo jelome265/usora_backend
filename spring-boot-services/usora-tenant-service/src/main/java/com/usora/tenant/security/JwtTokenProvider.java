@@ -1,8 +1,8 @@
 package com.usora.tenant.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
-import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.UnsupportedJwtException;
@@ -33,6 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class JwtTokenProvider {
 
     private static final Logger log = LoggerFactory.getLogger(JwtTokenProvider.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final Map<String, PublicKey> jwksCache = new ConcurrentHashMap<>();
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -89,13 +90,31 @@ public class JwtTokenProvider {
     }
 
     private Claims parseClaims(String token) {
-        // In production, resolve signing key from JWKS endpoint
-        String payload = token.split("\\.")[1];
-        byte[] decoded = Base64.getUrlDecoder().decode(payload);
+        String kid = extractKidFromHeader(token);
+        PublicKey publicKey = resolvePublicKey(kid);
         return Jwts.parser()
+                .verifyWith(publicKey)
                 .build()
-                .parseClaimsJwt(token)
+                .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    private String extractKidFromHeader(String token) {
+        String[] parts = token.split("\\.");
+        if (parts.length < 2) {
+            throw new MalformedJwtException("Token does not contain a valid header/payload structure");
+        }
+        try {
+            byte[] headerBytes = Base64.getUrlDecoder().decode(parts[0]);
+            Map<String, Object> header = OBJECT_MAPPER.readValue(headerBytes, Map.class);
+            Object kid = header.get("kid");
+            if (kid == null) {
+                throw new MalformedJwtException("Token header does not contain a 'kid' claim");
+            }
+            return kid.toString();
+        } catch (java.io.IOException e) {
+            throw new MalformedJwtException("Token header is not valid JSON", e);
+        }
     }
 
     private PublicKey resolvePublicKey(String kid) {
@@ -109,15 +128,30 @@ public class JwtTokenProvider {
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            // Parse JWKS response and extract key
-            byte[] keyBytes = Base64.getDecoder().decode(
-                    response.body().replaceAll(".*\"x5c\":\\[\"([^\"]+)\".*", "$1")
-            );
+
+            Map<String, Object> jwks = OBJECT_MAPPER.readValue(response.body(), Map.class);
+            List<Map<String, Object>> keys = (List<Map<String, Object>>) jwks.get("keys");
+            if (keys == null) {
+                throw new IllegalStateException("JWKS response did not contain a 'keys' array");
+            }
+
+            Map<String, Object> matchingKey = keys.stream()
+                    .filter(k -> kid.equals(k.get("kid")))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("No JWKS key found matching kid: " + kid));
+
+            @SuppressWarnings("unchecked")
+            List<String> x5c = (List<String>) matchingKey.get("x5c");
+            if (x5c == null || x5c.isEmpty()) {
+                throw new IllegalStateException("JWKS key for kid " + kid + " has no x5c certificate");
+            }
+
+            byte[] keyBytes = Base64.getDecoder().decode(x5c.get(0));
             X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
             KeyFactory kf = KeyFactory.getInstance("RSA");
             return kf.generatePublic(spec);
         } catch (Exception e) {
-            log.error("Failed to fetch JWKS key: {}", e.getMessage());
+            log.error("Failed to fetch JWKS key for kid {}: {}", kid, e.getMessage());
             throw new RuntimeException("Failed to resolve JWT signing key", e);
         }
     }

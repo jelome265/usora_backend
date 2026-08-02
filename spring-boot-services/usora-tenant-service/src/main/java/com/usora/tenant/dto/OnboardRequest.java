@@ -38,24 +38,3 @@ public class OnboardRequest {
 
     private Map<String, Object> features;
 }
-
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class ConfigUpdateRequest {
-    private Map<String, Object> config;
-    private Integer maxUsers;
-    private Long storageQuotaBytes;
-    private String plan;
-}
-
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class SuspendRequest {
-    @NotBlank(message = "Reason is required")
-    @Size(max = 500)
-    private String reason;
-}

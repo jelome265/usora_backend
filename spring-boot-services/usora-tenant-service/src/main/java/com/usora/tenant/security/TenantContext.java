@@ -10,18 +10,49 @@ import java.util.UUID;
 @Builder
 public class TenantContext {
 
-    private static final ScopedValue<TenantContext> CONTEXT_HOLDER = ScopedValue.newInstance();
+    private static final ThreadLocal<TenantContext> CONTEXT_HOLDER = new ThreadLocal<>();
 
     private String userId;
     private UUID currentTenantId;
     private List<String> roles;
 
+    /** Binds context for the duration of action, then always clears it (even on exception). */
     public static void runWith(TenantContext context, Runnable action) {
-        ScopedValue.where(CONTEXT_HOLDER, context).run(action);
+        TenantContext previous = CONTEXT_HOLDER.get();
+        CONTEXT_HOLDER.set(context);
+        try {
+            action.run();
+        } finally {
+            if (previous != null) {
+                CONTEXT_HOLDER.set(previous);
+            } else {
+                CONTEXT_HOLDER.remove();
+            }
+        }
     }
 
     public static <T> T callWith(TenantContext context, java.util.concurrent.Callable<T> action) throws Exception {
-        return ScopedValue.where(CONTEXT_HOLDER, context).call(action);
+        TenantContext previous = CONTEXT_HOLDER.get();
+        CONTEXT_HOLDER.set(context);
+        try {
+            return action.call();
+        } finally {
+            if (previous != null) {
+                CONTEXT_HOLDER.set(previous);
+            } else {
+                CONTEXT_HOLDER.remove();
+            }
+        }
+    }
+
+    /** Sets context for the current thread directly (used by request filters). Caller must clear it when done. */
+    public static void set(TenantContext context) {
+        CONTEXT_HOLDER.set(context);
+    }
+
+    /** Clears any context bound to the current thread. Must be called at the end of request processing to avoid leaking context across pooled threads. */
+    public static void clear() {
+        CONTEXT_HOLDER.remove();
     }
 
     public static TenantContext get() {
@@ -29,7 +60,7 @@ public class TenantContext {
     }
 
     public static boolean isBound() {
-        return CONTEXT_HOLDER.isBound();
+        return CONTEXT_HOLDER.get() != null;
     }
 
     public static String getCurrentUserId() {

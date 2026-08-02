@@ -72,9 +72,12 @@ public class SecurityConfig implements WebMvcConfigurer {
         return source;
     }
 
+    @org.springframework.beans.factory.annotation.Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}")
+    private String jwkSetUri;
+
     @Bean
     public JwtDecoder jwtDecoder() {
-        return NimbusJwtDecoder.withJwkSetUri("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}").build();
+        return NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
     }
 
     private static class JwtAuthenticationFilter extends org.springframework.web.filter.OncePerRequestFilter {

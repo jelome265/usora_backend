@@ -6,7 +6,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 
 @Data
@@ -29,30 +28,4 @@ public class TenantResponse {
     private String provisioningStatus;
     private Instant createdAt;
     private Instant updatedAt;
-}
-
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class TenantListResponse {
-    private List<TenantResponse> items;
-    private int page;
-    private int size;
-    private long totalElements;
-    private int totalPages;
-    private boolean hasNext;
-    private boolean hasPrevious;
-}
-
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class ErrorResponse {
-    private int status;
-    private String code;
-    private String message;
-    private String details;
-    private Instant timestamp;
 }
