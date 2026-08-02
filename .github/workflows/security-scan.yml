@@ -133,7 +133,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.88.0
+          toolchain: 1.97.1
 
       - name: Install Cargo Audit
         run: cargo install cargo-audit --locked
@@ -297,7 +297,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.88.0
+          toolchain: 1.97.1
 
       - name: Cargo License Check
         run: |

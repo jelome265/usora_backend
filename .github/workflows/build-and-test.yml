@@ -62,7 +62,7 @@ jobs:
           # chacha20) require edition2024, which fails at dependency
           # resolution time -- before compilation even starts -- on any
           # older toolchain. Confirmed locally against crates.io.
-          toolchain: 1.88.0
+          toolchain: 1.97.1
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4

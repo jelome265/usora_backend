@@ -48,7 +48,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.88.0
+          toolchain: 1.97.1
           components: rustfmt, clippy
 
       - name: Cache Rust dependencies
@@ -132,7 +132,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.88.0
+          toolchain: 1.97.1
           components: clippy
 
       - name: Install protoc
@@ -280,7 +280,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.88.0
+          toolchain: 1.97.1
 
       - name: Cargo Audit
         run: |
@@ -719,7 +719,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.88.0
+          toolchain: 1.97.1
 
       - name: Install protoc
         run: |
