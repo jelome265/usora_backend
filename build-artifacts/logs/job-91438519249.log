@@ -1,0 +1,16 @@
+2026-08-02T01:01:51.1812950Z [INFO] ------------------------------------------------------------------------
+2026-08-02T01:01:51.1813806Z [INFO] Total time:  16.582 s
+2026-08-02T01:01:51.1814261Z [INFO] Finished at: 2026-08-02T01:01:51Z
+2026-08-02T01:01:51.1814894Z [INFO] ------------------------------------------------------------------------
+2026-08-02T01:01:51.1822702Z [ERROR] Failed to execute goal on project usora-tenant-service: Could not resolve dependencies for project com.usora:usora-tenant-service:jar:1.0.0-SNAPSHOT
+2026-08-02T01:01:51.1825806Z [ERROR] dependency: io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter:jar:1.62.0-alpha (compile)
+2026-08-02T01:01:51.1828127Z [ERROR] 	Could not find artifact io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter:jar:1.62.0-alpha in central (https://repo.maven.apache.org/maven2)
+2026-08-02T01:01:51.1829502Z [ERROR] -> [Help 1]
+2026-08-02T01:01:51.1829853Z [ERROR]
+2026-08-02T01:01:51.1830428Z [ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+2026-08-02T01:01:51.1831336Z [ERROR] Re-run Maven using the -X switch to enable full debug logging.
+2026-08-02T01:01:51.1831971Z [ERROR]
+2026-08-02T01:01:51.1832713Z [ERROR] For more information about the errors and possible solutions, please read the following articles:
+2026-08-02T01:01:51.1834210Z [ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/DependencyResolutionException
+2026-08-02T01:01:51.2080607Z ##[error]Process completed with exit code 1.
+2026-08-02T01:01:51.2234757Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-de
