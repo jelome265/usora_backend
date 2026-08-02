@@ -34,10 +34,10 @@ message DocumentAnalysisResponse {
   string document_id = 1;
   string status = 2;
   ExtractedData extracted_data = 3;
-  ForgeryResult forgery_result = 4;
-  MetadataResult metadata_result = 5;
-  CrossReferenceResult cross_reference_result = 6;
-  SecurityFeaturesResult security_features_result = 7;
+  ForgeryDetectionResponse forgery_result = 4;
+  MetadataExtractionResponse metadata_result = 5;
+  CrossReferenceResponse cross_reference_result = 6;
+  SecurityFeaturesResponse security_features_result = 7;
   double overall_authenticity_score = 8;
   repeated string warnings = 9;
   double processing_time_ms = 10;

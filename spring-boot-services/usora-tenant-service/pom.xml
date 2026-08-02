@@ -23,6 +23,7 @@
         <grpc-starter.version>3.1.0.RELEASE</grpc-starter.version>
         <resilience4j.version>2.3.0</resilience4j.version>
         <opentelemetry.version>1.62.0</opentelemetry.version>
+        <opentelemetry-instrumentation.version>2.29.0</opentelemetry-instrumentation.version>
         <jackson.version>2.18.9</jackson.version>
     </properties>
 
@@ -105,7 +106,7 @@
         <dependency>
             <groupId>io.opentelemetry.instrumentation</groupId>
             <artifactId>opentelemetry-spring-boot-starter</artifactId>
-            <version>${opentelemetry.version}-alpha</version>
+            <version>${opentelemetry-instrumentation.version}</version>
         </dependency>
 
         <dependency>
