@@ -102,7 +102,7 @@ where
                 redis_rate_limit_check(redis_conn, &key, default_rps, burst_size).await
             } else {
                 let mut buckets = buckets.lock().await;
-                let bucket = buckets.get_or_insert(bucket_key.clone(), || {
+                let bucket = buckets.get_or_insert_mut(bucket_key.clone(), || {
                     TokenBucket::new(default_rps, burst_size, window_ms)
                 });
                 bucket.consume(1)

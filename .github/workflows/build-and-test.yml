@@ -52,6 +52,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler libprotobuf-dev libcurl4-openssl-dev libsasl2-dev libleptonica-dev libtesseract-dev clang libclang-dev llvm-dev pkg-config libopencv-dev cmake
+          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> "$GITHUB_ENV"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable

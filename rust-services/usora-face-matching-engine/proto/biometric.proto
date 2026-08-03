@@ -79,7 +79,7 @@ message FaceVerificationResponse {
   FaceDetectionResult target_detection = 6;
   QualityAssessment source_quality = 7;
   QualityAssessment target_quality = 8;
-  LivenessAssessment liveness = 9;
+  LivenessDetails liveness = 9;
   int64 processing_time_ms = 10;
   repeated string errors = 11;
 }

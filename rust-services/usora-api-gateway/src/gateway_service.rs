@@ -38,11 +38,13 @@ impl gateway::gateway_service_server::GatewayService for GatewayServiceImpl {
             .map_err(|e| Status::internal(format!("tenant resolution failed: {e}")))
             .map(|resp| {
                 let t = resp.into_inner().tenant.unwrap_or_default();
+                let schema_name = format!("tenant_{}", t.tenant_id);
+                let active = t.status() == crate::proto::tenant::TenantStatus::Active;
                 gateway::TenantResolution {
                     tenant_id: t.tenant_id,
                     name: t.name,
-                    schema_name: format!("tenant_{}", t.tenant_id),
-                    active: t.status() == crate::proto::tenant::TenantStatus::Active,
+                    schema_name,
+                    active,
                     settings: t.settings,
                     features: t.features,
                     max_rps: 100,
@@ -109,7 +111,7 @@ impl gateway::gateway_service_server::GatewayService for GatewayServiceImpl {
                 tenant_id: claims.tid.unwrap_or_default(),
                 roles: claims.roles,
                 permissions: claims.permissions,
-                expires_at: claims.exp,
+                expires_at: claims.exp as i64,
                 token_type: "Bearer".to_string(),
             })),
             Err(_) => Ok(Response::new(gateway::TokenValidationResponse {

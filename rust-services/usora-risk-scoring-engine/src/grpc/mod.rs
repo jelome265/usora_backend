@@ -9,7 +9,10 @@ use std::sync::Arc;
 use tonic::{async_trait, Request, Response, Status};
 use uuid::Uuid;
 
-include!("risk_scoring.rs");
+pub mod risk_scoring {
+    include!("risk_scoring.rs");
+}
+use risk_scoring::*;
 
 pub struct RiskScoringServiceImpl {
     orchestrator: Arc<ScoringOrchestrator>,

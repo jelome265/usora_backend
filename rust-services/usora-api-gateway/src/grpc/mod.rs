@@ -7,7 +7,7 @@ use tonic::transport::Channel;
 #[derive(Clone)]
 pub struct GrpcClients {
     pub identity: proto::identity::identity_service_client::IdentityServiceClient<Channel>,
-    pub document: proto::document::document_service_client::DocumentServiceClient<Channel>,
+    pub document: proto::document::document_analysis_service_client::DocumentAnalysisServiceClient<Channel>,
     pub tenant: proto::tenant::tenant_service_client::TenantServiceClient<Channel>,
     pub audit: proto::audit::audit_service_client::AuditServiceClient<Channel>,
     pub compliance: proto::compliance::compliance_service_client::ComplianceServiceClient<Channel>,
@@ -29,7 +29,7 @@ impl GrpcClients {
             .map_err(|e| anyhow::anyhow!("failed to connect to compute: {e}"))?;
 
         let identity = proto::identity::identity_service_client::IdentityServiceClient::new(orch_channel.clone());
-        let document = proto::document::document_service_client::DocumentServiceClient::new(comp_channel.clone());
+        let document = proto::document::document_analysis_service_client::DocumentAnalysisServiceClient::new(comp_channel.clone());
         let tenant = proto::tenant::tenant_service_client::TenantServiceClient::new(orch_channel.clone());
         let audit = proto::audit::audit_service_client::AuditServiceClient::new(orch_channel.clone());
         let compliance = proto::compliance::compliance_service_client::ComplianceServiceClient::new(comp_channel.clone());
