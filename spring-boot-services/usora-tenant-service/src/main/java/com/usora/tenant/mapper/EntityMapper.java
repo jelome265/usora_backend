@@ -35,7 +35,7 @@ public interface EntityMapper {
     @Mapping(target = "stripeCustomerId", ignore = true)
     @Mapping(target = "provisioningStatus", constant = "PENDING")
     @Mapping(target = "maxUsers", constant = "100")
-    @Mapping(target = "storageQuotaBytes", constant = "107374182400")
+    @Mapping(target = "storageQuotaBytes", constant = "107374182400L")
     TenantEntity toEntity(OnboardRequest request);
 
     @Named("uuidToString")
