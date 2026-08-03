@@ -57,8 +57,23 @@ impl AppState {
         let redis = if cfg.redis.url.is_empty() {
             None
         } else {
-            let client = redis::Client::open(cfg.redis.url.as_str())?;
-            Some(ConnectionManager::new(client).await?)
+            match redis::Client::open(cfg.redis.url.as_str()) {
+                Ok(client) => match ConnectionManager::new(client).await {
+                    Ok(conn) => Some(conn),
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "failed to connect to Redis at startup -- falling back to \
+                             in-memory rate limiting rather than refusing to start"
+                        );
+                        None
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!(error = %e, "invalid Redis URL -- falling back to in-memory rate limiting");
+                    None
+                }
+            }
         };
 
         let kafka = if cfg.kafka.brokers.is_empty() {
