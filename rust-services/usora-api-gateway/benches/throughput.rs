@@ -27,8 +27,40 @@ fn bench_token_bucket(c: &mut Criterion) {
 }
 
 fn bench_jwt_validation(c: &mut Criterion) {
-    use jsonwebtoken::{encode, Header, EncodingKey};
+    use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Serialize, Deserialize)]
+    struct BenchClaims {
+        sub: String,
+        exp: usize,
     }
+
+    let key = b"benchmark_hmac_key_not_for_production_use_only";
+    let encoding_key = EncodingKey::from_secret(key);
+    let decoding_key = DecodingKey::from_secret(key);
+    let header = Header::new(Algorithm::HS256);
+    let claims = BenchClaims {
+        sub: "bench-user".to_string(),
+        exp: (chrono::Utc::now().timestamp() + 3600) as usize,
+    };
+    let token = encode(&header, &claims, &encoding_key).unwrap();
+
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_exp = true;
+
+    c.bench_function("jwt_encode", |b| {
+        b.iter(|| black_box(encode(&header, &claims, &encoding_key).unwrap()));
+    });
+
+    c.bench_function("jwt_decode", |b| {
+        b.iter(|| {
+            black_box(
+                decode::<BenchClaims>(&token, &decoding_key, &validation).unwrap(),
+            )
+        });
+    });
+}
 
 fn bench_uuid_v7(c: &mut Criterion) {
     c.bench_function("uuid_v7_generation", |b| {
@@ -71,7 +103,7 @@ criterion_group! {
         .measurement_time(Duration::from_secs(10))
         .warm_up_time(Duration::from_secs(3))
         .sample_size(100);
-    targets = bench_token_bucket, bench_uuid_v7, bench_hmac_sign, bench_hmac_verify
+    targets = bench_token_bucket, bench_uuid_v7, bench_hmac_sign, bench_hmac_verify, bench_jwt_validation
 }
 
 criterion_main!(throughput);

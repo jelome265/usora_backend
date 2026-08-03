@@ -1,12 +1,10 @@
 use rustls::pki_types::CertificateDer;
 use rustls::server::danger::ClientCertVerifier;
-use rustls::ServerConfig;
 use std::sync::Arc;
 
 use super::AuthenticatedUser;
 
 pub struct MtlsValidator {
-    ca_cert_path: String,
     ca_certs: Vec<CertificateDer<'static>>,
 }
 
@@ -16,10 +14,7 @@ impl MtlsValidator {
         let ca_certs = rustls_pemfile::certs(&mut reader)
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Self {
-            ca_cert_path: ca_cert_path.to_string(),
-            ca_certs,
-        })
+        Ok(Self { ca_certs })
     }
 
     pub fn client_verifier(&self) -> anyhow::Result<Arc<dyn ClientCertVerifier>> {

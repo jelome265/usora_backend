@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use chrono::Utc;
-use tonic::{async_trait, Request, Response, Status};
+use tonic::{Request, Response, Status};
 use tracing::instrument;
 use crate::AppState;
 use crate::proto::gateway;
@@ -152,7 +152,10 @@ mod redis_ratelimit {
     pub async fn check(
         conn: &ConnectionManager,
         key: &str,
-        max_rps: u64,
+        // TODO(rate-limiting owner): see the identical note on
+        // redis_rate_limit_check in middleware/rate_limit.rs -- max_rps
+        // is unused here for the same reason and needs the same fix.
+        _max_rps: u64,
         burst: u64,
     ) -> redis::RedisResult<RateLimitResult> {
         let mut conn = conn.clone();

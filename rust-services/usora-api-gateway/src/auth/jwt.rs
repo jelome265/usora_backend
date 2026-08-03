@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use arc_swap::ArcSwap;
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm, Header};
+use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm};
 use lru::LruCache;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;

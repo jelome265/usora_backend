@@ -1,6 +1,7 @@
 pub mod sliding_window;
 pub mod token_bucket;
 
+#[allow(async_fn_in_trait)]
 pub trait RateLimiter: Send + Sync + 'static {
     async fn check_rate_limit(&self, key: &str, max_requests: u64, window_ms: u64) -> bool;
     async fn consume(&self, key: &str, tokens: u64) -> bool;

@@ -82,7 +82,9 @@ async fn serve_grpc(state: Arc<AppState>, address: &str) -> anyhow::Result<()> {
     let addr: SocketAddr = address.parse()?;
 
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
-    health_reporter.set_serving().await;
+    health_reporter
+        .set_serving::<usora_api_gateway::proto::gateway::gateway_service_server::GatewayServiceServer<usora_api_gateway::gateway_service::GatewayServiceImpl>>()
+        .await;
 
     let gateway_service = usora_api_gateway::proto::gateway::gateway_service_server::GatewayServiceServer::new(
         usora_api_gateway::gateway_service::GatewayServiceImpl::new(state),

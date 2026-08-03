@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .extern_path(".google.protobuf.ListValue", "::prost_types::ListValue")
         .build_server(true)
         .build_client(true)
-        .compile(
+        .compile_protos(
             &[
                 "gateway_service.proto",
                 "identity.proto",

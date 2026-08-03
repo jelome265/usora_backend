@@ -2,7 +2,6 @@ use std::sync::Arc;
 use tower::ServiceExt;
 use axum::body::Body;
 use axum::http::{Request, StatusCode, Method};
-use axum::Router;
 use http_body_util::BodyExt;
 use serde_json::Value;
 

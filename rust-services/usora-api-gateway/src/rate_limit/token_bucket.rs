@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 use redis::aio::ConnectionManager;
-use redis::AsyncCommands;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
@@ -9,7 +8,6 @@ pub struct TokenBucket {
     tokens: Arc<Mutex<Inner>>,
     max_tokens: f64,
     refill_rate: f64,
-    window_ms: u64,
 }
 
 #[derive(Clone)]
@@ -29,7 +27,6 @@ impl TokenBucket {
             })),
             max_tokens,
             refill_rate,
-            window_ms,
         }
     }
 
@@ -81,10 +78,11 @@ impl TokenBucket {
         let inner = self.tokens.blocking_lock();
         let now = Instant::now();
         let elapsed = now.duration_since(inner.last_refill).as_millis() as u64;
-        if inner.tokens >= self.max_tokens - 0.5 {
+        let current_tokens = (inner.tokens + elapsed as f64 * self.refill_rate).min(self.max_tokens);
+        if current_tokens >= self.max_tokens - 0.5 {
             return Some(0);
         }
-        let deficit = self.max_tokens - inner.tokens;
+        let deficit = self.max_tokens - current_tokens;
         let ms_remaining = (deficit / self.refill_rate) as u64;
         Some(ms_remaining)
     }
@@ -93,10 +91,11 @@ impl TokenBucket {
         let inner = self.tokens.lock().await;
         let now = Instant::now();
         let elapsed = now.duration_since(inner.last_refill).as_millis() as u64;
-        if inner.tokens >= self.max_tokens - 0.5 {
+        let current_tokens = (inner.tokens + elapsed as f64 * self.refill_rate).min(self.max_tokens);
+        if current_tokens >= self.max_tokens - 0.5 {
             return Some(0);
         }
-        let deficit = self.max_tokens - inner.tokens;
+        let deficit = self.max_tokens - current_tokens;
         let ms_remaining = (deficit / self.refill_rate) as u64;
         Some(ms_remaining)
     }

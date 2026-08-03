@@ -124,7 +124,14 @@ where
 async fn redis_rate_limit_check(
     conn: &redis::aio::ConnectionManager,
     key: &str,
-    max_rps: u64,
+    // TODO(rate-limiting owner): max_rps is currently unused -- this
+    // function only enforces `burst` as a flat per-second cap, so a low
+    // max_rps configured alongside a high burst would allow sustained
+    // traffic at the burst rate indefinitely, not the intended
+    // steady-state rate. Needs a proper token-bucket/sliding-window
+    // design (see TokenBucket in this crate's in-memory fallback path)
+    // implemented atomically in Redis, not just this warning silenced.
+    _max_rps: u64,
     burst: u64,
 ) -> bool {
     let mut conn = conn.clone();

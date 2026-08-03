@@ -16,13 +16,6 @@ fn format_verification_status(status: i32) -> String {
         .to_lowercase()
 }
 
-fn format_tenant_status(status: i32) -> String {
-    proto::tenant::TenantStatus::try_from(status)
-        .map(|s| format!("{:?}", s))
-        .unwrap_or_else(|_| "UNKNOWN".to_string())
-        .to_lowercase()
-}
-
 fn format_timestamp(ts: Option<prost_types::Timestamp>) -> String {
     ts.map(|t| format!("{}.{:09}", t.seconds, t.nanos))
         .unwrap_or_default()

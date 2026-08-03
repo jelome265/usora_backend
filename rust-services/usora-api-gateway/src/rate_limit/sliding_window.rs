@@ -1,5 +1,4 @@
 use redis::aio::ConnectionManager;
-use redis::AsyncCommands;
 
 pub struct SlidingWindowRateLimiter {
     redis: ConnectionManager,

@@ -1,7 +1,6 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use chrono::Utc;
 use hmac::{Hmac, Mac};
 use serde::Serialize;
 use sha2::Sha256;
