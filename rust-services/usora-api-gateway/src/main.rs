@@ -1,8 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::net::TcpListener;
-use tokio_rustls::TlsAcceptor;
-use tls_listener::TlsListener;
+use axum_server::tls_rustls::RustlsConfig;
 use tracing_subscriber::EnvFilter;
 
 use usora_api_gateway::AppState;
@@ -37,13 +35,20 @@ async fn main() -> anyhow::Result<()> {
         config.bind_address
     );
 
-    let tls_config = Arc::new(config.load_tls_config()?);
-    let tcp = TcpListener::bind(&config.bind_address).await?;
-    let acceptor = TlsAcceptor::from(tls_config);
-    let listener = TlsListener::new(acceptor, tcp);
+    let tls_config = config.load_tls_config()?;
+    let rustls_config = RustlsConfig::from_config(Arc::new(tls_config));
+    let addr: SocketAddr = config.bind_address.parse()?;
 
-    axum::serve(listener, app.into_make_service())
-        .with_graceful_shutdown(shutdown_signal())
+    let handle = axum_server::Handle::new();
+    let shutdown_handle = handle.clone();
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        shutdown_handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
+    });
+
+    axum_server::bind_rustls(addr, rustls_config)
+        .handle(handle)
+        .serve(app.into_make_service())
         .await?;
 
     Ok(())
@@ -77,7 +82,7 @@ async fn serve_grpc(state: Arc<AppState>, address: &str) -> anyhow::Result<()> {
     let addr: SocketAddr = address.parse()?;
 
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
-    health_reporter.set_serving("").await;
+    health_reporter.set_serving().await;
 
     let gateway_service = usora_api_gateway::proto::gateway::gateway_service_server::GatewayServiceServer::new(
         usora_api_gateway::gateway_service::GatewayServiceImpl::new(state),

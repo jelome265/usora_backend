@@ -16,7 +16,7 @@ use crate::middleware::auth::AuthLayer;
 use crate::middleware::rate_limit::RateLimitLayer;
 use crate::middleware::tenant::TenantLayer;
 
-pub fn create_router(state: Arc<AppState>) -> Router<Arc<AppState>> {
+pub fn create_router(state: Arc<AppState>) -> Router<()> {
     let api_routes = api_v1::routes();
 
     let rate_cfg = &state.config.rate_limiting;
