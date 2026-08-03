@@ -7,7 +7,6 @@ edition = "2021"
 axum = { version = "0.7", features = ["macros", "multipart"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
 tower = { version = "0.5", features = ["util"] }
-tower-service = "0.3"
 tower-http = { version = "0.5", features = ["cors", "trace", "limit", "validate-request", "normalize-path", "set-header"] }
 tonic = "0.12"
 tonic-reflection = "0.12"
