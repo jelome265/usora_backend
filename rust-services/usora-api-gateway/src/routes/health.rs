@@ -72,11 +72,12 @@ pub async fn health_check(
         "request_id": utils::uuid_v7(),
     });
 
-    let status = if upstream_healthy {
-        StatusCode::OK
-    } else {
-        StatusCode::SERVICE_UNAVAILABLE
-    };
+    // Always return 200 -- the actual health state is communicated via the
+    // "status" field in the body ("healthy" vs "degraded"), not the HTTP
+    // status code. This lets any caller successfully fetch and parse the
+    // body regardless of upstream state; callers that need to distinguish
+    // healthy from degraded should read the body, not the HTTP status.
+    let status = StatusCode::OK;
 
     (status, Json(response))
 }
