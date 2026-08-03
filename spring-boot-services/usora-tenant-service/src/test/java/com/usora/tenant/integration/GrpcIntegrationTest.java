@@ -67,31 +67,45 @@ class GrpcIntegrationTest {
         }
     }
 
-    private static class TestTenantServiceImpl extends io.grpc.BindableService {
+    private static io.grpc.MethodDescriptor.Marshaller<String> stringMarshaller() {
+        return new io.grpc.MethodDescriptor.Marshaller<String>() {
+            @Override
+            public java.io.InputStream stream(String value) {
+                return new java.io.ByteArrayInputStream(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+
+            @Override
+            public String parse(java.io.InputStream stream) {
+                try {
+                    return new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                } catch (IOException e) {
+                    throw new RuntimeException("failed to parse marshalled string", e);
+                }
+            }
+        };
+    }
+
+    private static class TestTenantServiceImpl implements io.grpc.BindableService {
         @Override
         public io.grpc.ServerServiceDefinition bindService() {
             return io.grpc.ServerServiceDefinition.builder("tenant.TenantService")
                     .addMethod(
                             io.grpc.MethodDescriptor.newBuilder(
-                                            io.grpc.MethodDescriptor.Marshaller.newMarshaller(
-                                                    (t) -> t.getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                                                    (data) -> new String(data, java.nio.charset.StandardCharsets.UTF_8)),
-                                            io.grpc.MethodDescriptor.Marshaller.newMarshaller(
-                                                    (t) -> t.getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                                                    (data) -> new String(data, java.nio.charset.StandardCharsets.UTF_8))
+                                            stringMarshaller(),
+                                            stringMarshaller()
                                     )
                                     .setFullMethodName("tenant.TenantService/OnboardTenant")
                                     .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
                                     .build(),
-                            new io.grpc.ServerCallHandler<>() {
+                            new io.grpc.ServerCallHandler<String, String>() {
                                 @Override
-                                public io.grpc.ServerCall.Listener<Object> startCall(
-                                        io.grpc.ServerCall<Object, Object> call,
+                                public io.grpc.ServerCall.Listener<String> startCall(
+                                        io.grpc.ServerCall<String, String> call,
                                         io.grpc.Metadata headers) {
                                     call.sendHeaders(new io.grpc.Metadata());
                                     call.sendMessage("{\"status\":\"OK\"}");
                                     call.close(io.grpc.Status.OK, new io.grpc.Metadata());
-                                    return new io.grpc.ServerCall.Listener<>() {};
+                                    return new io.grpc.ServerCall.Listener<String>() {};
                                 }
                             })
                     .build();

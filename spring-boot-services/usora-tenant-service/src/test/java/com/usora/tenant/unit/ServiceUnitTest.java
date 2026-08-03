@@ -15,6 +15,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.kafka.core.KafkaAdmin;
+import org.springframework.kafka.core.KafkaTemplate;
 
 import java.time.Instant;
 import java.util.Map;
@@ -36,6 +39,12 @@ class ServiceUnitTest {
     private TenantConfig tenantConfig;
     @Mock
     private DomainEventPublisher eventPublisher;
+    @Mock
+    private JdbcTemplate jdbcTemplate;
+    @Mock
+    private KafkaTemplate<String, String> kafkaTemplate;
+    @Mock
+    private KafkaAdmin kafkaAdmin;
 
     private ObjectMapper objectMapper;
     private DomainService domainService;
@@ -47,7 +56,7 @@ class ServiceUnitTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
-        domainService = new DomainService(tenantRepository, entityMapper, tenantConfig, eventPublisher, objectMapper);
+        domainService = new DomainService(tenantRepository, entityMapper, tenantConfig, eventPublisher, objectMapper, jdbcTemplate, kafkaTemplate, kafkaAdmin);
 
         testEntity = new TenantEntity();
         testEntity.setId(UUID.randomUUID());
