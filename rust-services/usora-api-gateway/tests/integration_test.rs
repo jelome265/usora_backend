@@ -72,28 +72,28 @@ async fn test_404_on_unknown_route() {
 
 #[tokio::test]
 async fn test_token_bucket_consume() {
-    let mut bucket = TokenBucket::new(10, 20, 1000);
+    let bucket = TokenBucket::new(10, 20, 1000);
 
     for _ in 0..20 {
-        assert!(bucket.consume(1));
+        assert!(bucket.consume_async(1).await);
     }
 
-    assert!(!bucket.consume(1));
+    assert!(!bucket.consume_async(1).await);
 }
 
 #[tokio::test]
 async fn test_token_bucket_refill() {
-    let mut bucket = TokenBucket::new(1000, 100, 1000);
+    let bucket = TokenBucket::new(1000, 100, 1000);
 
     for _ in 0..100 {
-        assert!(bucket.consume(1));
+        assert!(bucket.consume_async(1).await);
     }
 
-    assert!(!bucket.consume(1));
+    assert!(!bucket.consume_async(1).await);
 
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    assert!(bucket.consume(1));
+    assert!(bucket.consume_async(1).await);
 }
 
 #[tokio::test]
@@ -210,5 +210,9 @@ async fn test_pkce_verification() {
     assert!(pkce.verifier.len() >= 43);
     assert!(verify_pkce(&pkce.verifier, &pkce.challenge, "S256"));
     assert!(!verify_pkce("wrong_verifier", &pkce.challenge, "S256"));
-    assert!(verify_pkce(&pkce.verifier, &pkce.verifier, "plain"));
+    // "plain" PKCE is deliberately never accepted (see verify_pkce's
+    // security comment) -- OAuth 2.1 disallows it since it provides no
+    // protection against authorization-code interception. This must
+    // hold even when verifier and challenge match exactly.
+    assert!(!verify_pkce(&pkce.verifier, &pkce.verifier, "plain"));
 }

@@ -105,7 +105,7 @@ where
                 let bucket = buckets.get_or_insert_mut(bucket_key.clone(), || {
                     TokenBucket::new(default_rps, burst_size, window_ms)
                 });
-                bucket.consume(1)
+                bucket.consume_async(1).await
             };
 
             if !allowed {

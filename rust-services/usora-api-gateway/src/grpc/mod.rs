@@ -19,14 +19,10 @@ pub struct GrpcClients {
 impl GrpcClients {
     pub async fn connect(config: &Config) -> anyhow::Result<Self> {
         let orch_channel = Channel::from_shared(config.upstream.orchestrator_url.clone())?
-            .connect()
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to connect to orchestrator: {e}"))?;
+            .connect_lazy();
 
         let comp_channel = Channel::from_shared(config.upstream.compute_url.clone())?
-            .connect()
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to connect to compute: {e}"))?;
+            .connect_lazy();
 
         let identity = proto::identity::identity_service_client::IdentityServiceClient::new(orch_channel.clone());
         let document = proto::document::document_analysis_service_client::DocumentAnalysisServiceClient::new(comp_channel.clone());
