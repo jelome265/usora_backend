@@ -25,7 +25,7 @@ public final class IdGenerator {
     public static String generateShortId() {
         UUID uuid = generateUUIDv7();
         String encoded = java.util.Base64.getUrlEncoder().withoutPadding()
-                .encode(toBytes(uuid));
+                .encodeToString(toBytes(uuid));
         return encoded.substring(0, 12);
     }
 

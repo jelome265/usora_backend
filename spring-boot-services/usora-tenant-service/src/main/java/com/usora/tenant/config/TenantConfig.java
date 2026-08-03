@@ -27,6 +27,7 @@ public class TenantConfig {
         private boolean autoApprove = false;
         private String schemaPrefix = "tenant_";
         private String namespacePrefix = "tenant-";
+        private String topicPrefix = "";
         private ResourceQuota defaultResourceQuota = new ResourceQuota();
 
         public boolean isAutoApprove() { return autoApprove; }
@@ -35,6 +36,8 @@ public class TenantConfig {
         public void setSchemaPrefix(String schemaPrefix) { this.schemaPrefix = schemaPrefix; }
         public String getNamespacePrefix() { return namespacePrefix; }
         public void setNamespacePrefix(String namespacePrefix) { this.namespacePrefix = namespacePrefix; }
+        public String getTopicPrefix() { return topicPrefix; }
+        public void setTopicPrefix(String topicPrefix) { this.topicPrefix = topicPrefix; }
         public ResourceQuota getDefaultResourceQuota() { return defaultResourceQuota; }
         public void setDefaultResourceQuota(ResourceQuota defaultResourceQuota) { this.defaultResourceQuota = defaultResourceQuota; }
 
