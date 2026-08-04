@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usora.tenant.config.TenantConfig;
 import com.usora.tenant.dto.OnboardRequest;
 import com.usora.tenant.dto.SuspendRequest;
+import com.usora.tenant.dto.TenantResponse;
 import com.usora.tenant.entity.TenantEntity;
 import com.usora.tenant.event.DomainEventPublisher;
 import com.usora.tenant.exception.BusinessException;
@@ -23,6 +24,8 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+
+import org.mapstruct.factory.Mappers;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -108,8 +111,13 @@ class ServiceUnitTest {
             e.setId(UUID.randomUUID());
             return e;
         });
+        when(entityMapper.toResponse(any())).thenAnswer(inv -> Mappers.getMapper(EntityMapper.class).toResponse(inv.getArgument(0)));
 
-        assertThrows(Exception.class, () -> domainService.onboardTenant(request));
+        TenantResponse response = assertDoesNotThrow(() -> domainService.onboardTenant(request));
+
+        assertNotNull(response);
+        assertEquals("new.example.com", response.getDomain());
+        verify(eventPublisher).publishTenantProvisioned(any());
     }
 
     @Test
@@ -131,7 +139,7 @@ class ServiceUnitTest {
     @Test
     void shouldGetTenantById() {
         when(tenantRepository.findById(testEntity.getId())).thenReturn(Optional.of(testEntity));
-        when(entityMapper.toResponse(testEntity)).thenCallRealMethod();
+        when(entityMapper.toResponse(testEntity)).thenAnswer(inv -> Mappers.getMapper(EntityMapper.class).toResponse(inv.getArgument(0)));
 
         assertDoesNotThrow(() -> domainService.getTenant(testEntity.getId()));
     }
@@ -150,7 +158,7 @@ class ServiceUnitTest {
         SuspendRequest request = new SuspendRequest("Payment failure");
         when(tenantRepository.findById(testEntity.getId())).thenReturn(Optional.of(testEntity));
         when(tenantRepository.save(any(TenantEntity.class))).thenReturn(testEntity);
-        when(entityMapper.toResponse(any())).thenCallRealMethod();
+        when(entityMapper.toResponse(any())).thenAnswer(inv -> Mappers.getMapper(EntityMapper.class).toResponse(inv.getArgument(0)));
 
         assertDoesNotThrow(() -> domainService.suspendTenant(testEntity.getId(), request));
         verify(eventPublisher).publishTenantSuspended(any(), eq("Payment failure"));
@@ -172,7 +180,7 @@ class ServiceUnitTest {
         testEntity.setStatus(TenantEntity.TenantStatus.SUSPENDED);
         when(tenantRepository.findById(testEntity.getId())).thenReturn(Optional.of(testEntity));
         when(tenantRepository.save(any(TenantEntity.class))).thenReturn(testEntity);
-        when(entityMapper.toResponse(any())).thenCallRealMethod();
+        when(entityMapper.toResponse(any())).thenAnswer(inv -> Mappers.getMapper(EntityMapper.class).toResponse(inv.getArgument(0)));
 
         assertDoesNotThrow(() -> domainService.resumeTenant(testEntity.getId()));
         verify(eventPublisher).publishTenantResumed(any());
