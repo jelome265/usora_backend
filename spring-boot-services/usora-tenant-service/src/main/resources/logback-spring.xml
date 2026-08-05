@@ -16,35 +16,6 @@
                 <message>message</message>
                 <mdc>mdc</mdc>
             </fieldNames>
-            <providers>
-                <timestamp/>
-                <version/>
-                <message/>
-                <loggerName/>
-                <threadName/>
-                <mdc>
-                    <includeMdcKeyName>tenantId</includeMdcKeyName>
-                    <includeMdcKeyName>userId</includeMdcKeyName>
-                    <includeMdcKeyName>requestUri</includeMdcKeyName>
-                    <includeMdcKeyName>httpMethod</includeMdcKeyName>
-                    <includeMdcKeyName>correlationId</includeMdcKeyName>
-                </mdc>
-                <stackTrace>
-                    <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
-                        <maxDepthPerThrowable>30</maxDepthPerThrowable>
-                        <maxLength>2048</maxLength>
-                        <shortenedClassNameLength>20</shortenedClassNameLength>
-                        <exclude>sun\.reflect\..*\.invoke</exclude>
-                        <exclude>net\.sf\.cglib\.proxy\.MethodProxy\.invoke</exclude>
-                    </throwableConverter>
-                </stackTrace>
-                <logLevel>
-                    <fieldName>level</fieldName>
-                </logLevel>
-                <arguments>
-                    <includeNonStructuredArguments>false</includeNonStructuredArguments>
-                </arguments>
-            </providers>
         </encoder>
     </appender>
 

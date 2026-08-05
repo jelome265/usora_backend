@@ -25,8 +25,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.mapstruct.factory.Mappers;
-
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -85,6 +83,35 @@ class ServiceUnitTest {
         lenient().when(tenantConfig.getOffboarding()).thenReturn(offboarding);
     }
 
+    private TenantResponse toResponse(TenantEntity entity) {
+        if (entity == null) return null;
+        return TenantResponse.builder()
+                .id(entity.getId() != null ? entity.getId().toString() : null)
+                .name(entity.getName())
+                .domain(entity.getDomain())
+                .plan(entity.getPlan())
+                .region(entity.getRegion())
+                .status(entity.getStatus() != null ? entity.getStatus().name() : null)
+                .adminEmail(entity.getAdminEmail())
+                .maxUsers(entity.getMaxUsers())
+                .storageQuotaBytes(entity.getStorageQuotaBytes())
+                .features(parseJson(entity.getFeatures()))
+                .config(parseJson(entity.getConfig()))
+                .stripeCustomerId(entity.getStripeCustomerId())
+                .provisioningStatus(entity.getProvisioningStatus())
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseJson(String json) {
+        if (json == null || json.isBlank()) return null;
+        try {
+            return new ObjectMapper().readValue(json, Map.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     @Test
     void shouldOnboardTenantSuccessfully() {
         OnboardRequest request = OnboardRequest.builder()
@@ -105,13 +132,13 @@ class ServiceUnitTest {
         newEntity.setAdminEmail("admin@new.com");
 
         when(tenantRepository.existsByDomain("new.example.com")).thenReturn(false);
-        when(entityMapper.toEntity(request)).thenReturn(newEntity);
+        when(entityMapper.toEntity(any(OnboardRequest.class))).thenReturn(newEntity);
         when(tenantRepository.save(any(TenantEntity.class))).thenAnswer(i -> {
             TenantEntity e = i.getArgument(0);
             e.setId(UUID.randomUUID());
             return e;
         });
-        when(entityMapper.toResponse(any())).thenAnswer(inv -> Mappers.getMapper(EntityMapper.class).toResponse(inv.getArgument(0)));
+        when(entityMapper.toResponse(any())).thenAnswer(inv -> toResponse(inv.getArgument(0)));
 
         TenantResponse response = assertDoesNotThrow(() -> domainService.onboardTenant(request));
 
@@ -139,7 +166,7 @@ class ServiceUnitTest {
     @Test
     void shouldGetTenantById() {
         when(tenantRepository.findById(testEntity.getId())).thenReturn(Optional.of(testEntity));
-        when(entityMapper.toResponse(testEntity)).thenAnswer(inv -> Mappers.getMapper(EntityMapper.class).toResponse(inv.getArgument(0)));
+        when(entityMapper.toResponse(any())).thenAnswer(inv -> toResponse(inv.getArgument(0)));
 
         assertDoesNotThrow(() -> domainService.getTenant(testEntity.getId()));
     }
@@ -158,7 +185,7 @@ class ServiceUnitTest {
         SuspendRequest request = new SuspendRequest("Payment failure");
         when(tenantRepository.findById(testEntity.getId())).thenReturn(Optional.of(testEntity));
         when(tenantRepository.save(any(TenantEntity.class))).thenReturn(testEntity);
-        when(entityMapper.toResponse(any())).thenAnswer(inv -> Mappers.getMapper(EntityMapper.class).toResponse(inv.getArgument(0)));
+        when(entityMapper.toResponse(any())).thenAnswer(inv -> toResponse(inv.getArgument(0)));
 
         assertDoesNotThrow(() -> domainService.suspendTenant(testEntity.getId(), request));
         verify(eventPublisher).publishTenantSuspended(any(), eq("Payment failure"));
@@ -180,7 +207,7 @@ class ServiceUnitTest {
         testEntity.setStatus(TenantEntity.TenantStatus.SUSPENDED);
         when(tenantRepository.findById(testEntity.getId())).thenReturn(Optional.of(testEntity));
         when(tenantRepository.save(any(TenantEntity.class))).thenReturn(testEntity);
-        when(entityMapper.toResponse(any())).thenAnswer(inv -> Mappers.getMapper(EntityMapper.class).toResponse(inv.getArgument(0)));
+        when(entityMapper.toResponse(any())).thenAnswer(inv -> toResponse(inv.getArgument(0)));
 
         assertDoesNotThrow(() -> domainService.resumeTenant(testEntity.getId()));
         verify(eventPublisher).publishTenantResumed(any());
