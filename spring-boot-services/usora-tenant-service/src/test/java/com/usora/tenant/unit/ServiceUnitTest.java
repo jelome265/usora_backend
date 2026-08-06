@@ -55,11 +55,23 @@ class ServiceUnitTest {
     private TenantEntity testEntity;
     private TenantConfig.Provisioning provisioning;
     private TenantConfig.Offboarding offboarding;
+    private EntityMapper realEntityMapper;
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
         domainService = new DomainService(tenantRepository, entityMapper, tenantConfig, eventPublisher, objectMapper, jdbcTemplate, kafkaTemplate, kafkaAdmin);
+
+        // EntityMapperImpl (the real MapStruct-generated implementation) has
+        // its own @Autowired ObjectMapper dependency (from
+        // @Mapper(uses = ObjectMapper.class)) that Mappers.getMapper()
+        // alone doesn't satisfy, since that bypasses Spring's container
+        // entirely. Construct it once and inject that dependency manually
+        // via ReflectionTestUtils -- the standard way to satisfy a
+        // component's injected fields in a test that doesn't load a full
+        // Spring context.
+        realEntityMapper = Mappers.getMapper(EntityMapper.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(realEntityMapper, "objectMapper", objectMapper);
 
         testEntity = new TenantEntity();
         testEntity.setId(UUID.randomUUID());
@@ -111,7 +123,7 @@ class ServiceUnitTest {
             e.setId(UUID.randomUUID());
             return e;
         });
-        when(entityMapper.toResponse(any())).thenAnswer(inv -> Mappers.getMapper(EntityMapper.class).toResponse(inv.getArgument(0)));
+        when(entityMapper.toResponse(any())).thenAnswer(inv -> realEntityMapper.toResponse(inv.getArgument(0)));
 
         TenantResponse response = assertDoesNotThrow(() -> domainService.onboardTenant(request));
 
@@ -139,7 +151,7 @@ class ServiceUnitTest {
     @Test
     void shouldGetTenantById() {
         when(tenantRepository.findById(testEntity.getId())).thenReturn(Optional.of(testEntity));
-        when(entityMapper.toResponse(testEntity)).thenAnswer(inv -> Mappers.getMapper(EntityMapper.class).toResponse(inv.getArgument(0)));
+        when(entityMapper.toResponse(testEntity)).thenAnswer(inv -> realEntityMapper.toResponse(inv.getArgument(0)));
 
         assertDoesNotThrow(() -> domainService.getTenant(testEntity.getId()));
     }
@@ -158,7 +170,7 @@ class ServiceUnitTest {
         SuspendRequest request = new SuspendRequest("Payment failure");
         when(tenantRepository.findById(testEntity.getId())).thenReturn(Optional.of(testEntity));
         when(tenantRepository.save(any(TenantEntity.class))).thenReturn(testEntity);
-        when(entityMapper.toResponse(any())).thenAnswer(inv -> Mappers.getMapper(EntityMapper.class).toResponse(inv.getArgument(0)));
+        when(entityMapper.toResponse(any())).thenAnswer(inv -> realEntityMapper.toResponse(inv.getArgument(0)));
 
         assertDoesNotThrow(() -> domainService.suspendTenant(testEntity.getId(), request));
         verify(eventPublisher).publishTenantSuspended(any(), eq("Payment failure"));
@@ -180,7 +192,7 @@ class ServiceUnitTest {
         testEntity.setStatus(TenantEntity.TenantStatus.SUSPENDED);
         when(tenantRepository.findById(testEntity.getId())).thenReturn(Optional.of(testEntity));
         when(tenantRepository.save(any(TenantEntity.class))).thenReturn(testEntity);
-        when(entityMapper.toResponse(any())).thenAnswer(inv -> Mappers.getMapper(EntityMapper.class).toResponse(inv.getArgument(0)));
+        when(entityMapper.toResponse(any())).thenAnswer(inv -> realEntityMapper.toResponse(inv.getArgument(0)));
 
         assertDoesNotThrow(() -> domainService.resumeTenant(testEntity.getId()));
         verify(eventPublisher).publishTenantResumed(any());
