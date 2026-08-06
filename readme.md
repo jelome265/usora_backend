@@ -1,4 +1,4 @@
-# USORA KYC Platform
+# USORA KYC Platform by jelome
 
 Enterprise-grade, multi-tenant Know Your Customer (KYC) platform for identity verification.
 
