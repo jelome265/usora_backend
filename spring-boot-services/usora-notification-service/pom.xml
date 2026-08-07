@@ -23,8 +23,6 @@
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
         <twilio-sdk.version>9.14.1</twilio-sdk.version>
         <resilience4j.version>2.3.0</resilience4j.version>
-        <opentelemetry.version>1.48.0</opentelemetry.version>
-        <opentelemetry-instrumentation.version>2.29.0</opentelemetry-instrumentation.version>
         <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
         <protobuf-java.version>3.25.5</protobuf-java.version>
         <micrometer.version>1.15.0</micrometer.version>
@@ -50,13 +48,6 @@
                 <groupId>io.micrometer</groupId>
                 <artifactId>micrometer-bom</artifactId>
                 <version>${micrometer.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>io.opentelemetry</groupId>
-                <artifactId>opentelemetry-bom</artifactId>
-                <version>${opentelemetry.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -156,24 +147,9 @@
 
         <!-- OpenTelemetry -->
         <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-api</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-opentelemetry</artifactId>
         </dependency>
-        <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-sdk</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.opentelemetry.instrumentation</groupId>
-            <artifactId>opentelemetry-spring-boot-starter</artifactId>
-            <version>${opentelemetry-instrumentation.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.opentelemetry.semconv</groupId>
-            <artifactId>opentelemetry-semconv</artifactId>
-            <version>1.28.0-alpha</version>
-        </dependency>
-
         <!-- Micrometer -->
         <dependency>
             <groupId>io.micrometer</groupId>

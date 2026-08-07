@@ -29,8 +29,6 @@
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
         <grpc.version>1.75.0</grpc.version>
         <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
-        <opentelemetry.version>1.44.1</opentelemetry.version>
-        <opentelemetry-instrumentation.version>2.29.0</opentelemetry-instrumentation.version>
         <micrometer.version>1.14.3</micrometer.version>
         <protobuf-java.version>4.28.3</protobuf-java.version>
         <testcontainers.version>1.20.4</testcontainers.version>
@@ -47,13 +45,6 @@
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>
                 <version>${spring-cloud.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>io.opentelemetry</groupId>
-                <artifactId>opentelemetry-bom</artifactId>
-                <version>${opentelemetry.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -186,19 +177,9 @@
 
         <!-- OpenTelemetry -->
         <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-api</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-opentelemetry</artifactId>
         </dependency>
-        <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-sdk</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.opentelemetry.instrumentation</groupId>
-            <artifactId>opentelemetry-spring-boot-starter</artifactId>
-            <version>${opentelemetry-instrumentation.version}</version>
-        </dependency>
-
         <!-- Micrometer -->
         <dependency>
             <groupId>io.micrometer</groupId>
