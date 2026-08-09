@@ -58,11 +58,11 @@ public class Notification extends BaseEntity {
     private String subject;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "variables", columnDefinition = "jsonb")
+    @Column(name = "variables")
     private Map<String, Object> variables;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "attachments", columnDefinition = "jsonb")
+    @Column(name = "attachments")
     private Map<String, Object> attachments;
 
     @Column(name = "sent_at")

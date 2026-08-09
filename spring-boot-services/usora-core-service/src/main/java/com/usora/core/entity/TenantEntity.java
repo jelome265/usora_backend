@@ -1,6 +1,8 @@
 package com.usora.core.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.Map;
@@ -13,7 +15,8 @@ public class TenantEntity {
     @Column(length = 100)
     private String tenantId;
 
-    @Column(columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column
     private String config;
 
     @Column(nullable = false)

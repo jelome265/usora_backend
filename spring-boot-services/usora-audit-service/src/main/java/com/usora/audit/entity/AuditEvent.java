@@ -39,15 +39,15 @@ public class AuditEvent extends BaseEntity {
     @Column(name = "resource_id", nullable = false, updatable = false, length = 100)
     private String resourceId;
 
-    @Column(name = "before_state", columnDefinition = "jsonb")
+    @Column(name = "before_state")
     @JdbcTypeCode(SqlTypes.JSON)
     private String beforeState;
 
-    @Column(name = "after_state", columnDefinition = "jsonb")
+    @Column(name = "after_state")
     @JdbcTypeCode(SqlTypes.JSON)
     private String afterState;
 
-    @Column(name = "metadata", columnDefinition = "jsonb")
+    @Column(name = "metadata")
     @JdbcTypeCode(SqlTypes.JSON)
     private String metadata;
 
