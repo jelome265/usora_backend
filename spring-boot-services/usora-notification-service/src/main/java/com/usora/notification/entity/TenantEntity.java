@@ -52,11 +52,11 @@ public class TenantEntity extends BaseEntity {
     private String webhookSecret;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "push_fcm_config", columnDefinition = "jsonb")
+    @Column(name = "push_fcm_config")
     private Map<String, Object> pushFcmConfig;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "push_apns_config", columnDefinition = "jsonb")
+    @Column(name = "push_apns_config")
     private Map<String, Object> pushApnsConfig;
 
     @Column(name = "retry_max_attempts")

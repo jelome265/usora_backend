@@ -7,6 +7,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 
@@ -32,7 +34,8 @@ public class TenantEntity extends BaseEntity {
     @Column(name = "status", nullable = false, length = 20)
     private TenantStatus status = TenantStatus.PROVISIONING;
 
-    @Column(name = "features", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "features")
     private String features;
 
     @Column(name = "admin_email", nullable = false, length = 255)
@@ -44,7 +47,8 @@ public class TenantEntity extends BaseEntity {
     @Column(name = "storage_quota_bytes", nullable = false)
     private long storageQuotaBytes = 107374182400L;
 
-    @Column(name = "config", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "config")
     private String config;
 
     @Column(name = "stripe_customer_id", length = 255)
