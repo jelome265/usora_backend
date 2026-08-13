@@ -71,7 +71,6 @@ class ServiceUnitTest {
         // component's injected fields in a test that doesn't load a full
         // Spring context.
         realEntityMapper = Mappers.getMapper(EntityMapper.class);
-        org.springframework.test.util.ReflectionTestUtils.setField(realEntityMapper, "objectMapper", objectMapper);
 
         testEntity = new TenantEntity();
         testEntity.setId(UUID.randomUUID());
