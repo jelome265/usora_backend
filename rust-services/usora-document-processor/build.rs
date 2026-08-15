@@ -1,6 +1,8 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shared_proto = std::path::PathBuf::from("../../shared/proto");
 
+    std::fs::create_dir_all("src/generated")?;
+
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
