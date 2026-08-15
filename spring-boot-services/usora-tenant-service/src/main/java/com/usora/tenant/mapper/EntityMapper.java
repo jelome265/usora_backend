@@ -14,7 +14,7 @@ import org.mapstruct.factory.Mappers;
 import java.util.Collections;
 import java.util.Map;
 
-@Mapper(componentModel = "spring", uses = ObjectMapper.class)
+@Mapper(componentModel = "spring")
 public interface EntityMapper {
 
     EntityMapper INSTANCE = Mappers.getMapper(EntityMapper.class);
