@@ -1,0 +1,8 @@
+name: "USORA CodeQL Configuration"
+
+queries:
+  - uses: security-and-quality
+
+paths-ignore:
+  - '**/tests/**'
+  - '**/*.spec.ts'
