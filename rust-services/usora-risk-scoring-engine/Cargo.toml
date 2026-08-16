@@ -30,7 +30,7 @@ async-trait = "0.1"
 bytes = "1"
 dashmap = "6"
 parking_lot = "0.12"
-rhai = { version = "1.19", features = ["sync"] }
+rhai = "1.19"
 petgraph = "0.6"
 prost = "0.13"
 prost-types = "0.13"

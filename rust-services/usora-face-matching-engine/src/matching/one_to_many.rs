@@ -288,6 +288,3 @@ impl FaissMatcher {
         self.threshold
     }
 }
-
-unsafe impl Send for FaissMatcher {}
-unsafe impl Sync for FaissMatcher {}
