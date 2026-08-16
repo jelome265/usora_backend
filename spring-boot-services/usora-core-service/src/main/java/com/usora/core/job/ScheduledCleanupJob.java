@@ -26,7 +26,7 @@ public class ScheduledCleanupJob {
         try {
             var deleted = jdbcTemplate.update(
                     "UPDATE cases SET status = 'EXPIRED', updated_at = NOW() " +
-                    "WHERE status = 'PENDING' AND created_at < NOW() - INTERVAL '30 days'"
+                    "WHERE status = 'PENDING' AND created_at < NOW() - INTERVAL '30' DAY"
             );
             log.info("Expired verification cleanup completed: {} cases expired", deleted);
         } catch (Exception e) {
@@ -40,7 +40,7 @@ public class ScheduledCleanupJob {
         try {
             var breaches = jdbcTemplate.queryForList(
                     "SELECT id, tenant_id, created_at FROM cases " +
-                    "WHERE status = 'IN_PROGRESS' AND created_at < NOW() - INTERVAL '24 hours'"
+                    "WHERE status = 'IN_PROGRESS' AND created_at < NOW() - INTERVAL '24' HOUR"
             );
             if (!breaches.isEmpty()) {
                 log.warn("SLA breach detected: {} cases exceeding 24h threshold", breaches.size());

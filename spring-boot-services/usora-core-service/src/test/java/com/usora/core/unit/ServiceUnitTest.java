@@ -58,16 +58,13 @@ class ServiceUnitTest {
                 Map.of()
         );
 
-        when(jdbcTemplate.update(anyString(), any(), anyString(), anyString(), anyString(), anyString(), any()))
-                .thenReturn(1);
-        when(jdbcTemplate.update(anyString(), any(), anyString(), anyString(), anyString(), anyString(), anyString()))
-                .thenReturn(1);
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
 
         var response = domainService.submitKYC(request);
 
         assertNotNull(response);
         assertEquals("PENDING", response.status());
-        verify(jdbcTemplate, times(2)).update(anyString(), any(), any(), any(), any(), any(), any());
+        verify(jdbcTemplate, times(2)).update(anyString(), any(Object[].class));
     }
 
     @Test

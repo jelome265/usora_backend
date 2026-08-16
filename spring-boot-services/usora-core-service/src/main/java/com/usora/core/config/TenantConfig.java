@@ -52,7 +52,7 @@ public class TenantConfig {
         config.setConnectionTimeout(connectionTimeout);
         config.setIdleTimeout(idleTimeout);
         config.setMaxLifetime(maxLifetime);
-        config.setSchema("public");
+        // config.setSchema("public");
         config.setPoolName("default-pool");
         return new HikariDataSource(config);
     }

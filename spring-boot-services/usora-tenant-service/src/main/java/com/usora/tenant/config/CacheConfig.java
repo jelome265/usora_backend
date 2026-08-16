@@ -16,6 +16,7 @@ import java.time.Duration;
 public class CacheConfig {
 
     @Bean
+    @org.springframework.context.annotation.Profile("!test")
     public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
         RedisCacheConfiguration defaults = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofMinutes(10))
@@ -43,5 +44,11 @@ public class CacheConfig {
                 .withCacheConfiguration("tenantConfig", tenantConfig)
                 .withCacheConfiguration("tenantById", defaults)
                 .build();
+    }
+
+    @Bean
+    @org.springframework.context.annotation.Profile("test")
+    public org.springframework.cache.CacheManager testCacheManager() {
+        return new org.springframework.cache.concurrent.ConcurrentMapCacheManager("tenants", "tenantConfig", "tenantById");
     }
 }

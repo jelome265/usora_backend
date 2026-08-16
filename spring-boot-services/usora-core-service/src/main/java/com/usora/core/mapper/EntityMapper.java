@@ -16,7 +16,7 @@ import java.util.UUID;
 @Mapper(componentModel = "spring", imports = {UUID.class, Instant.class})
 public interface EntityMapper {
 
-    @Mapping(target = "caseId", expression = "java(UUID.randomUUID())")
+    @Mapping(target = "caseId", source = "caseId")
     @Mapping(target = "status", constant = "PENDING")
     @Mapping(target = "message", constant = "KYC case submitted successfully")
     @Mapping(target = "timestamp", expression = "java(Instant.now())")

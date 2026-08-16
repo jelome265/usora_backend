@@ -10,12 +10,12 @@ CREATE TABLE IF NOT EXISTS public.cases (
     version BIGINT NOT NULL DEFAULT 0
 );
 
-CREATE INDEX idx_cases_tenant_id ON public.cases(tenant_id);
-CREATE INDEX idx_cases_status ON public.cases(status);
-CREATE INDEX idx_cases_created_at ON public.cases(created_at);
+CREATE INDEX IF NOT EXISTS idx_cases_tenant_id ON public.cases(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cases_status ON public.cases(status);
+CREATE INDEX IF NOT EXISTS idx_cases_created_at ON public.cases(created_at);
 
 CREATE TABLE IF NOT EXISTS public.verifications (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     case_id UUID NOT NULL REFERENCES public.cases(id),
     tenant_id VARCHAR(100) NOT NULL,
     document_type VARCHAR(50),
@@ -29,8 +29,8 @@ CREATE TABLE IF NOT EXISTS public.verifications (
     version BIGINT NOT NULL DEFAULT 0
 );
 
-CREATE INDEX idx_verifications_case_id ON public.verifications(case_id);
-CREATE INDEX idx_verifications_tenant_id ON public.verifications(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_verifications_case_id ON public.verifications(case_id);
+CREATE INDEX IF NOT EXISTS idx_verifications_tenant_id ON public.verifications(tenant_id);
 
 CREATE TABLE IF NOT EXISTS public.tenant_configs (
     tenant_id VARCHAR(100) PRIMARY KEY,
@@ -50,6 +50,6 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_audit_log_tenant_id ON public.audit_log(tenant_id);
-CREATE INDEX idx_audit_log_case_id ON public.audit_log(case_id);
-CREATE INDEX idx_audit_log_created_at ON public.audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_tenant_id ON public.audit_log(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_case_id ON public.audit_log(case_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON public.audit_log(created_at);

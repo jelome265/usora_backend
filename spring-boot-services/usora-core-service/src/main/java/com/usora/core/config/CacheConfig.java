@@ -23,7 +23,7 @@ public class CacheConfig {
     public CacheManager cacheManager(RedisConnectionFactory connectionFactory) {
         var config = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofMinutes(15))
-                .prefixKeysWith(cacheKeyPrefix())
+                .computePrefixWith(cacheName -> cacheKeyPrefix())
                 .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
                 .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(new GenericJackson2JsonRedisSerializer()))
                 .disableCachingNullValues();

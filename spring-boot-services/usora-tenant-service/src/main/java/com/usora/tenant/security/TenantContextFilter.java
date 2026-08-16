@@ -29,6 +29,11 @@ public class TenantContextFilter implements Filter {
                          FilterChain chain) throws IOException, ServletException {
         HttpServletRequest request = (HttpServletRequest) servletRequest;
 
+        if (request.getDispatcherType() == jakarta.servlet.DispatcherType.ERROR || request.getRequestURI().equals("/error") || request.getRequestURI().endsWith("/error")) {
+            chain.doFilter(servletRequest, servletResponse);
+            return;
+        }
+
         String tenantId = request.getHeader("X-Tenant-ID");
         String authHeader = request.getHeader("Authorization");
 

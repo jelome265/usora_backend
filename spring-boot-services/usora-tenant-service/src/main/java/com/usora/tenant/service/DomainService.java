@@ -94,6 +94,7 @@ public class DomainService extends TenantAwareService {
             eventPublisher.publishTenantProvisioned(entity);
             log.info("Tenant onboarded successfully: {} ({})", entity.getName(), entity.getId());
         } catch (Exception e) {
+            log.error("Failed to provision infrastructure for tenant: " + entity.getId(), e);
             entity.setStatus(TenantStatus.PROVISIONING);
             entity.setProvisioningStatus("FAILED:" + e.getMessage());
             tenantRepository.save(entity);

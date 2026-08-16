@@ -77,19 +77,20 @@ public class DomainService {
     @Transactional(readOnly = true)
     public KYCStatusResponse getKYCStatus(UUID caseId) {
         log.info("Getting KYC status: caseId={}", caseId);
-        var rows = jdbcTemplate.queryForMap(
+        var rows = jdbcTemplate.queryForList(
                 "SELECT id, status, stage, created_at, updated_at FROM cases WHERE id = ?",
                 caseId
         );
         if (rows.isEmpty()) {
             throw BusinessException.notFound("Case", caseId);
         }
+        var row = rows.getFirst();
         return new KYCStatusResponse(
                 caseId,
-                (String) rows.get("status"),
-                (String) rows.get("stage"),
-                ((java.sql.Timestamp) rows.get("created_at")).toInstant(),
-                ((java.sql.Timestamp) rows.get("updated_at")).toInstant(),
+                (String) row.get("status"),
+                (String) row.get("stage"),
+                ((java.sql.Timestamp) row.get("created_at")).toInstant(),
+                ((java.sql.Timestamp) row.get("updated_at")).toInstant(),
                 Map.of()
         );
     }

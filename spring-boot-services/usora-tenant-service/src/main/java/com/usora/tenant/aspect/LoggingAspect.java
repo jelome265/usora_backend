@@ -15,10 +15,10 @@ import java.util.Arrays;
 @Component
 public class LoggingAspect {
 
-    @Pointcut("within(@org.springframework.web.bind.annotation.RestController *)")
+    @Pointcut("execution(* com.usora.tenant.controller..*(..))")
     public void controllerMethods() {}
 
-    @Pointcut("within(com.usora.tenant.service..*)")
+    @Pointcut("execution(* com.usora.tenant.service..*(..))")
     public void serviceMethods() {}
 
     @Around("controllerMethods() || serviceMethods()")

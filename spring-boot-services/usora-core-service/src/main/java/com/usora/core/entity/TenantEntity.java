@@ -32,9 +32,20 @@ public class TenantEntity {
 
     public TenantEntity(String tenantId, Map<String, Object> config) {
         this.tenantId = tenantId;
-        this.config = config != null ? config.toString() : "{}";
+        this.config = toJsonString(config);
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
+    }
+
+    private static String toJsonString(Map<String, Object> map) {
+        if (map == null || map.isEmpty()) {
+            return "{}";
+        }
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(map);
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 
     public String getTenantId() {

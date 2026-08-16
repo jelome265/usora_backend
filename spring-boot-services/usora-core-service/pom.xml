@@ -22,9 +22,10 @@
         <spring-cloud.version>2024.0.0</spring-cloud.version>
         <camunda.version>7.22.0</camunda.version>
         <mapstruct.version>1.6.3</mapstruct.version>
-        <grpc-spring-boot.version>3.1.0</grpc-spring-boot.version>
+        <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
         <resilience4j.version>2.3.0</resilience4j.version>
-        <protobuf.version>4.29.3</protobuf.version>
+        <protobuf.version>4.34.2</protobuf.version>
+        <protobuf-java.version>4.34.2</protobuf-java.version>
         <grpc.version>1.75.0</grpc.version>
         <testcontainers.version>1.20.4</testcontainers.version>
     </properties>
@@ -175,12 +176,22 @@
         </dependency>
         <dependency>
             <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring6</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-circuitbreaker</artifactId>
             <version>${resilience4j.version}</version>
         </dependency>
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-retry</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-rxjava3</artifactId>
             <version>${resilience4j.version}</version>
         </dependency>
 
@@ -237,6 +248,11 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
             <scope>test</scope>
@@ -273,6 +289,13 @@
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>
                 <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-bom</artifactId>
+                <version>${resilience4j.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

@@ -62,16 +62,9 @@ class ServiceUnitTest {
         objectMapper = new ObjectMapper();
         domainService = new DomainService(tenantRepository, entityMapper, tenantConfig, eventPublisher, objectMapper, jdbcTemplate, kafkaTemplate, kafkaAdmin);
 
-        // EntityMapperImpl (the real MapStruct-generated implementation) has
-        // its own @Autowired ObjectMapper dependency (from
-        // @Mapper(uses = ObjectMapper.class)) that Mappers.getMapper()
-        // alone doesn't satisfy, since that bypasses Spring's container
-        // entirely. Construct it once and inject that dependency manually
-        // via ReflectionTestUtils -- the standard way to satisfy a
-        // component's injected fields in a test that doesn't load a full
-        // Spring context.
+        // EntityMapperImpl (the real MapStruct-generated implementation)
+        // doesn't have ObjectMapper dependency anymore since ObjectMapper.class was removed from 'uses'.
         realEntityMapper = Mappers.getMapper(EntityMapper.class);
-        org.springframework.test.util.ReflectionTestUtils.setField(realEntityMapper, "objectMapper", objectMapper);
 
         testEntity = new TenantEntity();
         testEntity.setId(UUID.randomUUID());
