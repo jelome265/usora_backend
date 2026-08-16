@@ -100,6 +100,7 @@ class ApiIntegrationTest {
 
         MvcResult result = mockMvc.perform(post("/api/v1/tenants")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")))
+                        .with(jwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isCreated())
@@ -113,6 +114,7 @@ class ApiIntegrationTest {
     void getTenant_shouldReturn200() throws Exception {
         mockMvc.perform(get("/api/v1/tenants/{id}", existingTenantId)
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"))))
+        mockMvc.perform(get("/api/v1/tenants/{id}", existingTenantId).with(jwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Existing Tenant"))
                 .andExpect(jsonPath("$.domain").value("existing.example.com"));
@@ -122,6 +124,7 @@ class ApiIntegrationTest {
     void getTenant_shouldReturn404() throws Exception {
         mockMvc.perform(get("/api/v1/tenants/{id}", UUID.randomUUID())
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"))))
+        mockMvc.perform(get("/api/v1/tenants/{id}", UUID.randomUUID()).with(jwt()))
                 .andExpect(status().isNotFound());
     }
 
@@ -129,6 +132,7 @@ class ApiIntegrationTest {
     void listTenants_shouldReturn200() throws Exception {
         mockMvc.perform(get("/api/v1/tenants")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")))
+                        .with(jwt())
                         .param("page", "0")
                         .param("size", "10"))
                 .andExpect(status().isOk())
@@ -151,6 +155,7 @@ class ApiIntegrationTest {
 
         mockMvc.perform(post("/api/v1/tenants")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")))
+                        .with(jwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isConflict())
@@ -161,6 +166,7 @@ class ApiIntegrationTest {
     void onboardTenant_shouldReturn400ForMissingFields() throws Exception {
         mockMvc.perform(post("/api/v1/tenants")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")))
+                        .with(jwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
@@ -171,6 +177,7 @@ class ApiIntegrationTest {
     void getTenantStatus_shouldReturn200() throws Exception {
         mockMvc.perform(get("/api/v1/tenants/{id}/status", existingTenantId)
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"))))
+        mockMvc.perform(get("/api/v1/tenants/{id}/status", existingTenantId).with(jwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
     }

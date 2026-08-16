@@ -1,0 +1,8 @@
+name: "USORA CodeQL Configuration"
+
+# We can specify paths to ignore or custom query suites if needed
+paths-ignore:
+  - '**/node_modules/**'
+  - '**/target/**'
+  - '**/build-artifacts/**'
+  - '**/docs/**'
