@@ -29,7 +29,9 @@ public class JwtTokenFilter extends OncePerRequestFilter {
             if (jwtTokenProvider.validateToken(token)) {
                 var authentication = jwtTokenProvider.getAuthentication(token);
                 if (authentication != null) {
-                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    if (authentication instanceof org.springframework.security.authentication.AbstractAuthenticationToken tokenAuth) {
+                        tokenAuth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    }
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
             }

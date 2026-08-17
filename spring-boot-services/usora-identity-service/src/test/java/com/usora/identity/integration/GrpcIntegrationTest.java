@@ -61,31 +61,48 @@ class GrpcIntegrationTest {
         assertThat(channel).isNotNull();
     }
 
-    private static class TestIdentityService extends io.grpc.BindableService {
+    private static class TestIdentityService implements io.grpc.BindableService {
         private final DomainService domainService;
 
         TestIdentityService(DomainService domainService) {
             this.domainService = domainService;
         }
 
+        private static class ByteArrayMarshaller implements io.grpc.MethodDescriptor.Marshaller<byte[]> {
+            @Override
+            public java.io.InputStream stream(byte[] value) {
+                return new java.io.ByteArrayInputStream(value);
+            }
+
+            @Override
+            public byte[] parse(java.io.InputStream stream) {
+                try {
+                    return stream.readAllBytes();
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+
         @Override
         public io.grpc.ServerServiceDefinition bindService() {
+            var marshaller = new ByteArrayMarshaller();
             return io.grpc.ServerServiceDefinition.builder("usora.identity.v1.IdentityService")
                     .addMethod(
-                            io.grpc.MethodDescriptor.newBuilder(
-                                            io.grpc.MethodDescriptor.Marshaller.forByteArray(),
-                                            io.grpc.MethodDescriptor.Marshaller.forByteArray())
+                            io.grpc.MethodDescriptor.<byte[], byte[]>newBuilder()
+                                    .setRequestMarshaller(marshaller)
+                                    .setResponseMarshaller(marshaller)
                                     .setFullMethodName(
                                             io.grpc.MethodDescriptor.generateFullMethodName(
                                                     "usora.identity.v1.IdentityService", "Authenticate"))
                                     .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
                                     .build(),
-                            new io.grpc.ServerCallHandler<>() {
+                            new io.grpc.ServerCallHandler<byte[], byte[]>() {
                                 @Override
                                 public io.grpc.ServerCall.Listener<byte[]> startCall(
                                         io.grpc.ServerCall<byte[], byte[]> call,
                                         io.grpc.Metadata headers) {
-                                    return new io.grpc.ServerCall.Listener<>() {
+                                    return new io.grpc.ServerCall.Listener<byte[]>() {
                                         // Stub implementation
                                     };
                                 }

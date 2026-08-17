@@ -49,7 +49,19 @@ public interface EntityMapper {
     @Mapping(target = "isDeleted", ignore = true)
     @Mapping(target = "tenantId", ignore = true)
     @Mapping(target = "jurisdiction", ignore = true)
+    @Mapping(target = "tags", expression = "java(serializeTags(request.tags()))")
     EvidenceRecord toEvidenceRecord(EvidenceSubmissionRequest request);
+
+    default String serializeTags(java.util.List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return "[]";
+        }
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(tags);
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
 
     // ComplianceCheckResult mappings
 

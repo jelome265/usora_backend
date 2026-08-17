@@ -64,7 +64,7 @@ class DomainServiceTest {
     void setUp() {
         passwordEncoder = new BCryptPasswordEncoder();
         tenantConfig = new TenantConfig();
-        entityMapper = new EntityMapperImpl();
+        entityMapper = org.mapstruct.factory.Mappers.getMapper(EntityMapper.class);
         meterRegistry = new SimpleMeterRegistry();
 
         domainService = new DomainService(
@@ -163,7 +163,7 @@ class DomainServiceTest {
         assertThat(response.isEnabled()).isTrue();
 
         verify(userRepository).save(any());
-        verify(eventPublisher).publishTokenEvent(anyString(), anyString(), anyString(), anyMap());
+        verify(eventPublisher).publishUserEvent(anyString(), anyString(), anyString(), anyMap());
     }
 
     @Test

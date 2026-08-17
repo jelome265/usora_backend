@@ -16,7 +16,6 @@ public class AsyncConfig {
         executor.setMaxPoolSize(32);
         executor.setQueueCapacity(500);
         executor.setThreadNamePrefix("compliance-async-");
-        executor.setVirtualThreadsEnabled(true);
         executor.initialize();
         return executor;
     }
@@ -28,7 +27,6 @@ public class AsyncConfig {
         executor.setMaxPoolSize(16);
         executor.setQueueCapacity(200);
         executor.setThreadNamePrefix("compliance-report-");
-        executor.setVirtualThreadsEnabled(true);
         executor.initialize();
         return executor;
     }

@@ -5,7 +5,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.boot.data.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.persistence.EntityManager;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 
@@ -23,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TenantRepositoryTest {
 
     @Autowired
-    private TestEntityManager entityManager;
+    private EntityManager entityManager;
 
     @Autowired
     private TenantRepository tenantRepository;
@@ -39,7 +40,8 @@ class TenantRepositoryTest {
                 .enabled(true)
                 .keyAlgorithm("RS256")
                 .build();
-        entityManager.persistAndFlush(tenant);
+        entityManager.persist(tenant);
+        entityManager.flush();
     }
 
     @Test
@@ -66,7 +68,8 @@ class TenantRepositoryTest {
     @Test
     void shouldNotFindDisabledTenant() {
         tenant.setEnabled(false);
-        entityManager.persistAndFlush(tenant);
+        entityManager.merge(tenant);
+        entityManager.flush();
 
         var found = tenantRepository.findActiveById(tenant.getId());
         assertThat(found).isEmpty();

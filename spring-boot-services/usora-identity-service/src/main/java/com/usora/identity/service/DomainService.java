@@ -392,7 +392,7 @@ public class DomainService {
 
         var saved = userRepository.save(userEntity);
 
-        eventPublisher.publishTokenEvent("user.created", saved.getId().toString(), tenant.getId().toString(),
+        eventPublisher.publishUserEvent("user.created", saved.getId().toString(), tenant.getId().toString(),
                 Map.of("username", saved.getUsername(), "email", saved.getEmail()));
 
         return entityMapper.toUserResponse(saved);

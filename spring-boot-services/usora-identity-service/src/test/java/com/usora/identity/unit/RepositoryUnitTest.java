@@ -8,7 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
-import org.springframework.boot.data.jpa.test.autoconfigure.TestEntityManager;
+import jakarta.persistence.EntityManager;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 
@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RepositoryUnitTest {
 
     @Autowired
-    private TestEntityManager em;
+    private EntityManager em;
 
     @Autowired
     private TenantRepository tenantRepository;
@@ -49,7 +49,8 @@ class RepositoryUnitTest {
                 .enabled(true)
                 .keyAlgorithm("RS256")
                 .build();
-        em.persistAndFlush(tenant);
+        em.persist(tenant);
+        em.flush();
     }
 
     @Test
@@ -84,7 +85,8 @@ class RepositoryUnitTest {
                 .refreshTokenTtlSeconds(604800)
                 .enabled(true)
                 .build();
-        em.persistAndFlush(client);
+        em.persist(client);
+        em.flush();
 
         var found = clientRepository.findByClientId("repo-test-client");
         assertThat(found).isPresent();
@@ -103,7 +105,8 @@ class RepositoryUnitTest {
                 .roles(Set.of("user"))
                 .tenant(tenant)
                 .build();
-        em.persistAndFlush(user);
+        em.persist(user);
+        em.flush();
 
         var found = userRepository.findByUsernameAndTenantId("repo-test-user", tenant.getId());
         assertThat(found).isPresent();
@@ -119,7 +122,8 @@ class RepositoryUnitTest {
                 .tenant(tenant)
                 .enabled(true)
                 .build();
-        em.persistAndFlush(user);
+        em.persist(user);
+        em.flush();
 
         assertThat(userRepository.existsByUsernameAndTenantId("unique-user", tenant.getId())).isTrue();
         assertThat(userRepository.existsByUsernameAndTenantId("nonexistent", tenant.getId())).isFalse();

@@ -11,17 +11,23 @@ public class GrpcConfig {
     @Bean
     @GrpcGlobalServerInterceptor
     public ServerInterceptor tenantGrpcInterceptor() {
-        return (call, headers, next) -> {
-            var tenantId = headers.get(io.grpc.Metadata.Key.of("X-Tenant-Id",
-                    io.grpc.Metadata.ASCII_STRING_MARSHALLER));
-            if (tenantId != null) {
-                var ctx = com.usora.identity.security.TenantContext.getContext();
-                ctx.setTenantId(tenantId);
-            }
-            try {
-                return next.startCall(call, headers);
-            } finally {
-                com.usora.identity.security.TenantContext.clear();
+        return new ServerInterceptor() {
+            @Override
+            public <ReqT, RespT> io.grpc.ServerCall.Listener<ReqT> interceptCall(
+                    io.grpc.ServerCall<ReqT, RespT> call,
+                    io.grpc.Metadata headers,
+                    io.grpc.ServerCallHandler<ReqT, RespT> next) {
+                var tenantId = headers.get(io.grpc.Metadata.Key.of("X-Tenant-Id",
+                        io.grpc.Metadata.ASCII_STRING_MARSHALLER));
+                if (tenantId != null) {
+                    var ctx = com.usora.identity.security.TenantContext.getContext();
+                    ctx.setTenantId(tenantId);
+                }
+                try {
+                    return next.startCall(call, headers);
+                } finally {
+                    com.usora.identity.security.TenantContext.clear();
+                }
             }
         };
     }

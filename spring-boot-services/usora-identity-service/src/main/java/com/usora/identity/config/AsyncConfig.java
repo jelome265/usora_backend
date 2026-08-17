@@ -16,7 +16,6 @@ public class AsyncConfig {
         executor.setMaxPoolSize(8);
         executor.setQueueCapacity(100);
         executor.setThreadNamePrefix("auth-event-");
-        executor.setVirtualThreadsPreferred(true);
         executor.initialize();
         return executor;
     }
@@ -28,7 +27,6 @@ public class AsyncConfig {
         executor.setMaxPoolSize(4);
         executor.setQueueCapacity(50);
         executor.setThreadNamePrefix("token-cleanup-");
-        executor.setVirtualThreadsPreferred(true);
         executor.initialize();
         return executor;
     }

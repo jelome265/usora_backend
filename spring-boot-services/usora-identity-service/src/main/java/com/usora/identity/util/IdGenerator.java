@@ -24,7 +24,9 @@ public final class IdGenerator {
         uuid[6] = (byte) ((uuid[6] & 0x0F) | 0x70);
         uuid[7] = (byte) ((uuid[7] & 0x3F) | 0x80);
 
-        SECURE_RANDOM.nextBytes(uuid, 8, 8);
+        byte[] randomBytes = new byte[8];
+        SECURE_RANDOM.nextBytes(randomBytes);
+        System.arraycopy(randomBytes, 0, uuid, 8, 8);
 
         long msb = 0;
         long lsb = 0;
