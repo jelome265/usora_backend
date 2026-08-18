@@ -88,3 +88,9 @@ tenant:
     auto-suspend-on-payment-failure: false
     auto-suspend-after-days: 1
     data-retention-during-suspension: "1d"
+
+resilience4j:
+  retry:
+    instances:
+      tenantProvisioning:
+        max-attempts: 1

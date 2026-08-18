@@ -40,10 +40,8 @@ class ApiIntegrationTest {
     private TenantRepository tenantRepository;
 
     @org.springframework.test.context.bean.override.mockito.MockitoBean
-    private org.springframework.kafka.core.KafkaTemplate<String, String> kafkaTemplate;
-
-    @org.springframework.test.context.bean.override.mockito.MockitoBean
-    private org.springframework.kafka.core.KafkaTemplate<String, Object> eventKafkaTemplate;
+    @SuppressWarnings("rawtypes")
+    private org.springframework.kafka.core.KafkaTemplate kafkaTemplate;
 
     @org.springframework.test.context.bean.override.mockito.MockitoBean
     private org.springframework.kafka.core.KafkaAdmin kafkaAdmin;
@@ -52,14 +50,9 @@ class ApiIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        org.mockito.Mockito.when(kafkaTemplate.send(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+        org.mockito.Mockito.when(kafkaTemplate.send(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(null));
-        org.mockito.Mockito.when(kafkaTemplate.send(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
-                .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(null));
-
-        org.mockito.Mockito.when(eventKafkaTemplate.send(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
-                .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(null));
-        org.mockito.Mockito.when(eventKafkaTemplate.send(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+        org.mockito.Mockito.when(kafkaTemplate.send(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(null));
 
         tenantRepository.deleteAll();
