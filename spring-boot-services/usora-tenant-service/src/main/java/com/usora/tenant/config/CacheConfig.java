@@ -11,8 +11,11 @@ import org.springframework.data.redis.serializer.RedisSerializationContext;
 
 import java.time.Duration;
 
+import org.springframework.context.annotation.Profile;
+
 @Configuration
 @EnableCaching
+@Profile("!test")
 public class CacheConfig {
 
     @Bean
