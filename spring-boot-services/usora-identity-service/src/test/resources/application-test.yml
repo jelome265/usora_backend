@@ -44,6 +44,8 @@ identity:
   cleanup:
     interval: -1
 
+OAUTH_API_CLIENT_SECRET: "test-client-secret-for-unit-tests"
+
 logging:
   level:
     com.usora: DEBUG
