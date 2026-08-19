@@ -1,0 +1,122 @@
+replicaCount: 3
+
+nameOverride: ""
+fullnameOverride: ""
+
+springProfile: "prod"
+
+image:
+  repository: usora/identity-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8081"
+  prometheus.io/path: "/actuator/prometheus"
+
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+      protocol: TCP
+    - name: grpc
+      port: 9091
+      targetPort: 9091
+      protocol: TCP
+
+postgresql:
+  host: usora-identity-postgresql
+  port: 5432
+  database: usora_identity
+  # SECURITY: this service is the platform's root of trust for
+  # authentication — its DB credentials are at least as sensitive as
+  # anything in the fleet. No literal credentials in this file, ever.
+  # application-prod.yml reads a single DATASOURCE_URL (embedding
+  # credentials), not split host/user/password fields like most of the
+  # rest of the fleet.
+  existingSecret: ""
+  existingSecretUrlKey: "database-url"
+
+redis:
+  host: usora-redis
+  port: 6379
+  # REDIS_PASSWORD has no default at all in application.yml (required,
+  # no insecure fallback) — this chart still needs to supply it via
+  # existingSecret in any non-trivial environment.
+  existingSecret: ""
+  existingSecretPasswordKey: "password"
+
+kafka:
+  bootstrapServers: usora-kafka:9092
+
+opa:
+  url: "http://usora-opa:8181"
+
+# PRE-EXISTING GAP, found and fixed while writing this chart:
+# grpc.server.port in application.yml is a hardcoded literal 50051, but
+# usora-tenant-service's IDENTITY_SERVICE_PORT default (and the only
+# other reference to this service's gRPC port anywhere in the fleet)
+# expects 9091 — a real, previously-unconnected inter-service port
+# mismatch. Standardized on 9091 via an explicit GRPC_SERVER_PORT
+# override (Spring's relaxed env-var binding overrides a property
+# regardless of whether the YAML value is a literal or a ${...}
+# placeholder).
+grpcPort: 9091
+
+# SECURITY, found and FIXED while writing this chart (not just flagged):
+# JwtTokenProvider previously generated a fresh, unpersisted RSA key pair
+# on every pod startup — with 3+ replicas, every pod signed JWTs with a
+# different key the others couldn't verify via JWKS. Fixed by persisting
+# the default signing key (V3__system_signing_keys.sql), encrypted at
+# rest with this key. No insecure literal default exists anywhere in the
+# app for this — startup fails without it (see JwtTokenProvider's
+# constructor). Generate with e.g. `openssl rand -base64 32`.
+security:
+  existingSecret: ""
+  existingSecretEncryptionKeyKey: "encryption-key"
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "2Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8081
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8081
+  initialDelaySeconds: 40
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+affinity: {}
+tolerations: []
+nodeSelector: {}

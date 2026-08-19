@@ -2,7 +2,23 @@ use crate::models::RiskThresholds;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// PRE-EXISTING GAP, found and fixed while writing this service's Helm
+// chart: none of the structs below had #[serde(default)], so
+// ServiceConfig::from_path() required every single field in every nested
+// struct to be present in the YAML file or deserialization failed
+// outright — and main.rs's `.unwrap_or_default()` call site silently
+// swallowed that failure and ran with ServiceConfig::default() instead
+// (loopback-only bind addresses, localhost Kafka/Postgres/Redis), with no
+// error surfaced anywhere. Adding #[serde(default)] here (paired with the
+// main.rs fix that now fails fast on a genuinely malformed file) means a
+// config file only needs to specify the fields that actually differ from
+// the compiled-in defaults, while a *missing* file — as opposed to a
+// present-but-incomplete one — still needs to be caught by main.rs, since
+// this attribute only helps once a file has been found and partially
+// parsed.
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServiceConfig {
     pub server: ServerConfig,
     pub kafka: KafkaConfig,
@@ -34,6 +50,7 @@ impl Default for ServiceConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServerConfig {
     pub grpc_addr: String,
     pub http_addr: String,
@@ -55,6 +72,7 @@ impl Default for ServerConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct KafkaConfig {
     pub brokers: String,
     pub group_id: String,
@@ -65,6 +83,17 @@ pub struct KafkaConfig {
     pub enable_auto_commit: bool,
     pub session_timeout_ms: u64,
     pub max_poll_interval_ms: u64,
+    /// RELIABILITY FIX, found and fixed while writing this service's Helm
+    /// chart: this struct had enable_auto_commit (defaulting true) with
+    /// no dead-letter topic and no retry count anywhere — meaning a
+    /// failed risk-scoring task (a transient DB error, a malformed
+    /// request) was logged and then permanently lost, since its offset
+    /// was already committed regardless of outcome. See
+    /// usora-document-processor's identical fix (main.rs's
+    /// run_kafka_consumer) for the same reasoning, applied here.
+    pub dead_letter_topic: String,
+    pub retry_count: u32,
+    pub retry_backoff_ms: u64,
 }
 
 impl Default for KafkaConfig {
@@ -79,11 +108,15 @@ impl Default for KafkaConfig {
             enable_auto_commit: true,
             session_timeout_ms: 30000,
             max_poll_interval_ms: 300000,
+            dead_letter_topic: "risk.dead.letter".into(),
+            retry_count: 3,
+            retry_backoff_ms: 1000,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RedisConfig {
     pub url: String,
     pub connection_pool_size: u32,
@@ -107,6 +140,7 @@ impl Default for RedisConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PostgresConfig {
     pub url: String,
     pub max_connections: u32,
@@ -130,6 +164,7 @@ impl Default for PostgresConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ModelsConfig {
     pub applicant_risk: ModelConfig,
     pub transaction_risk: ModelConfig,
@@ -175,6 +210,7 @@ impl Default for ModelsConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ModelConfig {
     pub model_id: String,
     pub model_path: String,
@@ -185,6 +221,7 @@ pub struct ModelConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct FeatureStoreConfig {
     pub store_type: String,
     pub ttl_seconds: u64,
@@ -216,6 +253,7 @@ impl Default for FeatureStoreConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ExplainabilityConfig {
     pub enabled: bool,
     pub method: String,
@@ -235,6 +273,7 @@ impl Default for ExplainabilityConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PerformanceConfig {
     pub max_latency_ms: u64,
     pub batch_size: usize,
@@ -256,6 +295,7 @@ impl Default for PerformanceConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TelemetryConfig {
     pub service_name: String,
     pub tracing_endpoint: Option<String>,
@@ -277,6 +317,7 @@ impl Default for TelemetryConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TenantOverrides {
     pub tenant_id: String,
     pub thresholds: Option<RiskThresholds>,
@@ -300,6 +341,28 @@ impl ServiceConfig {
     pub fn from_env() -> Result<Self, anyhow::Error> {
         let config_path = std::env::var("RISK_SCORING_CONFIG")
             .unwrap_or_else(|_| "config/risk_scoring.yaml".into());
-        Self::from_path(&config_path)
+        let mut config = Self::from_path(&config_path)?;
+
+        // RELIABILITY/SECURITY FIX, found and fixed while writing this
+        // service's Helm chart: from_path() had no way to layer secrets
+        // on top of the file-based config at all — no env-var
+        // interpolation inside the YAML, and nothing here to override
+        // individual fields afterward. That's a real gap: a Kubernetes
+        // ConfigMap is not a safe place for a database password, but
+        // without this, anyone deploying this service would have had no
+        // way to keep credentials out of the config file short of
+        // patching this function themselves. DATABASE_URL/REDIS_URL, if
+        // set, take priority over whatever the file specifies — the
+        // file supplies structure and defaults, the environment supplies
+        // secrets, matching the pattern used by every other service in
+        // this fleet.
+        if let Ok(database_url) = std::env::var("DATABASE_URL") {
+            config.postgres.url = database_url;
+        }
+        if let Ok(redis_url) = std::env::var("REDIS_URL") {
+            config.redis.url = redis_url;
+        }
+
+        Ok(config)
     }
 }

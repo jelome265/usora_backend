@@ -5,9 +5,17 @@ edition = "2021"
 
 [dependencies]
 tonic = "0.12"
+# Added to close an undocumented gap found while writing this service's
+# Helm chart: no gRPC health service was registered anywhere, unlike the
+# rest of the Rust fleet (gateway, document-processor) — a native
+# Kubernetes gRPC readiness/liveness probe against this service had
+# nothing to talk to and would fail every check.
+tonic-health = "0.12"
 tokio = { version = "1.38", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Added for dead-letter-topic payload encoding — see KafkaConfig::dead_letter_topic.
+base64 = "0.22"
 serde_yaml = "0.9"
 tract-onnx = "0.21"
 ndarray = "0.16"

@@ -17,6 +17,25 @@ pub struct Config {
     pub otlp_endpoint: Option<String>,
     pub service_name: String,
     pub rest_bind_address: Option<String>,
+    /// Shared HMAC secret used to verify internal-service bearer tokens
+    /// on the REST API — see auth.rs. Required (no insecure default): a
+    /// missing value fails validate() rather than silently accepting
+    /// unauthenticated callers.
+    pub internal_service_jwt_secret: Option<String>,
+    /// PRE-EXISTING GAP, found and fixed while writing this service's Helm
+    /// chart: kafka_dead_letter_topic/kafka_retry_count/
+    /// kafka_retry_backoff_ms were already declared in the chart's
+    /// values.yaml (topics.deadLetter, retryCount, retryBackoffMs) with
+    /// no corresponding env var anywhere in this struct and no retry/DLQ
+    /// logic anywhere in main.rs's Kafka consumer — meaning a message
+    /// that failed processing (a corrupted image, a transient DB error,
+    /// an OCR crash) was logged and then permanently lost, because
+    /// `enable.auto.commit: true` committed its offset regardless of
+    /// whether processing succeeded. See main.rs::run_kafka_consumer for
+    /// the fix.
+    pub kafka_dead_letter_topic: String,
+    pub kafka_retry_count: u32,
+    pub kafka_retry_backoff_ms: u64,
 }
 
 impl Config {
@@ -53,6 +72,17 @@ impl Config {
             service_name: std::env::var("SERVICE_NAME")
                 .unwrap_or_else(|_| "usora-document-processor".to_string()),
             rest_bind_address: std::env::var("REST_BIND_ADDRESS").ok(),
+            internal_service_jwt_secret: std::env::var("INTERNAL_SERVICE_JWT_SECRET").ok(),
+            kafka_dead_letter_topic: std::env::var("KAFKA_DEAD_LETTER_TOPIC")
+                .unwrap_or_else(|_| "document.dead.letter".to_string()),
+            kafka_retry_count: std::env::var("KAFKA_RETRY_COUNT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3),
+            kafka_retry_backoff_ms: std::env::var("KAFKA_RETRY_BACKOFF_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1000),
         })
     }
 
@@ -65,6 +95,17 @@ impl Config {
         }
         if self.max_concurrent_jobs == 0 {
             anyhow::bail!("MAX_CONCURRENT_JOBS must be positive");
+        }
+        // SECURITY: the REST API performs document/biometric forensic
+        // analysis and takes tenant_id from the request body — it MUST be
+        // authenticated. Refuse to start rather than silently serve that
+        // surface unauthenticated. See auth.rs for the full rationale.
+        if self.internal_service_jwt_secret.as_deref().unwrap_or("").is_empty() {
+            anyhow::bail!(
+                "INTERNAL_SERVICE_JWT_SECRET must be set — the REST API cannot start \
+                 without it, since it would otherwise serve document/biometric analysis \
+                 endpoints with no authentication at all"
+            );
         }
         Ok(())
     }

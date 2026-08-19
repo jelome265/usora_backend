@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "usora-identity-service.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-identity-service.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "usora-identity-service.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "usora-identity-service.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "usora-identity-service.serviceAccountName" . }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: usora-identity-service
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+            - name: grpc
+              containerPort: 9091
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "usora-identity-service.fullname" . }}-config
+          env:
+            {{- if .Values.postgresql.existingSecret }}
+            - name: DATASOURCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.existingSecret }}
+                  key: {{ .Values.postgresql.existingSecretUrlKey | default "database-url" }}
+            {{- else }}
+            # SECURITY: no postgresql.existingSecret configured — falls
+            # back to application.yml's hardcoded dev literal
+            # (jdbc:postgresql://localhost:5432/usora_identity, user
+            # "usora", password "usora_dev"), which will simply fail to
+            # connect outside local dev. Set postgresql.existingSecret
+            # before deploying this chart anywhere shared.
+            {{- end }}
+            {{- if .Values.redis.existingSecret }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.existingSecret }}
+                  key: {{ .Values.redis.existingSecretPasswordKey | default "password" }}
+            {{- else }}
+            {{ required "redis.existingSecret must be set — REDIS_PASSWORD has no default at all in application.yml (required, no insecure fallback), so this service will fail to start without it." "" }}
+            {{- end }}
+            {{- if .Values.security.existingSecret }}
+            - name: IDENTITY_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.security.existingSecret }}
+                  key: {{ .Values.security.existingSecretEncryptionKeyKey | default "encryption-key" }}
+            {{- else }}
+            {{ required "security.existingSecret must be set — IDENTITY_ENCRYPTION_KEY has no default and this service refuses to start without it (see JwtTokenProvider.java's constructor). It protects the persisted default JWT signing key at rest; see docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md and V3__system_signing_keys.sql for the bug this fixed." "" }}
+            {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}

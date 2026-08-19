@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 public class JwtTokenProvider {
@@ -29,6 +30,40 @@ public class JwtTokenProvider {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /**
+     * Signature-verified claim extraction for callers that need to make an
+     * authorization decision based on the token's content (subject, roles),
+     * not just "is this a syntactically valid JWT". Returns empty on any
+     * validation failure (bad signature, expired, malformed) — callers MUST
+     * treat an empty result as "not authorized", never as "skip the check".
+     */
+    public Optional<Claims> parseVerifiedClaims(String token) {
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload());
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Convenience check: does a signature-verified token carry the given
+     * role in its `roles` claim? Used for endpoints that require a specific
+     * role beyond "any authenticated caller" (e.g. dual-authorization
+     * approvals).
+     */
+    public boolean hasVerifiedRole(String token, String requiredRole) {
+        return parseVerifiedClaims(token)
+                .map(claims -> {
+                    var roles = claims.get("roles", List.class);
+                    return roles != null && roles.stream()
+                            .anyMatch(r -> requiredRole.equalsIgnoreCase(String.valueOf(r)));
+                })
+                .orElse(false);
     }
 
     public Authentication getAuthentication(String token) {

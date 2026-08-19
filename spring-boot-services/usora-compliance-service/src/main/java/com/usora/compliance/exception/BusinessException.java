@@ -56,6 +56,20 @@ public class BusinessException extends RuntimeException {
                 "Jurisdiction configuration conflict for " + jurisdiction, 409, detail);
     }
 
+    /**
+     * SECURITY/COMPLIANCE: used when a jurisdiction's regulation
+     * configuration cannot be parsed. This MUST fail closed (block the
+     * check, require manual review) rather than silently treating a
+     * corrupted config as "no regulations apply" — a jurisdiction check
+     * that evaluates zero regulations must never be reported as compliant.
+     */
+    public static BusinessException jurisdictionConfigCorrupted(String jurisdiction, String detail) {
+        return new BusinessException("JURISDICTION_CONFIG_CORRUPTED",
+                "Jurisdiction regulation configuration for " + jurisdiction
+                        + " is corrupted and could not be evaluated — treated as non-compliant pending manual review",
+                409, detail);
+    }
+
     public static BusinessException evidenceCorrupted(String evidenceId) {
         return new BusinessException("EVIDENCE_CORRUPTED",
                 "Evidence integrity check failed for " + evidenceId, 400);

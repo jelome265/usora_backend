@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "usora-compliance-service.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-compliance-service.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "usora-compliance-service.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "usora-compliance-service.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "usora-compliance-service.serviceAccountName" . }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: usora-compliance-service
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8083
+              protocol: TCP
+            - name: grpc
+              containerPort: 9091
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "usora-compliance-service.fullname" . }}-config
+          env:
+            {{- if .Values.postgresql.existingSecret }}
+            - name: COMPLIANCE_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.existingSecret }}
+                  key: {{ .Values.postgresql.existingSecretUsernameKey | default "username" }}
+            - name: COMPLIANCE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.existingSecret }}
+                  key: {{ .Values.postgresql.existingSecretPasswordKey | default "password" }}
+            {{- end }}
+            {{- if .Values.redis.existingSecret }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.existingSecret }}
+                  key: {{ .Values.redis.existingSecretPasswordKey | default "password" }}
+            {{- end }}
+            {{- if .Values.secrets.existingSecret }}
+            - name: COMPLIANCE_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: jwt-secret
+            - name: COMPLIANCE_RULE_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: rule-signing-secret
+            {{- else }}
+            {{ required "secrets.existingSecret must be set — COMPLIANCE_JWT_SECRET and COMPLIANCE_RULE_SIGNING_SECRET have no safe default. The rule-signing secret in particular HMAC-signs every dual-authorized regulatory rule change (see DomainService.java's writeAuditEntry/updateRegulatoryRules and finding C2 in docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md) — a known constant key here means that signature provides no real integrity guarantee." "" }}
+            {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}

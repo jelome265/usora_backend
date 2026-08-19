@@ -1,0 +1,143 @@
+# ARCHITECTURAL FINDING, found while writing this chart, NOT fully
+# resolved here — flagged deliberately rather than papered over with a
+# default that would look like it works:
+#
+# The FAISS index (see rust-services/usora-face-matching-engine/src/
+# matching/one_to_many.rs) is mutated at runtime — new biometric
+# enrollments are added to it and periodically saved back to disk — and
+# is only synchronized with a std::sync::Mutex, which provides IN-PROCESS
+# safety only. It provides no cross-process/cross-pod coordination at
+# all. With more than one replica, each pod would load its own
+# independent copy of the index at startup and diverge from every other
+# pod's copy as enrollments happen — a face enrolled via the replica that
+# handled that request would silently NOT be searchable via any other
+# replica's copy of the index. That is a correctness bug for a 1:N
+# biometric-matching service's core purpose, not a performance concern.
+#
+# Given that, this chart deliberately runs a SINGLE replica by default
+# (replicaCount: 1, autoscaling disabled) with a ReadWriteOnce PVC for the
+# index, rather than defaulting to multiple replicas and silently
+# shipping an inconsistent-index bug. Scaling this service beyond one
+# replica needs an actual architecture decision first — e.g. a
+# single-writer index-update service with read replicas, or migrating
+# off local FAISS files to a proper vector database that handles
+# concurrent writes itself — not just a chart change.
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: usora/face-matching-engine
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9091"
+  prometheus.io/path: "/metrics"
+
+ports:
+  grpc: 9090
+  metrics: 9091
+
+service:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+    - name: metrics
+      port: 9091
+      targetPort: 9091
+      protocol: TCP
+
+kafka:
+  bootstrapServers: usora-kafka:9092
+  tasksTopic: "biometric.tasks"
+  resultsTopic: "verification.results"
+  auditTopic: "biometric.audit"
+  consumerGroup: "face-matching-engine"
+
+retry:
+  # PRE-EXISTING GAP, found and fixed while writing this chart: this
+  # service's Kafka consumer had retry_max_attempts/retry_base_delay_ms
+  # declared in config but never referenced anywhere in main.rs — dead
+  # config — and enable.auto.offset.store was left at its default,
+  # meaning a failed task's offset could commit before processing even
+  # ran. Fixed in main.rs alongside this chart; third occurrence of the
+  # identical pattern across the Rust fleet (see usora-document-processor
+  # and usora-risk-scoring-engine).
+  maxAttempts: 3
+  baseDelayMs: 100
+
+redis:
+  host: usora-redis
+  port: 6379
+  poolSize: 10
+  existingSecret: ""
+  existingSecretPasswordKey: "password"
+
+postgresql:
+  host: usora-postgresql
+  port: 5432
+  database: usora_biometric
+  maxConnections: 20
+  existingSecret: ""
+  existingSecretUrlKey: "database-url"
+
+faiss:
+  indexPath: "/data/faiss/faiss.index"
+  # Sized generously since a growing biometric enrollment index is
+  # exactly the kind of thing that's expensive to discover is full at
+  # 2am — resize the underlying storage class's volume rather than let
+  # this fill silently.
+  storageSize: 50Gi
+  storageClassName: ""
+
+otlpEndpoint: ""
+
+resources:
+  requests:
+    cpu: "2"
+    memory: "4Gi"
+  limits:
+    cpu: "4"
+    memory: "8Gi"
+
+# Autoscaling deliberately NOT enabled by default — see the top-of-file
+# comment. Flip this on only after the shared-index architecture question
+# above has an actual answer.
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPUUtilizationPercentage: 70
+
+readinessProbe:
+  grpc:
+    port: 9090
+  initialDelaySeconds: 20
+  periodSeconds: 10
+
+livenessProbe:
+  grpc:
+    port: 9090
+  initialDelaySeconds: 40
+  periodSeconds: 30
+
+affinity: {}
+tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "compute"
+    effect: "NoSchedule"
+nodeSelector:
+  node-type: compute

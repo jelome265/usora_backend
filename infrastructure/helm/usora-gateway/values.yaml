@@ -1,5 +1,8 @@
 replicaCount: 5
 
+nameOverride: ""
+fullnameOverride: ""
+
 image:
   repository: usora/api-gateway
   tag: latest
@@ -14,7 +17,21 @@ serviceAccount:
 podAnnotations:
   sidecar.istio.io/inject: "true"
   prometheus.io/scrape: "true"
-  prometheus.io/port: "9090"
+  # PRE-EXISTING GAP, found and fixed while writing this chart: /metrics
+  # is served on the HTTPS port (8443) by the same axum router as
+  # everything else (see routes/mod.rs — there is no separate metrics
+  # listener), not on 9090 (which is a gRPC-only tonic server and cannot
+  # serve a Prometheus text-exposition response at all). The previous
+  # value here would have made every scrape attempt fail.
+  # NOTE: the cluster's allow-metrics-ingress NetworkPolicy
+  # (infrastructure/k8s/base/network-policies.yml) currently only opens
+  # ingress on port 8080 for the prometheus/monitoring namespaces — it does
+  # not cover this port (8443) or this scrape needing a TLS-aware
+  # Prometheus scrape config (scheme: https). Both need to be reconciled
+  # before scraping will actually work end-to-end; flagging here rather
+  # than silently editing the shared base NetworkPolicy for every service.
+  prometheus.io/port: "8443"
+  prometheus.io/scheme: "https"
   prometheus.io/path: "/metrics"
 
 service:
@@ -61,7 +78,15 @@ autoscaling:
 redis:
   host: usora-redis
   port: 6379
+  # SECURITY: leave this empty and use existingSecret in any shared
+  # environment — do not set a literal password here. See finding in
+  # docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md (§7) re: secrets
+  # sourced only from a vault/KMS/secrets manager.
   password: ""
+  # Name of a pre-existing Secret (provisioned by Vault/External Secrets
+  # Operator, not by this chart) containing the Redis password.
+  existingSecret: ""
+  existingSecretPasswordKey: "password"
   timeout: 2000
   poolMaxSize: 64
   poolMaxIdle: 32
@@ -113,9 +138,30 @@ rateLimiting:
     requestsPerSecond: 10000
     burstSize: 20000
 
+# SECURITY: explicit per-environment CORS origin allowlist consumed by
+# CORS_ALLOWED_ORIGINS (see finding C5 in
+# docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md). Left empty by
+# default so a fresh environment fails closed (no cross-origin browser
+# access) rather than open. Override per environment, e.g.:
+#   corsAllowedOrigins:
+#     - https://app.usora.example
+#     - https://dashboard.usora.example
+corsAllowedOrigins: []
+
+observability:
+  otlpEndpoint: "http://usora-otel-collector:4317"
+
 readinessProbe:
-  httpGet:
-    path: /health/ready
+  # PRE-EXISTING GAP, found and fixed while writing this chart: the
+  # application has no HTTP /health/ready or /health/live path anywhere —
+  # see rust-services/usora-api-gateway/src/routes/health.rs (only
+  # `/health` exists, on the HTTPS port) and src/main.rs::serve_grpc
+  # (registers a real gRPC health-checking-protocol service via
+  # tonic-health on port 9090). Using the httpGet probes that were here
+  # previously would have made every pod permanently fail readiness/
+  # liveness checks. Native Kubernetes gRPC probes (stable since 1.27)
+  # point at the service the app actually implements.
+  grpc:
     port: 9090
   initialDelaySeconds: 5
   periodSeconds: 5
@@ -123,8 +169,7 @@ readinessProbe:
   failureThreshold: 2
 
 livenessProbe:
-  httpGet:
-    path: /health/live
+  grpc:
     port: 9090
   initialDelaySeconds: 15
   periodSeconds: 15

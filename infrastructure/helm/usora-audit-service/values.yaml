@@ -1,0 +1,135 @@
+replicaCount: 3
+
+nameOverride: ""
+fullnameOverride: ""
+
+springProfile: "prod"
+
+image:
+  repository: usora/audit-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8082"
+  prometheus.io/path: "/actuator/prometheus"
+
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8082
+      targetPort: 8082
+      protocol: TCP
+    - name: grpc
+      port: 9092
+      targetPort: 9092
+      protocol: TCP
+
+postgresql:
+  host: usora-postgresql
+  port: 5432
+  database: usora_audit
+  # SECURITY: no literal credentials — see usora-core chart for the same
+  # pattern/rationale. This service's audit trail is the immutable
+  # evidentiary record for the whole platform; its DB credentials are at
+  # least as sensitive as any other service's.
+  existingSecret: ""
+  existingSecretUsernameKey: "username"
+  existingSecretPasswordKey: "password"
+
+redis:
+  host: usora-redis
+  port: 6379
+  existingSecret: ""
+  existingSecretPasswordKey: "password"
+
+kafka:
+  # This service reads KAFKA_HOST/KAFKA_PORT as two separate env vars
+  # (application.yml: bootstrap-servers: "${KAFKA_HOST}:${KAFKA_PORT}"),
+  # unlike most of the rest of the fleet which takes one combined
+  # KAFKA_BROKERS string — kept as separate fields here to match what
+  # this service actually expects, rather than deriving one from the
+  # other.
+  host: usora-kafka
+  port: 9092
+
+blockchain:
+  # Used for the (optional) blockchain-anchoring integration referenced in
+  # application.yml's grpc.client.blockchain-anchor block.
+  host: usora-blockchain-anchor
+  port: 50051
+
+siem:
+  # SIEM forwarding endpoint — leave url empty to disable (application.yml
+  # already defaults siem.enabled based on this being set).
+  url: ""
+
+s3:
+  endpoint: "http://usora-minio:9000"
+  bucket: usora-audit-archive
+  region: us-east-1
+
+# SECURITY: consolidates every secret this service needs into ONE
+# Kubernetes Secret (provisioned by Vault/External Secrets Operator, never
+# by this chart) rather than one Secret object per concern — simpler to
+# operate, still fully "no literal secret in this file" compliant. Expected
+# keys, all required before this chart is used anywhere but local/dev:
+#   jwt-secret               -> JWT_SECRET (application.yml's insecure
+#                                default: "default-secret-key-change-in-
+#                                production-minimum-32-chars")
+#   encryption-key            -> AUDIT_ENCRYPTION_KEY (default:
+#                                "default-aes-key-32byte!!change-me!!")
+#   hmac-key-default           -> DEFAULT_TENANT_HMAC_KEY
+#   siem-token                 -> SIEM_TOKEN (only needed if siem.url set)
+#   aws-access-key-id          -> AWS_ACCESS_KEY_ID
+#   aws-secret-access-key      -> AWS_SECRET_ACCESS_KEY (default:
+#                                "minioadmin" — a well-known MinIO dev
+#                                credential, must never reach a real
+#                                environment)
+secrets:
+  existingSecret: ""
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "2Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8082
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8082
+  initialDelaySeconds: 40
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+affinity: {}
+tolerations: []
+nodeSelector: {}

@@ -83,3 +83,15 @@ grpc:
     tenant-service:
       address: static://${TENANT_SERVICE_HOST:localhost}:${TENANT_SERVICE_PORT:9090}
       negotiation-type: tls
+
+# PRE-EXISTING GAP, found and fixed while writing this service's Helm
+# chart: neither security.jwt.secret nor security.encryption.secret-key
+# was overridden anywhere in this prod profile — production deployments
+# were using application.yml's insecure defaults
+# ("defaultSecretKeyMustBeOverriddenInProduction" for JWT signing, and an
+# empty string for the encryption key) with no override in place.
+security:
+  jwt:
+    secret: ${JWT_SECRET}
+  encryption:
+    secret-key: ${ENCRYPTION_SECRET_KEY}

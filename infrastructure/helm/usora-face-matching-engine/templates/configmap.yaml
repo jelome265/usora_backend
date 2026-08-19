@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "usora-face-matching-engine.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-face-matching-engine.labels" . | nindent 4 }}
+data:
+  KAFKA_BROKERS: {{ .Values.kafka.bootstrapServers | quote }}
+  KAFKA_TASKS_TOPIC: {{ .Values.kafka.tasksTopic | quote }}
+  KAFKA_RESULTS_TOPIC: {{ .Values.kafka.resultsTopic | quote }}
+  KAFKA_AUDIT_TOPIC: {{ .Values.kafka.auditTopic | quote }}
+  KAFKA_CONSUMER_GROUP: {{ .Values.kafka.consumerGroup | quote }}
+
+  # PRE-EXISTING GAP, found and fixed while writing this chart: the app's
+  # compiled-in default gRPC bind address is loopback-only ([::1]:50053)
+  # — unreachable from other pods if not overridden. Standardized on 9090
+  # to match the rest of the fleet.
+  GRPC_BIND_ADDRESS: "0.0.0.0:9090"
+  METRICS_PORT: {{ .Values.ports.metrics | quote }}
+
+  REDIS_POOL_SIZE: {{ .Values.redis.poolSize | quote }}
+  POSTGRES_MAX_CONNECTIONS: {{ .Values.postgresql.maxConnections | quote }}
+
+  FAISS_INDEX_PATH: {{ .Values.faiss.indexPath | quote }}
+
+  OTEL_SERVICE_NAME: "usora-face-matching-engine"
+  {{- if .Values.otlpEndpoint }}
+  OTLP_ENDPOINT: {{ .Values.otlpEndpoint | quote }}
+  {{- end }}
+
+  RETRY_MAX_ATTEMPTS: {{ .Values.retry.maxAttempts | quote }}
+  RETRY_BASE_DELAY_MS: {{ .Values.retry.baseDelayMs | quote }}

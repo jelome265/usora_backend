@@ -7,6 +7,8 @@ pub mod models;
 pub mod grpc;
 pub mod routes;
 pub mod utils;
+pub mod auth;
+pub mod metrics;
 
 pub mod generated {
     pub mod usora {

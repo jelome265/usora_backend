@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "usora-face-matching-engine.fullname" . }}-faiss-index
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-face-matching-engine.labels" . | nindent 4 }}
+spec:
+  # ReadWriteOnce deliberately — see values.yaml's top-of-file comment.
+  # This is correct ONLY as long as this chart stays at a single replica;
+  # do not change this to ReadWriteMany as a way to enable multiple
+  # replicas without first resolving the concurrent-write-safety question
+  # documented there.
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.faiss.storageClassName }}
+  storageClassName: {{ .Values.faiss.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.faiss.storageSize }}

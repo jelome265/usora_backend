@@ -1,0 +1,121 @@
+replicaCount: 3
+
+nameOverride: ""
+fullnameOverride: ""
+
+springProfile: "prod"
+
+image:
+  repository: usora/compliance-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8083"
+  prometheus.io/path: "/actuator/prometheus"
+
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8083
+      targetPort: 8083
+      protocol: TCP
+    - name: grpc
+      port: 9091
+      targetPort: 9091
+      protocol: TCP
+
+postgresql:
+  # application-prod.yml's own default for COMPLIANCE_DB_HOST is
+  # "compliance-db" — this chart doesn't rely on that default matching
+  # anything; COMPLIANCE_DB_HOST is set explicitly from this value in
+  # configmap.yaml regardless, so the two never need to agree.
+  host: usora-compliance-postgresql
+  port: 5432
+  database: usora_compliance
+  existingSecret: ""
+  existingSecretUsernameKey: "username"
+  existingSecretPasswordKey: "password"
+
+redis:
+  host: usora-redis
+  port: 6379
+  existingSecret: ""
+  existingSecretPasswordKey: "password"
+
+kafka:
+  bootstrapServers: usora-kafka:9092
+
+# PRE-EXISTING GAP, found while writing this chart: application.yml's
+# default JWK_SET_URI is a Keycloak-shaped path
+# (/auth/realms/usora/protocol/openid-connect/certs) that does not match
+# usora-identity-service's actual endpoint at all — confirmed by reading
+# SecurityConfig.java there: .jwkSetEndpoint("/oauth2/jwks"). Without this
+# override, JWT verification against identity-service would 404 on every
+# request in any environment using this chart.
+identityService:
+  serviceName: usora-identity-service
+  port: 8081
+  jwksPath: "/oauth2/jwks"
+
+amlScreening:
+  host: aml-screening-service
+  port: 9090
+
+# SECURITY: consolidated secret — see usora-audit-service's values.yaml
+# for the rationale. Expected keys:
+#   jwt-secret            -> COMPLIANCE_JWT_SECRET (verifies internal
+#                             HMAC-signed tokens — see
+#                             security/JwtTokenProvider.java)
+#   rule-signing-secret    -> COMPLIANCE_RULE_SIGNING_SECRET (signs every
+#                             dual-authorized regulatory rule change —
+#                             PREVIOUSLY MISSING from application-prod.yml
+#                             entirely; fixed alongside this chart, see
+#                             application-prod.yml's comment)
+secrets:
+  existingSecret: ""
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "2Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8083
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8083
+  initialDelaySeconds: 40
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+affinity: {}
+tolerations: []
+nodeSelector: {}

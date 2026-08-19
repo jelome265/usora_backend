@@ -1,0 +1,104 @@
+replicaCount: 5
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: usora/risk-scoring-engine
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+
+logLevel: "info"
+
+ports:
+  grpc: 9090
+  http: 8080
+
+service:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+
+kafka:
+  bootstrapServers: usora-kafka:9092
+  # PRE-EXISTING GAP, found and fixed while writing this chart: this
+  # service's Kafka consumer had enable.auto.commit on with no retry and
+  # no dead-letter topic at all — a failed risk-scoring task (a transient
+  # DB error, a malformed request) was logged and then permanently lost.
+  # Fixed in main.rs/config/mod.rs alongside this chart; see
+  # docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md for the identical
+  # pattern found and fixed first in usora-document-processor.
+  deadLetterTopic: "risk.dead.letter"
+  retryCount: 3
+  retryBackoffMs: 1000
+
+postgresql:
+  host: usora-postgresql
+  port: 5432
+  database: usora_risk_scoring
+  # SECURITY / RELIABILITY, found and fixed while writing this chart:
+  # this service loads its config from a mounted YAML file
+  # (RISK_SCORING_CONFIG) with NO env-var interpolation support at all —
+  # meaning there was previously no way to keep a database password out
+  # of that file/ConfigMap short of patching the config loader. Fixed in
+  # config/mod.rs::from_env(), which now layers DATABASE_URL over
+  # whatever the file specifies. Set this to a Secret holding the full
+  # connection string (postgres://user:pass@host:port/db).
+  existingSecret: ""
+  existingSecretUrlKey: "database-url"
+
+redis:
+  host: usora-redis
+  port: 6379
+  existingSecret: ""
+  existingSecretPasswordKey: "password"
+
+resources:
+  requests:
+    cpu: "1"
+    memory: "2Gi"
+  limits:
+    cpu: "4"
+    memory: "4Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 5
+  maxReplicas: 30
+  targetCPUUtilizationPercentage: 70
+
+readinessProbe:
+  grpc:
+    port: 9090
+  initialDelaySeconds: 15
+  periodSeconds: 10
+
+livenessProbe:
+  grpc:
+    port: 9090
+  initialDelaySeconds: 30
+  periodSeconds: 30
+
+affinity: {}
+tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "compute"
+    effect: "NoSchedule"
+nodeSelector:
+  node-type: compute

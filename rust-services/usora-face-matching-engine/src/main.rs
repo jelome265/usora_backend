@@ -161,10 +161,22 @@ async fn start_grpc_server(
 
     info!(address = %config.bind_address, "Starting gRPC server");
 
+    // Added to close an undocumented gap found while writing this
+    // service's Helm chart: no gRPC health service was registered
+    // anywhere — a native Kubernetes gRPC readiness/liveness probe
+    // against this service had nothing to talk to and every check would
+    // fail forever. Same fix already applied to
+    // usora-risk-scoring-engine.
+    let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
+    health_reporter
+        .set_serving::<proto::identity_verification_service_server::IdentityVerificationServiceServer<IdentityVerificationServiceImpl>>()
+        .await;
+
     tonic::transport::Server::builder()
         .max_concurrent_streams(config.max_concurrent_streams)
         .initial_stream_window_size(Some(config.max_message_size as u32))
         .initial_connection_window_size(Some(config.max_message_size as u32))
+        .add_service(health_service)
         .add_service(
             proto::identity_verification_service_server::IdentityVerificationServiceServer::new(service)
         )
@@ -185,6 +197,21 @@ async fn start_kafka_consumer(
         .set("bootstrap.servers", &config.brokers)
         .set("group.id", &config.consumer_group)
         .set("enable.auto.commit", "true")
+        // RELIABILITY FIX, found and fixed while writing this service's
+        // Helm chart: this consumer had retry_max_attempts/
+        // retry_base_delay_ms declared in ProcessingConfig but never
+        // referenced anywhere in this function — dead config — and
+        // enable.auto.offset.store was left at its default (true),
+        // meaning an offset was marked ready-to-commit the moment a
+        // message was handed to this stream, before processing was even
+        // attempted. Disabling automatic offset storage and calling
+        // store_offset explicitly, only after a message is either
+        // processed successfully or durably routed to the audit/DLQ
+        // topic, closes the same silent-data-loss gap already found and
+        // fixed in usora-document-processor and
+        // usora-risk-scoring-engine — this is the third occurrence of
+        // the identical pattern across the Rust fleet.
+        .set("enable.auto.offset.store", "false")
         .set("auto.offset.reset", "earliest")
         .set("max.poll.interval.ms", &config.max_poll_interval_ms.to_string())
         .set("session.timeout.ms", &config.session_timeout_ms.to_string())
@@ -200,6 +227,7 @@ async fn start_kafka_consumer(
     info!(topic = %config.tasks_topic, group = %config.consumer_group, "Kafka consumer started");
 
     let semaphore = Arc::new(Semaphore::new(processing.max_concurrent_jobs));
+    let consumer = Arc::new(consumer);
 
     let mut stream = consumer.stream();
     while let Some(msg) = stream.next().await {
@@ -208,35 +236,87 @@ async fn start_kafka_consumer(
                 let permit = semaphore.clone().acquire_owned().await;
                 let engine = engine.clone();
                 let producer = producer.clone();
+                let consumer = consumer.clone();
                 let results_topic = config.results_topic.clone();
                 let audit_topic = config.audit_topic.clone();
+                let retry_max_attempts = processing.retry_max_attempts;
+                let retry_base_delay = std::time::Duration::from_millis(processing.retry_base_delay_ms);
+
+                // Extract everything owned BEFORE spawning — `msg` is a
+                // BorrowedMessage tied to the consumer's lifetime and
+                // cannot itself cross into a 'static tokio::spawn future.
+                let msg_topic = msg.topic().to_string();
+                let msg_partition = msg.partition();
+                let msg_offset = msg.offset();
+                let msg_key = msg.key().map(|k| k.to_vec());
+                let payload = msg.payload().map(|p| p.to_vec());
 
                 tokio::spawn(async move {
                     let _permit = permit;
-                    if let Some(payload) = msg.payload() {
-                        match process_kafka_message(payload, &engine).await {
-                            Ok(result) => {
-                                let record = FutureRecord::to(&results_topic)
-                                    .payload(&result)
-                                    .key(msg.key());
-                                if let Err(e) = producer.send(record, tokio::time::Duration::from_secs(5)).await {
-                                    error!(error = %e, "Failed to publish result");
-                                }
-                            }
+                    let Some(payload) = payload else {
+                        // No payload to process — nothing to retry or
+                        // DLQ; just let this offset commit so an empty
+                        // message doesn't block the partition forever.
+                        if let Err(e) = consumer.store_offset(&msg_topic, msg_partition, msg_offset) {
+                            error!(error = %e, "failed to store offset for empty-payload message");
+                        }
+                        return;
+                    };
+
+                    let mut attempt = 0u32;
+                    let mut last_err: Option<anyhow::Error> = None;
+                    let outcome = loop {
+                        match process_kafka_message(&payload, &engine).await {
+                            Ok(result) => break Some(result),
                             Err(e) => {
-                                let error_payload = serde_json::json!({
-                                    "error": e.to_string(),
-                                    "original_key": msg.key().map(|k| String::from_utf8_lossy(k).to_string()),
-                                });
-                                let record = FutureRecord::to(&audit_topic)
-                                    .payload(&error_payload.to_string())
-                                    .key(msg.key());
-                                if let Err(e) = producer.send(record, tokio::time::Duration::from_secs(5)).await {
-                                    error!(error = %e, "Failed to publish error to audit");
+                                last_err = Some(e);
+                                if attempt >= retry_max_attempts {
+                                    break None;
                                 }
-                                error!(error = %e, "Failed to process Kafka message");
+                                attempt += 1;
+                                warn!(attempt, max_attempts = retry_max_attempts, "face matching task failed, retrying after backoff");
+                                tokio::time::sleep(retry_base_delay * attempt).await;
                             }
                         }
+                    };
+
+                    match outcome {
+                        Some(result) => {
+                            let record = FutureRecord::to(&results_topic)
+                                .payload(&result)
+                                .key(msg_key.as_deref());
+                            if let Err((e, _)) = producer.send(record, tokio::time::Duration::from_secs(5)).await {
+                                error!(error = %e, "Failed to publish result");
+                            }
+                        }
+                        None => {
+                            let e = last_err.expect("outcome is None only when last_err was set");
+                            let error_payload = serde_json::json!({
+                                "error": e.to_string(),
+                                "status": "failed",
+                                "attempts": attempt + 1,
+                                "original_topic": msg_topic,
+                                "original_partition": msg_partition,
+                                "original_offset": msg_offset,
+                                "original_key": msg_key.as_ref().map(|k| String::from_utf8_lossy(k).to_string()),
+                            });
+                            let record = FutureRecord::to(&audit_topic)
+                                .payload(&error_payload.to_string())
+                                .key(msg_key.as_deref());
+                            if let Err((send_err, _)) = producer.send(record, tokio::time::Duration::from_secs(5)).await {
+                                // Could not even durably record the
+                                // failure — leave the offset unstored so
+                                // this message is redelivered rather than
+                                // lost outright.
+                                error!(error = %send_err, "failed to publish failure to audit topic; offset will NOT be stored");
+                                return;
+                            }
+                            error!(error = %e, attempts = attempt + 1, "face matching task failed after all retries, routed to audit topic");
+                        }
+                    }
+
+                    if let Err(e) = consumer.store_offset(&msg_topic, msg_partition, msg_offset) {
+                        error!(error = %e, topic = %msg_topic, partition = msg_partition, offset = msg_offset, "failed to store Kafka offset");
                     }
                 });
             }

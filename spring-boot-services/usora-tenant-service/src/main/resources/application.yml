@@ -102,7 +102,16 @@ tenant:
     audit-retention-years: 7
   billing:
     provider: "stripe"
-    webhook-secret: "${VAULT:stripe_webhook_secret}"
+    # PRE-EXISTING BUG, found and fixed while writing this service's Helm
+    # chart: "${VAULT:stripe_webhook_secret}" is not a Vault reference —
+    # Spring interpolates ${X:default} by looking for a property/env var
+    # literally named X, so this read an env var literally named `VAULT`
+    # and, failing that, silently fell back to the literal string
+    # "stripe_webhook_secret" as the actual webhook secret used to verify
+    # Stripe webhook signatures. Fixed to reference a real env var name
+    # with no insecure literal fallback — see STRIPE_WEBHOOK_SECRET in
+    # this chart's Deployment, sourced from a mandatory Secret.
+    webhook-secret: "${STRIPE_WEBHOOK_SECRET:}"
     usage-reporting-interval: "1h"
   suspension:
     auto-suspend-on-payment-failure: true

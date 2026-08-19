@@ -1,0 +1,114 @@
+replicaCount: 3
+
+nameOverride: ""
+fullnameOverride: ""
+
+springProfile: "prod"
+
+image:
+  repository: usora/integration-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8084"
+  prometheus.io/path: "/actuator/prometheus"
+
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8084
+      targetPort: 8084
+      protocol: TCP
+    - name: grpc
+      port: 9095
+      targetPort: 9095
+      protocol: TCP
+
+postgresql:
+  host: usora-integration-postgresql
+  port: 5432
+  database: usora_integration
+  existingSecret: ""
+  existingSecretUrlKey: "database-url"
+  existingSecretUsernameKey: "username"
+  existingSecretPasswordKey: "password"
+
+redis:
+  host: usora-redis
+  port: 6379
+  existingSecret: ""
+  existingSecretPasswordKey: "password"
+
+kafka:
+  bootstrapServers: usora-kafka:9092
+
+# External-facing gRPC clients (banking/government/credit-bureau
+# integrations). application-prod.yml hardcodes these addresses with no
+# env-var override at all — made overridable here since third-party
+# integration endpoints are exactly the kind of thing that legitimately
+# differs per environment (a sandbox/UAT credit-bureau endpoint vs a
+# production one), unlike this fleet's own internal service DNS names.
+externalIntegrations:
+  banking:
+    address: "static://banking-service:9090"
+  government:
+    address: "static://government-service:9091"
+  creditBureau:
+    address: "static://credit-service:9092"
+
+# SECURITY: consolidated secret. Expected keys:
+#   jwt-secret       -> JWT_SECRET (application.yml default is an empty
+#                       string — previously unset even in prod, fixed
+#                       alongside this chart, see application-prod.yml)
+#   encryption-key    -> ENCRYPTION_KEY (previous default was a visibly-a-
+#                       placeholder-but-real AES key,
+#                       "AES256KeyMustBe32BytesLongForGCMEncryption" —
+#                       same fix)
+secrets:
+  existingSecret: ""
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "2Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8084
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8084
+  initialDelaySeconds: 40
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+affinity: {}
+tolerations: []
+nodeSelector: {}

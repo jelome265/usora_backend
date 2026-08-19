@@ -76,7 +76,13 @@ public class TenantConfig {
 
     public static class Billing {
         private String provider = "stripe";
-        private String webhookSecret = "${VAULT:stripe_webhook_secret}";
+        // See application.yml's comment on webhook-secret — the previous
+        // default here mirrored the same broken "${VAULT:...}" pseudo-
+        // syntax bug. An empty default (fail loudly / reject webhooks
+        // rather than silently accept a well-known constant as the
+        // signing secret) is the correct fallback if the property is
+        // ever unbound entirely.
+        private String webhookSecret = "";
         private String usageReportingInterval = "1h";
 
         public String getProvider() { return provider; }

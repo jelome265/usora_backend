@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "usora-core.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-core.labels" . | nindent 4 }}
+data:
+  SPRING_PROFILES_ACTIVE: {{ .Values.springProfile | quote }}
+
+  # PRE-EXISTING GAP, found and fixed while writing this chart:
+  # spring.datasource.url in application.yml is a hardcoded literal
+  # (jdbc:postgresql://postgres.usora.svc.cluster.local:5432/usora) with no
+  # ${...} placeholder to substitute — unlike every other connection
+  # setting in that file. Without overriding SPRING_DATASOURCE_URL
+  # directly, this chart's postgresql.host/database values would be
+  # silently ignored and the app would try to reach a host/database name
+  # that doesn't match this chart's naming convention at all. Spring
+  # Boot's relaxed env-var binding (SPRING_DATASOURCE_URL) is the
+  # supported way to override a plain `spring.datasource.url` value.
+  SPRING_DATASOURCE_URL: {{ printf "jdbc:postgresql://%s:%d/%s" .Values.postgresql.host (int .Values.postgresql.port) .Values.postgresql.database | quote }}
+
+  REDIS_HOST: {{ .Values.redis.host | quote }}
+  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.kafka.bootstrapServers | quote }}
+
+  # PRE-EXISTING GAP, found and fixed while writing this chart: the
+  # compiled-in default for JWK_SET_URI points at
+  # identity.usora.svc.cluster.local — a DNS name that doesn't match this
+  # environment's actual identity-service Helm release name
+  # (identityService.serviceName below). Left unoverridden, JWT
+  # verification for every inbound request would silently fail to reach
+  # the JWKS endpoint in any environment using this chart's own naming
+  # convention.
+  JWK_SET_URI: {{ printf "http://%s:%d/oauth2/jwks" .Values.identityService.serviceName (int .Values.identityService.port) | quote }}
+
+  DOCUMENT_COMPUTE_HOST: {{ .Values.compute.document.host | quote }}
+  BIOMETRIC_COMPUTE_HOST: {{ .Values.compute.biometric.host | quote }}
+  RISK_COMPUTE_HOST: {{ .Values.compute.risk.host | quote }}
+
+  # OBSERVABILITY GAP, found while writing this chart, NOT fixed here:
+  # application.yml sets management.tracing.sampling.probability: 1.0 and
+  # this service depends on micrometer-tracing-bridge-brave, but the POM
+  # has no span exporter/reporter dependency at all (no zipkin-reporter,
+  # no micrometer-tracing-bridge-otel + micrometer-registry-otlp) — so
+  # tracing is fully sampled but every span is generated and then
+  # silently dropped with nowhere to send it. There is no env var to set
+  # here that fixes this; it needs a dependency + application.yml change
+  # in usora-core-service itself (add micrometer-registry-otlp and an
+  # `management.otlp.tracing.endpoint` property, or the zipkin
+  # equivalent), which is out of scope for this Helm-chart pass. The
+  # opentelemetry.* values below are therefore currently inert for this
+  # service — do not assume traces are being exported until that's fixed.

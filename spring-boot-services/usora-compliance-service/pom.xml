@@ -60,6 +60,31 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
+        <!--
+            PRE-EXISTING GAP, fixed while implementing the C2 dual-authorization
+            fix (docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md): this module's
+            JwtTokenProvider already imported io.jsonwebtoken.* with no jjwt
+            dependency declared anywhere in this POM, so the module would not
+            have compiled as checked in. Version pinned to match
+            usora-tenant-service's jjwt version for consistency across services.
+        -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>

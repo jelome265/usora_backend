@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use base64::Engine;
 use tokio::signal;
 use tonic::transport::Server;
 use tracing::{error, info};
@@ -10,6 +11,11 @@ async fn main() -> anyhow::Result<()> {
     let config = Arc::new(usora_document_processor::config::Config::from_env()?);
     config.validate()?;
     usora_document_processor::utils::init_tracing(&config)?;
+
+    // See metrics.rs — registers the metrics /metrics actually exposes;
+    // previously nothing called this and the /metrics endpoint didn't
+    // exist at all.
+    usora_document_processor::metrics::init();
 
     info!("Starting {} on {}", config.service_name, config.grpc_bind_address);
 
@@ -34,10 +40,20 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let rest_addr = config.rest_bind_address.clone().unwrap_or_else(|| "0.0.0.0:8081".to_string());
+    // config.validate() already guarantees this is non-empty — see the
+    // SECURITY check added there — so this expect can only fire if
+    // validate() was skipped, which would itself be a bug at the call
+    // site above, not a runtime condition to handle gracefully here.
+    let auth_state = std::sync::Arc::new(usora_document_processor::auth::AuthState::new(
+        config
+            .internal_service_jwt_secret
+            .as_deref()
+            .expect("validate() guarantees internal_service_jwt_secret is set"),
+    ));
     let rest_state = usora_document_processor::routes::AppState {
         service: doc_service.clone(),
     };
-    let rest_app = usora_document_processor::routes::router(rest_state);
+    let rest_app = usora_document_processor::routes::router(rest_state, auth_state);
 
     let rest_listener = tokio::net::TcpListener::bind(&rest_addr).await?;
     info!("REST server listening on {}", rest_addr);
@@ -79,6 +95,20 @@ async fn run_kafka_consumer(config: Arc<usora_document_processor::config::Config
         .set("group.id", &config.kafka_group_id)
         .set("bootstrap.servers", &config.kafka_brokers)
         .set("enable.auto.commit", "true")
+        // RELIABILITY FIX (see config.rs's kafka_dead_letter_topic doc
+        // comment for the full finding): with auto.offset.store left at
+        // its default (true), rdkafka marks a message's offset as ready
+        // to commit the moment it's handed to the consumer stream —
+        // before this service has even attempted to process it, let
+        // alone succeeded. That meant a crash, panic, or failed
+        // processing attempt silently lost the task forever: the offset
+        // was already committed, so it was never redelivered, and there
+        // was no dead-letter topic to catch it either. Disabling
+        // automatic offset storage and calling `store_offset` explicitly
+        // — only after a message has either been processed successfully
+        // or durably moved to the dead-letter topic — makes redelivery
+        // (at-least-once) the failure mode instead of silent data loss.
+        .set("enable.auto.offset.store", "false")
         .set("auto.offset.reset", "earliest")
         .set("session.timeout.ms", "6000")
         .set("max.poll.interval.ms", "30000")
@@ -93,6 +123,7 @@ async fn run_kafka_consumer(config: Arc<usora_document_processor::config::Config
         .create()?;
 
     let producer = Arc::new(producer);
+    let consumer = Arc::new(consumer);
     let config = Arc::new(config.as_ref().clone());
 
     let pipeline = usora_document_processor::pipeline::PipelineBuilder::default()
@@ -112,13 +143,68 @@ async fn run_kafka_consumer(config: Arc<usora_document_processor::config::Config
             Ok(m) => {
                 if let Some(payload) = m.payload() {
                     let payload = payload.to_vec();
+                    // Extract owned copies of everything needed to store
+                    // the offset later — BorrowedMessage can't outlive
+                    // this loop iteration, and processing happens in a
+                    // detached task so the consumer keeps polling (a
+                    // multi-second OCR/ML job must not block the poll
+                    // loop, or the group coordinator sees this consumer
+                    // as stalled and triggers a rebalance).
+                    let msg_topic = m.topic().to_string();
+                    let msg_partition = m.partition();
+                    let msg_offset = m.offset();
+
                     let processor = processor.clone();
                     let producer = producer.clone();
+                    let consumer = consumer.clone();
                     let results_topic = config.kafka_results_topic.clone();
+                    let dead_letter_topic = config.kafka_dead_letter_topic.clone();
+                    let retry_count = config.kafka_retry_count;
+                    let retry_backoff = std::time::Duration::from_millis(config.kafka_retry_backoff_ms);
 
                     tokio::spawn(async move {
-                        match processor.process_document(&payload).await {
+                        let started = std::time::Instant::now();
+                        let mut last_err: Option<anyhow::Error> = None;
+
+                        // RELIABILITY FIX: bounded retry with backoff for
+                        // transient failures (a momentary DB blip, a
+                        // downstream timeout) before giving up on a
+                        // message — previously there was zero retry at
+                        // all, so any transient error was treated
+                        // identically to a permanently unprocessable
+                        // document.
+                        let mut attempt = 0u32;
+                        let outcome = loop {
+                            match processor.process_document(&payload).await {
+                                Ok(result) => break Ok(result),
+                                Err(e) => {
+                                    last_err = Some(e);
+                                    if attempt >= retry_count {
+                                        break Err(());
+                                    }
+                                    attempt += 1;
+                                    tracing::warn!(
+                                        attempt,
+                                        max_attempts = retry_count,
+                                        "document processing failed, retrying after backoff"
+                                    );
+                                    tokio::time::sleep(retry_backoff * attempt).await;
+                                }
+                            }
+                        };
+
+                        match outcome {
                             Ok(result) => {
+                                usora_document_processor::metrics::DOCUMENTS_PROCESSED_TOTAL
+                                    .with_label_values(&["success"])
+                                    .inc();
+                                usora_document_processor::metrics::DOCUMENT_PROCESSING_DURATION_SECONDS
+                                    .with_label_values(&["success"])
+                                    .observe(started.elapsed().as_secs_f64());
+                                usora_document_processor::metrics::KAFKA_MESSAGES_TOTAL
+                                    .with_label_values(&["success"])
+                                    .inc();
+
                                 let json = serde_json::to_vec(&result).unwrap_or_default();
                                 let record = FutureRecord::to(&results_topic)
                                     .payload(&json)
@@ -127,25 +213,76 @@ async fn run_kafka_consumer(config: Arc<usora_document_processor::config::Config
                                     error!("Failed to send result: {:?}", e);
                                 }
                             }
-                            Err(e) => {
-                                error!("Document processing failed: {}", e);
-                                let err_payload = serde_json::json!({
+                            Err(()) => {
+                                let e = last_err.expect("outcome is Err only when the loop set last_err");
+                                usora_document_processor::metrics::DOCUMENTS_PROCESSED_TOTAL
+                                    .with_label_values(&["failure"])
+                                    .inc();
+                                usora_document_processor::metrics::DOCUMENT_PROCESSING_DURATION_SECONDS
+                                    .with_label_values(&["failure"])
+                                    .observe(started.elapsed().as_secs_f64());
+                                usora_document_processor::metrics::KAFKA_MESSAGES_TOTAL
+                                    .with_label_values(&["failure"])
+                                    .inc();
+
+                                error!(
+                                    "Document processing failed after {} attempt(s), routing to dead-letter topic: {}",
+                                    attempt + 1,
+                                    e
+                                );
+
+                                // RELIABILITY FIX: previously this branch
+                                // only published a JSON error blob to the
+                                // *results* topic and moved on — the
+                                // original document payload was gone
+                                // forever with no way to inspect or
+                                // reprocess it. Publishing the original
+                                // payload (base64) plus the error to a
+                                // real dead-letter topic makes failed
+                                // documents recoverable instead of just
+                                // logged-and-lost.
+                                let dlq_payload = serde_json::json!({
                                     "error": e.to_string(),
-                                    "status": "failed"
+                                    "status": "failed",
+                                    "attempts": attempt + 1,
+                                    "original_topic": msg_topic,
+                                    "original_partition": msg_partition,
+                                    "original_offset": msg_offset,
+                                    "document_payload_base64": base64::engine::general_purpose::STANDARD.encode(&payload),
                                 });
-                                let json = serde_json::to_vec(&err_payload).unwrap_or_default();
-                                let record = FutureRecord::to(&results_topic)
+                                let json = serde_json::to_vec(&dlq_payload).unwrap_or_default();
+                                let record = FutureRecord::to(&dead_letter_topic)
                                     .payload(&json)
                                     .key(&uuid::Uuid::now_v7().to_string());
-                                if let Err(e) = producer.send(record, Timeout::After(std::time::Duration::from_secs(5))).await {
-                                    error!("Failed to send error result: {:?}", e);
+                                if let Err(send_err) = producer.send(record, Timeout::After(std::time::Duration::from_secs(5))).await {
+                                    // The dead-letter publish itself failed —
+                                    // do NOT store the offset in this case.
+                                    // Leaving the offset uncommitted means
+                                    // this message will be redelivered
+                                    // (at-least-once) rather than silently
+                                    // dropped, which is the correct failure
+                                    // mode when we couldn't even durably
+                                    // record the failure.
+                                    error!("Failed to publish to dead-letter topic, offset will NOT be stored (message will be redelivered): {:?}", send_err);
+                                    return;
                                 }
                             }
+                        }
+
+                        // Only reached on success, or on failure that was
+                        // successfully routed to the dead-letter topic —
+                        // both are "durably handled" outcomes, so it's now
+                        // safe to let this offset be committed.
+                        if let Err(e) = consumer.store_offset(&msg_topic, msg_partition, msg_offset) {
+                            error!("Failed to store offset for {}:{}:{}: {:?}", msg_topic, msg_partition, msg_offset, e);
                         }
                     });
                 }
             }
             Err(e) => {
+                usora_document_processor::metrics::KAFKA_MESSAGES_TOTAL
+                    .with_label_values(&["consumer_error"])
+                    .inc();
                 error!("Kafka consumer error: {}", e);
             }
         }

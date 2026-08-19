@@ -11,9 +11,11 @@ import java.util.Optional;
 @Repository
 public interface ComplianceCheckResultRepository extends JpaRepository<ComplianceCheckResult, String> {
 
-    List<ComplianceCheckResult> findByCaseIdOrderByValidatedAtDesc(String caseId);
+    // SECURITY: scope every caseId lookup by tenantId — see
+    // AuditTrailRepository for the same rule and the reasoning.
+    List<ComplianceCheckResult> findByTenantIdAndCaseIdOrderByValidatedAtDesc(String tenantId, String caseId);
 
-    Optional<ComplianceCheckResult> findTopByCaseIdOrderByValidatedAtDesc(String caseId);
+    Optional<ComplianceCheckResult> findTopByTenantIdAndCaseIdOrderByValidatedAtDesc(String tenantId, String caseId);
 
     List<ComplianceCheckResult> findByTenantIdAndCaseId(String tenantId, String caseId);
 

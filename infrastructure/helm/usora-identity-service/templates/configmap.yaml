@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "usora-identity-service.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-identity-service.labels" . | nindent 4 }}
+data:
+  SPRING_PROFILES_ACTIVE: {{ .Values.springProfile | quote }}
+
+  # PRE-EXISTING GAP, found and fixed while writing this chart: see
+  # values.yaml's grpcPort comment — the app's compiled-in default (50051)
+  # doesn't match what usora-tenant-service expects (9091).
+  GRPC_SERVER_PORT: {{ .Values.grpcPort | quote }}
+
+  REDIS_HOST: {{ .Values.redis.host | quote }}
+  REDIS_PORT: {{ .Values.redis.port | quote }}
+
+  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.kafka.bootstrapServers | quote }}
+
+  OPA_URL: {{ .Values.opa.url | quote }}
