@@ -95,7 +95,7 @@ jobs:
             docs/ main.md readme.md structure.md || true
 
       - name: Notify Slack on Failure
-        if: failure() && github.ref == 'refs/heads/main'
+        if: failure() && github.ref == 'refs/heads/main' && secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
@@ -456,6 +456,7 @@ jobs:
           push-to-registry: true
 
       - name: Notify Slack on Success
+        if: secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
@@ -475,7 +476,7 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
 
       - name: Notify Slack on Failure
-        if: failure()
+        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
@@ -563,6 +564,7 @@ jobs:
           echo "Smoke tests completed"
 
       - name: Notify Slack on Success
+        if: secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
@@ -582,7 +584,7 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
 
       - name: Notify Slack on Failure
-        if: failure()
+        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
@@ -669,6 +671,7 @@ jobs:
           echo "Staging smoke tests completed"
 
       - name: Notify Slack on Success
+        if: secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
@@ -688,7 +691,7 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
 
       - name: Notify Slack on Failure
-        if: failure()
+        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
@@ -852,7 +855,7 @@ jobs:
           kubectl -n ${{ env.K8S_NAMESPACE }} rollout status deployment/usora-gateway --timeout=300s
 
       - name: Notify Slack on Success
-        if: matrix.canary-stage == 100
+        if: matrix.canary-stage == 100 && secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
@@ -872,7 +875,7 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
 
       - name: Notify Slack on Failure
-        if: failure()
+        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
