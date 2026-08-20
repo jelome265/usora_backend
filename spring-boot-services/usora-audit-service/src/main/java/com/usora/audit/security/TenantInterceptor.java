@@ -11,6 +11,18 @@ import org.springframework.web.servlet.HandlerInterceptor;
 @Component
 public class TenantInterceptor implements HandlerInterceptor {
 
+    /**
+     * SECURITY BUG, found and fixed while implementing Postgres row-level
+     * security for this service: this interceptor DID read the tenant
+     * from the verified JWT first — but then unconditionally overwrote it
+     * with the client-supplied X-Tenant-ID header immediately afterward
+     * if that header was present at all, silently discarding the
+     * verified value. It also read a claim named "tenant_id", which
+     * usora-identity-service never actually issues (the real claim is
+     * "tid") — so the JWT path was already a no-op in practice even
+     * before the header overwrite. Tenant now comes exclusively from the
+     * verified JWT's "tid" claim, full stop.
+     */
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         TenantContext.clear();
@@ -19,7 +31,7 @@ public class TenantInterceptor implements HandlerInterceptor {
         if (authentication != null && authentication.isAuthenticated()
                 && authentication.getPrincipal() instanceof Jwt jwt) {
 
-            String tenantId = jwt.getClaimAsString("tenant_id");
+            String tenantId = jwt.getClaimAsString("tid");
             if (tenantId != null) {
                 TenantContext.setTenantId(tenantId);
             }
@@ -28,11 +40,6 @@ public class TenantInterceptor implements HandlerInterceptor {
             if (userId != null) {
                 TenantContext.setUserId(userId);
             }
-        }
-
-        String headerTenantId = request.getHeader("X-Tenant-ID");
-        if (headerTenantId != null) {
-            TenantContext.setTenantId(headerTenantId);
         }
 
         return true;
