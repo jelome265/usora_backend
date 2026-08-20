@@ -1,0 +1,128 @@
+replicaCount: 3
+
+nameOverride: ""
+fullnameOverride: ""
+
+springProfile: "prod"
+
+image:
+  repository: usora/tenant-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8083"
+  prometheus.io/path: "/actuator/prometheus"
+
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8083
+      targetPort: 8083
+      protocol: TCP
+    - name: grpc
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+
+postgresql:
+  host: usora-tenant-postgresql
+  port: 5432
+  database: usora_tenant
+  existingSecret: ""
+  existingSecretUsernameKey: "username"
+  existingSecretPasswordKey: "password"
+
+redis:
+  host: usora-redis
+  port: 6379
+  existingSecret: ""
+  existingSecretPasswordKey: "password"
+
+kafka:
+  bootstrapServers: usora-kafka:9092
+
+# PRE-EXISTING GAPS, found and fixed while writing this chart:
+#  - identityService.port: application-prod.yml requires
+#    IDENTITY_SERVICE_PORT with no default; the non-prod default (9091)
+#    previously didn't match usora-identity-service's own compiled-in
+#    gRPC port (50051) either — both are now reconciled at 9091 (see
+#    usora-identity-service's chart, which explicitly overrides
+#    GRPC_SERVER_PORT to match).
+#  - complianceService.port: application.yml's own default
+#    (COMPLIANCE_SERVICE_PORT:9092) doesn't match
+#    usora-compliance-service's actual gRPC port (9091) at all. Fixed
+#    here to the correct value.
+#  - jwksUri: application.yml's default JWKS_URI
+#    (http://localhost:8081/auth/jwks) uses the wrong path — confirmed
+#    against usora-identity-service's actual SecurityConfig.java:
+#    .jwkSetEndpoint("/oauth2/jwks").
+identityService:
+  serviceName: usora-identity-service
+  port: 8081
+  grpcPort: 9091
+  jwksPath: "/oauth2/jwks"
+
+complianceService:
+  serviceName: usora-compliance-service
+  grpcPort: 9091
+
+# SECURITY: consolidated secret. Expected keys:
+#   stripe-webhook-secret -> STRIPE_WEBHOOK_SECRET (fixes a genuine
+#                            source bug found while writing this chart:
+#                            application.yml previously read
+#                            "${VAULT:stripe_webhook_secret}", which is
+#                            not a Vault reference — Spring interpolated
+#                            it literally, reading an env var named
+#                            `VAULT` and otherwise falling back to the
+#                            literal string "stripe_webhook_secret" as
+#                            the actual webhook signing secret. Fixed in
+#                            TenantConfig.java/application.yml; this
+#                            chart supplies the real value.)
+secrets:
+  existingSecret: ""
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "2Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8083
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8083
+  initialDelaySeconds: 40
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+affinity: {}
+tolerations: []
+nodeSelector: {}

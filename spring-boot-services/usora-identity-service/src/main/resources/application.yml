@@ -66,6 +66,13 @@ identity:
     refresh_token_ttl: 604800
     rotation_window: 86400
     key_size: 2048
+  security:
+    # PRE-EXISTING GAP, found and fixed while writing this service's Helm
+    # chart: the default JWT signing key is now persisted (see
+    # JwtTokenProvider.java / V3__system_signing_keys.sql) and encrypted
+    # at rest with this key. No insecure literal default — an unset value
+    # fails startup (see JwtTokenProvider's constructor).
+    encryption-key: ${IDENTITY_ENCRYPTION_KEY:}
   mfa:
     required_roles:
       - admin

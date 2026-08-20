@@ -1,0 +1,14 @@
+{{- if gt (int (.Values.autoscaling.minReplicas | default .Values.replicaCount)) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "usora-face-matching-engine.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-face-matching-engine.labels" . | nindent 4 }}
+spec:
+  minAvailable: 50%
+  selector:
+    matchLabels:
+      {{- include "usora-face-matching-engine.selectorLabels" . | nindent 6 }}
+{{- end }}

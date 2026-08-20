@@ -1,0 +1,6 @@
+apiVersion: v2
+name: usora-integration-service
+description: USORA Integration Service — external webhook and third-party integration (Java Spring Boot)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

@@ -45,6 +45,11 @@ rxing = "0.5"
 lazy_static = "1"
 strum = { version = "0.26", features = ["derive"] }
 axum = "0.7"
+# Added to close an undocumented gap found while writing this service's
+# Helm chart: the REST router in routes/mod.rs took `tenant_id` directly
+# from the request body with no authentication at all, on endpoints that
+# perform document/biometric forensic analysis. See auth.rs.
+jsonwebtoken = "9"
 
 [build-dependencies]
 tonic-build = "0.12"

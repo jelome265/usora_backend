@@ -13,17 +13,25 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.proc.ConfigurableJWTProcessor;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.usora.identity.config.TenantConfig;
+import com.usora.identity.entity.SystemSigningKey;
 import com.usora.identity.entity.TenantEntity;
+import com.usora.identity.repository.SystemSigningKeyRepository;
 import com.usora.identity.repository.TenantRepository;
+import com.usora.identity.util.EncryptionUtil;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,6 +42,8 @@ public class JwtTokenProvider {
 
     private final TenantConfig tenantConfig;
     private final TenantRepository tenantRepository;
+    private final SystemSigningKeyRepository systemSigningKeyRepository;
+    private final byte[] encryptionKeyBytes;
 
     private final Map<String, KeyPair> tenantKeyPairs = new ConcurrentHashMap<>();
     private final Map<String, RSAKey> tenantJWKs = new ConcurrentHashMap<>();
@@ -42,38 +52,108 @@ public class JwtTokenProvider {
     private RSAKey defaultJWK;
     private JWKSet defaultJWKSet;
 
-    public JwtTokenProvider(TenantConfig tenantConfig, TenantRepository tenantRepository) {
+    public JwtTokenProvider(
+            TenantConfig tenantConfig,
+            TenantRepository tenantRepository,
+            SystemSigningKeyRepository systemSigningKeyRepository,
+            @Value("${identity.security.encryption-key:}") String encryptionKeyBase64) {
         this.tenantConfig = tenantConfig;
         this.tenantRepository = tenantRepository;
+        this.systemSigningKeyRepository = systemSigningKeyRepository;
+        // SECURITY: no insecure literal fallback — an empty/unset
+        // encryption key fails startup below rather than silently storing
+        // the default private key with a well-known or trivially-derived
+        // key. See application.yml / this chart's values.yaml for
+        // identity.security.encryption-key / IDENTITY_ENCRYPTION_KEY.
+        this.encryptionKeyBytes = encryptionKeyBase64 == null || encryptionKeyBase64.isBlank()
+                ? null
+                : Base64.getDecoder().decode(encryptionKeyBase64);
     }
 
     @PostConstruct
     public void init() {
         try {
-            generateDefaultKey();
-            log.info("Initialized JWT token provider with default RS256 key pair");
+            if (encryptionKeyBytes == null) {
+                throw new IllegalStateException(
+                        "identity.security.encryption-key (IDENTITY_ENCRYPTION_KEY) must be set — " +
+                        "it protects the persisted default JWT signing key at rest.");
+            }
+            loadOrGenerateDefaultKey();
+            log.info("Initialized JWT token provider with default RS256 key pair (key id: {})",
+                    defaultJWK.getKeyID());
         } catch (Exception e) {
             log.error("Failed to initialize JWT token provider", e);
             throw new RuntimeException("Failed to initialize JWT token provider", e);
         }
     }
 
-    private void generateDefaultKey() throws Exception {
+    /**
+     * PRE-EXISTING BUG, found and fixed while writing this service's Helm
+     * chart: this method previously generated a brand-new RSA key pair on
+     * every single application startup with no persistence anywhere (see
+     * db/migration/V3__system_signing_keys.sql for the full finding). With
+     * more than one replica — which any real deployment of this service
+     * needs — every pod ended up signing tokens with a DIFFERENT key
+     * simultaneously, so a token issued by one pod would fail verification
+     * against another pod's JWKS. This now loads the existing persisted
+     * key if one exists, and only generates + persists a new one the
+     * first time this service is ever started against a fresh database.
+     */
+    private void loadOrGenerateDefaultKey() throws Exception {
+        var existing = systemSigningKeyRepository.findByActiveTrue();
+        if (existing.isPresent()) {
+            var row = existing.get();
+            var keyFactory = KeyFactory.getInstance("RSA");
+            var publicKey = (RSAPublicKey) keyFactory.generatePublic(
+                    new X509EncodedKeySpec(Base64.getDecoder().decode(row.getPublicKey())));
+            var decryptedPrivateKeyB64 = EncryptionUtil.decrypt(row.getPrivateKeyEncrypted(), encryptionKeyBytes);
+            var privateKey = (RSAPrivateKey) keyFactory.generatePrivate(
+                    new PKCS8EncodedKeySpec(Base64.getDecoder().decode(decryptedPrivateKeyB64)));
+
+            defaultKeyPair = new KeyPair(publicKey, privateKey);
+            defaultJWK = new RSAKey.Builder(publicKey)
+                    .privateKey(privateKey)
+                    .keyID(row.getKeyId())
+                    .algorithm(JWSAlgorithm.RS256)
+                    .issueTime(Date.from(row.getCreatedAt()))
+                    .build();
+            defaultJWKSet = new JWKSet(defaultJWK);
+            log.info("Loaded existing persisted default signing key {}", row.getKeyId());
+            return;
+        }
+
+        log.warn("No persisted default signing key found — generating and persisting a new one. " +
+                "This should only happen once, on first startup against a fresh database.");
+
         var keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(tenantConfig.getJwt().getKeySize());
         defaultKeyPair = keyGen.generateKeyPair();
 
         var publicKey = (RSAPublicKey) defaultKeyPair.getPublic();
         var privateKey = (RSAPrivateKey) defaultKeyPair.getPrivate();
+        var keyId = UUID.randomUUID().toString();
 
         defaultJWK = new RSAKey.Builder(publicKey)
                 .privateKey(privateKey)
-                .keyID(UUID.randomUUID().toString())
+                .keyID(keyId)
                 .algorithm(JWSAlgorithm.RS256)
                 .issueTime(new Date())
                 .build();
-
         defaultJWKSet = new JWKSet(defaultJWK);
+
+        var privateKeyB64 = Base64.getEncoder().encodeToString(privateKey.getEncoded());
+        var encryptedPrivateKey = EncryptionUtil.encrypt(privateKeyB64, encryptionKeyBytes);
+
+        var row = SystemSigningKey.builder()
+                .keyId(keyId)
+                .publicKey(Base64.getEncoder().encodeToString(publicKey.getEncoded()))
+                .privateKeyEncrypted(encryptedPrivateKey)
+                .algorithm("RS256")
+                .active(true)
+                .createdAt(Instant.now())
+                .build();
+        systemSigningKeyRepository.save(row);
+        log.info("Persisted new default signing key {}", keyId);
     }
 
     public RSAKey getKeyForTenant(String tenantId) {
@@ -103,6 +183,18 @@ public class JwtTokenProvider {
     }
 
     private KeyPair loadTenantKeyPair(TenantEntity tenant) {
+        // FLAGGED, NOT FIXED, found while writing this service's Helm
+        // chart: this reads private_key_encrypted as if it's already a
+        // raw PKCS8 key spec — no decryption step at all, despite the
+        // field name. That's a real bug (see SystemSigningKey.java's
+        // javadoc for the correct pattern, now used for the default key),
+        // but nothing anywhere in this codebase ever WRITES
+        // tenant.publicKey/privateKeyEncrypted — this path is only
+        // reachable if those columns were populated by some mechanism
+        // outside this repository entirely. Left unfixed rather than
+        // guessing at a decryption scheme for a write path that doesn't
+        // exist here; whoever adds tenant key provisioning should follow
+        // SystemSigningKey's EncryptionUtil-based pattern, not this one.
         try {
             var keyFactory = java.security.KeyFactory.getInstance("RSA");
             var pubKeyBytes = Base64.getDecoder().decode(tenant.getPublicKey());

@@ -1,0 +1,18 @@
+{{- if gt (int (.Values.autoscaling.minReplicas | default .Values.replicaCount)) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "usora-gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-gateway.labels" . | nindent 4 }}
+spec:
+  # Reliability floor: a voluntary disruption (node drain, cluster
+  # upgrade) must never be allowed to take every gateway replica down at
+  # once, regardless of how autoscaling has sized the deployment at that
+  # moment.
+  minAvailable: 50%
+  selector:
+    matchLabels:
+      {{- include "usora-gateway.selectorLabels" . | nindent 6 }}
+{{- end }}

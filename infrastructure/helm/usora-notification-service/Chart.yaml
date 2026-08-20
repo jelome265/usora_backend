@@ -1,0 +1,6 @@
+apiVersion: v2
+name: usora-notification-service
+description: USORA Notification Service — email/SMS/push notification delivery (Java Spring Boot)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

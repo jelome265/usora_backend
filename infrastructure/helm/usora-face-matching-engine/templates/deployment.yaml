@@ -1,0 +1,124 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "usora-face-matching-engine.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-face-matching-engine.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "usora-face-matching-engine.selectorLabels" . | nindent 6 }}
+  strategy:
+    # NOT RollingUpdate with maxUnavailable: 0 here, unlike every other
+    # chart in this fleet — with a single ReadWriteOnce-mounted PVC (see
+    # values.yaml's architectural note), a rolling update that tries to
+    # bring up a new pod before the old one releases the volume would
+    # fail to schedule. Recreate is correct for this specific constraint:
+    # brief downtime during a deploy is the honest tradeoff for a single-
+    # writer index, not a bug to route around.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "usora-face-matching-engine.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "usora-face-matching-engine.serviceAccountName" . }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: usora-face-matching-engine
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            # NOT readOnlyRootFilesystem here — the FAISS index is
+            # written under /data/faiss (a real, mutable volume, not a
+            # readOnlyRootFilesystem violation) and that's the only place
+            # this process writes; ML model files under models.path are
+            # still assumed baked into the image, same assumption as
+            # usora-document-processor.
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.ports.grpc }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.ports.metrics }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "usora-face-matching-engine.fullname" . }}-config
+          env:
+            {{- if .Values.redis.existingSecret }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.existingSecret }}
+                  key: {{ .Values.redis.existingSecretPasswordKey | default "password" }}
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            {{- else }}
+            - name: REDIS_URL
+              value: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            {{- end }}
+            {{- if .Values.postgresql.existingSecret }}
+            - name: POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.existingSecret }}
+                  key: {{ .Values.postgresql.existingSecretUrlKey | default "database-url" }}
+            {{- else }}
+            # SECURITY: no postgresql.existingSecret configured — falls
+            # back to the app's compiled-in dev literal
+            # (postgres://postgres:postgres@localhost:5432/usora), which
+            # will simply fail to connect outside local dev.
+            {{- end }}
+          volumeMounts:
+            - name: faiss-index
+              mountPath: /data/faiss
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: faiss-index
+          persistentVolumeClaim:
+            claimName: {{ include "usora-face-matching-engine.fullname" . }}-faiss-index
+        - name: tmp
+          emptyDir: {}

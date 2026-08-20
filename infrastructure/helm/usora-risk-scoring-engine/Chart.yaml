@@ -1,0 +1,6 @@
+apiVersion: v2
+name: usora-risk-scoring-engine
+description: USORA Risk Scoring Engine — applicant risk scoring and rules (Rust)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

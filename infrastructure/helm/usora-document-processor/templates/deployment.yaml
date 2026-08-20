@@ -1,0 +1,155 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "usora-document-processor.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-document-processor.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "usora-document-processor.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "usora-document-processor.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "usora-document-processor.serviceAccountName" . }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        # Matches `USER nonroot` (uid 65532) in
+        # infrastructure/docker/Dockerfile.rust's distroless runtime stage.
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: usora-document-processor
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            # ASSUMPTION, stated explicitly for the next operator who
+            # touches this: OCR/ML model files (models.classifierModel,
+            # models.extractorModel, tesseract data) are assumed BAKED
+            # INTO the image at build time under models.path /
+            # tesseract.dataPath — there is no init-container or
+            # model-download step anywhere in this repo. That assumption
+            # is exactly why readOnlyRootFilesystem is safe here: nothing
+            # in the request path needs to write anywhere except the
+            # explicit tempStorage emptyDir mounted below. If model
+            # distribution ever moves to a runtime fetch instead of a
+            # build-time COPY, this will need a writable volume added for
+            # models.path too.
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: grpc
+              containerPort: 9090
+              protocol: TCP
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "usora-document-processor.fullname" . }}-config
+          env:
+            {{- if .Values.postgresql.existingSecret }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.existingSecret }}
+                  key: {{ .Values.postgresql.existingSecretUrlKey | default "database-url" }}
+            {{- else }}
+            # SECURITY: no postgresql.existingSecret configured — falls
+            # back to the app's compiled-in dev default
+            # (postgres://postgres:postgres@localhost:5432/usora), which
+            # will simply fail to connect outside a docker-compose dev
+            # environment. Set postgresql.existingSecret before deploying
+            # this chart anywhere shared.
+            {{- end }}
+            {{- if .Values.redis.existingSecret }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.existingSecret }}
+                  key: {{ .Values.redis.existingSecretPasswordKey | default "password" }}
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            {{- else }}
+            - name: REDIS_URL
+              value: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            {{- end }}
+            {{- if .Values.security.existingSecret }}
+            - name: INTERNAL_SERVICE_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.security.existingSecret }}
+                  key: {{ .Values.security.existingSecretJwtSecretKey | default "internal-service-jwt-secret" }}
+            {{- else }}
+            {{ required "security.existingSecret must be set — the REST API's internal-service bearer-token secret has no safe default. See auth.rs and docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md." "" }}
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.tempStorage.enabled }}
+            - name: temp-processing
+              mountPath: {{ .Values.tempStorage.mountPath }}
+            {{- end }}
+            # Safety net alongside the explicit tempStorage mount above:
+            # OpenCV/Tesseract/tract-onnx are C/C++-backed libraries that
+            # may write intermediate files to the process's default temp
+            # directory rather than respecting TEMP_DIR in every code
+            # path. With readOnlyRootFilesystem: true, an unexpected write
+            # to plain /tmp would otherwise fail outright.
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        {{- if .Values.tempStorage.enabled }}
+        - name: temp-processing
+          emptyDir:
+            # See values.yaml tempStorage's comment: a Deployment (not a
+            # StatefulSet) has no per-replica PVC mechanism, and this is
+            # per-pod scratch space for in-flight OCR/ML jobs, not data
+            # that needs to survive a pod restart — emptyDir is the
+            # correct primitive here, not a shared PVC.
+            sizeLimit: {{ .Values.tempStorage.size }}
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi

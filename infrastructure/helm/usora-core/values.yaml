@@ -1,5 +1,10 @@
 replicaCount: 3
 
+nameOverride: ""
+fullnameOverride: ""
+
+springProfile: "prod"
+
 image:
   repository: usora/core-service
   tag: latest
@@ -71,15 +76,57 @@ postgresql:
   connectionTimeout: 30000
   idleTimeout: 600000
   maxLifetime: 1800000
+  # SECURITY: no literal credentials in this file, ever — see finding in
+  # docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md (§7). Must reference
+  # a Secret provisioned by Vault/External Secrets Operator, not created
+  # by this chart. application.yml's compiled-in fallback (username/
+  # password both "usora") must never be reachable in any environment
+  # that uses this chart — see the security.existingSecret requirement
+  # below, which this chart's deployment template treats as mandatory.
+  existingSecret: ""
+  existingSecretUsernameKey: "username"
+  existingSecretPasswordKey: "password"
 
 redis:
   host: usora-redis
   port: 6379
+  # SECURITY: leave empty and use existingSecret in any shared environment.
   password: ""
+  existingSecret: ""
+  existingSecretPasswordKey: "password"
   timeout: 2000
   poolMaxTotal: 16
   poolMaxIdle: 8
   poolMinIdle: 2
+
+security:
+  # SECURITY: application.yml falls back to a compiled-in, publicly
+  # visible (git-committed) AES key
+  # (usora.security.encryption-key: AAAAAAAAAAAAAAAAAAAAAA==) whenever
+  # ENCRYPTION_KEY isn't set. That default must never be reachable outside
+  # a throwaway local dev environment — this chart requires a real Secret
+  # here and refuses to render without one (see deployment.yaml's
+  # `required` guard). See finding pattern in
+  # docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md §7 ("Secrets ...
+  # never in source, config files").
+  existingSecret: ""
+  existingSecretEncryptionKeyKey: "encryption-key"
+
+identityService:
+  # Matches the Service name usora-identity-service's own chart is
+  # expected to produce (<release>-usora-identity-service via the same
+  # fullname helper pattern as this chart) — override per environment if
+  # the identity-service release uses a different name.
+  serviceName: usora-identity-service
+  port: 8081
+
+compute:
+  document:
+    host: usora-document-processor
+  biometric:
+    host: usora-face-matching-engine
+  risk:
+    host: usora-risk-scoring-engine
 
 kafka:
   bootstrapServers: usora-kafka:9092

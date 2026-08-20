@@ -1,0 +1,146 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "usora-gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-gateway.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  # SECURITY/RELIABILITY: selector must never change across upgrades of the
+  # same release (it's an immutable field on Deployment) — it is
+  # deliberately built only from name+instance, never from anything in
+  # values.yaml that a future edit might touch.
+  selector:
+    matchLabels:
+      {{- include "usora-gateway.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "usora-gateway.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "usora-gateway.serviceAccountName" . }}
+      # Do not schedule a full loss of the gateway onto one AZ if it can be
+      # avoided — see the podAntiAffinity in values.yaml.
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        # Matches gcr.io/distroless/cc-debian12's `nonroot` user (uid
+        # 65532), per infrastructure/docker/Dockerfile.rust.
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: usora-gateway
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+            - name: grpc
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "usora-gateway.fullname" . }}-config
+          env:
+            - name: RUST_LOG
+              value: "info"
+            # REDIS_URL is composed here (not in the ConfigMap) because it
+            # may need to interpolate a password sourced from a Secret —
+            # see the two branches below.
+            {{- if .Values.redis.existingSecret }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.existingSecret }}
+                  key: {{ .Values.redis.existingSecretPasswordKey | default "password" }}
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            {{- else }}
+            # SECURITY: no existingSecret configured for this environment —
+            # connecting to Redis with no password. Acceptable only when
+            # network policy already restricts access to this Redis
+            # instance to this namespace (see
+            # infrastructure/k8s/base/network-policies.yml). Set
+            # redis.existingSecret in production environments' values
+            # override.
+            - name: REDIS_URL
+              value: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            {{- end }}
+          volumeMounts:
+            - name: tls-certs
+              mountPath: /etc/tls
+              readOnly: true
+            # readOnlyRootFilesystem needs a writable location for anything
+            # the process itself creates at runtime (temp files, core
+            # dumps disabled but still worth having a scratch dir).
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: tls-certs
+          secret:
+            # Provisioned by cert-manager from tls.certManager.* — this
+            # chart does not create this Secret itself, only consumes it.
+            #
+            # PRE-EXISTING GAP, found and fixed while writing this chart:
+            # a cert-manager Certificate resource produces a
+            # kubernetes.io/tls Secret with keys `tls.crt`/`tls.key`
+            # (and `ca.crt` when the issuer publishes one) — not
+            # `server.crt`/`server.key`. The app reads TLS_CERT_PATH/
+            # TLS_KEY_PATH pointing at .../server.crt and .../server.key
+            # (see values.yaml tls.serverCert/tls.serverKey and
+            # config/mod.rs). Without this `items` remap, those paths
+            # would never exist in the mounted volume and the container
+            # would fail to start.
+            secretName: {{ .Values.tls.certManager.certificateName }}
+            items:
+              - key: tls.crt
+                path: server.crt
+              - key: tls.key
+                path: server.key
+              - key: ca.crt
+                path: ca.crt
+        - name: tmp
+          emptyDir: {}

@@ -114,6 +114,97 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
 
+  lint-helm:
+    name: Lint & Validate Helm Charts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.16.2"
+
+      - name: Setup kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Helm Lint
+        run: |
+          # SECURITY/DEPLOYMENT-READINESS GATE: catches the exact class of
+          # gap found in docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md
+          # finding C1 — a chart with values.yaml but no templates/
+          # directory (or a template referencing an undefined value)
+          # rendering an empty or broken release with no error anywhere
+          # in this pipeline. `helm lint` and the render+schema-validate
+          # step below are the two checks that would have caught it.
+          status=0
+          for chart_dir in infrastructure/helm/*/; do
+            chart_name=$(basename "$chart_dir")
+            echo "::group::helm lint $chart_name"
+            if ! helm lint --strict "$chart_dir"; then
+              echo "::error::helm lint failed for $chart_name"
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $status
+
+      - name: Helm Template & Validate Against Kubernetes Schemas
+        run: |
+          status=0
+          for chart_dir in infrastructure/helm/*/; do
+            chart_name=$(basename "$chart_dir")
+            echo "::group::helm template $chart_name"
+            rendered="/tmp/${chart_name}-rendered.yaml"
+            if ! helm template "$chart_name" "$chart_dir" \
+                --namespace usora \
+                --set redis.existingSecret=placeholder \
+                --set postgresql.existingSecret=placeholder \
+                --set security.existingSecret=placeholder \
+                > "$rendered"; then
+              echo "::error::helm template failed for $chart_name"
+              status=1
+              echo "::endgroup::"
+              continue
+            fi
+            # A chart that renders to (near-)nothing is exactly finding
+            # C1 — fail loudly instead of silently accepting an empty
+            # release.
+            resource_count=$(grep -c '^kind:' "$rendered" || true)
+            if [ "$resource_count" -lt 1 ]; then
+              echo "::error::$chart_name rendered $resource_count Kubernetes resources — a chart with values.yaml but no real templates is exactly the deployment-readiness gap this check exists to catch."
+              status=1
+            fi
+            if ! kubeconform -strict -ignore-missing-schemas -summary "$rendered"; then
+              echo "::error::kubeconform schema validation failed for $chart_name"
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $status
+
+      - name: Notify Slack on Failure
+        if: failure() && github.ref == 'refs/heads/main'
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "❌ Helm chart lint/validation failed in ${{ github.repository }}@${{ github.ref_name }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ Helm Lint Failed*\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ env.SLACK_WEBHOOK_URL }}
+
   test-rust:
     name: Test Rust Services
     runs-on: ubuntu-latest
@@ -355,7 +446,7 @@ jobs:
   build:
     name: Build and Push Docker Images
     runs-on: ubuntu-latest
-    needs: [test-rust, test-java, security-scan]
+    needs: [test-rust, test-java, security-scan, lint-helm]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v'))
     outputs:
       image-tags: ${{ steps.generate-tags.outputs.tags }}

@@ -2,6 +2,7 @@ package com.usora.compliance.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.jsonwebtoken.Claims;
 import com.usora.compliance.client.GrpcClient;
 import com.usora.compliance.config.DroolsConfig;
 import com.usora.compliance.config.TenantConfig;
@@ -11,6 +12,7 @@ import com.usora.compliance.event.DomainEventPublisher;
 import com.usora.compliance.exception.BusinessException;
 import com.usora.compliance.mapper.EntityMapper;
 import com.usora.compliance.repository.*;
+import com.usora.compliance.security.JwtTokenProvider;
 import com.usora.compliance.security.TenantContext;
 import com.usora.compliance.util.EncryptionUtil;
 import com.usora.compliance.util.HashingUtil;
@@ -50,6 +52,12 @@ public class DomainService {
     private final GrpcClient grpcClient;
     private final ObjectMapper objectMapper;
     private final KieServices kieServices;
+    private final JwtTokenProvider jwtTokenProvider;
+
+    /** Role required on the officer-approval token for a rule-change dual authorization. */
+    private static final String OFFICER_ROLE = "compliance_officer";
+    /** Role required on the legal-approval token for a rule-change dual authorization. */
+    private static final String LEGAL_ROLE = "legal_approver";
 
     public DomainService(ComplianceRuleRepository ruleRepository,
                          EvidenceRecordRepository evidenceRepository,
@@ -61,7 +69,8 @@ public class DomainService {
                          DroolsConfig droolsConfig,
                          GrpcClient grpcClient,
                          ObjectMapper objectMapper,
-                         KieServices kieServices) {
+                         KieServices kieServices,
+                         JwtTokenProvider jwtTokenProvider) {
         this.ruleRepository = ruleRepository;
         this.evidenceRepository = evidenceRepository;
         this.jurisdictionRepository = jurisdictionRepository;
@@ -73,6 +82,7 @@ public class DomainService {
         this.grpcClient = grpcClient;
         this.objectMapper = objectMapper;
         this.kieServices = kieServices;
+        this.jwtTokenProvider = jwtTokenProvider;
     }
 
     public ComplianceValidationResponse validateCompliance(ComplianceValidationRequest request) {
@@ -234,7 +244,7 @@ public class DomainService {
         }
 
         // Get current version
-        var currentVersion = ruleRepository.findTopByRuleIdOrderByRuleVersionDesc(request.ruleId());
+        var currentVersion = ruleRepository.findTopByTenantIdAndRuleIdOrderByRuleVersionDesc(tenantId, request.ruleId());
         var newVersion = currentVersion.map(r -> r.getRuleVersion() + 1).orElse(1);
 
         // Create new version
@@ -334,13 +344,30 @@ public class DomainService {
                 .findByTenantIdAndJurisdictionCode(tenantId, request.jurisdiction())
                 .orElseThrow(() -> BusinessException.notFound("Jurisdiction config", request.jurisdiction()));
 
+        var regulationsToCheck = request.applicableRegulations().isEmpty()
+                ? parseRegulations(jurisConfig.getRegulationsJson(), request.jurisdiction())
+                : request.applicableRegulations();
+
+        // SECURITY/COMPLIANCE: a jurisdiction check that evaluates zero
+        // regulations must never be reported as compliant — an empty
+        // regulation list makes `allMatch` vacuously true below, which
+        // would otherwise silently pass a jurisdiction whose config has
+        // nothing configured to check. Fail closed instead.
+        if (regulationsToCheck.isEmpty()) {
+            writeAuditEntry(request.caseId(), tenantId, "compliance.jurisdiction.check", "CHECK",
+                    "Jurisdiction check for " + request.jurisdiction()
+                            + ": no regulations resolved to evaluate — treated as non-compliant pending manual review",
+                    Map.of("jurisdiction", request.jurisdiction(), "compliant", false));
+            throw BusinessException.jurisdictionConflict(request.jurisdiction(),
+                    "No applicable regulations were resolved for this jurisdiction — cannot certify compliance "
+                            + "with zero regulations evaluated. Verify the jurisdiction's regulation configuration.");
+        }
+
         var regulationResults = new ArrayList<JurisdictionCheckResponse.RegulationResult>();
         var allRequiredActions = new ArrayList<String>();
 
         // Check each regulation
-        for (var regulation : request.applicableRegulations().isEmpty()
-                ? parseRegulations(jurisConfig.getRegulationsJson())
-                : request.applicableRegulations()) {
+        for (var regulation : regulationsToCheck) {
             var result = evaluateRegulation(regulation, request.entityAttributes(), jurisConfig);
             regulationResults.add(result);
             if (!result.compliant()) {
@@ -535,30 +562,104 @@ public class DomainService {
                 failed.isEmpty() ? regulation + " requirements satisfied" : regulation + " requirements not fully met");
     }
 
+    /**
+     * SECURITY: dual authorization for a regulatory rule change requires two
+     * independently signature-verified tokens, each carrying the specific
+     * role required of its approver, belonging to two different principals.
+     * A non-empty string is not authorization — every one of these checks
+     * must hold, or the change is rejected:
+     *   1. officerToken is a valid, signature-verified JWT
+     *   2. legalToken is a valid, signature-verified JWT
+     *   3. officerToken carries the compliance-officer role
+     *   4. legalToken carries the legal-approver role
+     *   5. the two tokens' subjects (principals) are different people
+     */
     private boolean validateDualAuthorization(String officerToken, String legalToken) {
-        return officerToken != null && !officerToken.isBlank()
-                && legalToken != null && !legalToken.isBlank();
+        var officerClaims = jwtTokenProvider.parseVerifiedClaims(officerToken);
+        var legalClaims = jwtTokenProvider.parseVerifiedClaims(legalToken);
+
+        if (officerClaims.isEmpty() || legalClaims.isEmpty()) {
+            return false;
+        }
+        if (!jwtTokenProvider.hasVerifiedRole(officerToken, OFFICER_ROLE)) {
+            return false;
+        }
+        if (!jwtTokenProvider.hasVerifiedRole(legalToken, LEGAL_ROLE)) {
+            return false;
+        }
+
+        var officerSubject = officerClaims.get().getSubject();
+        var legalSubject = legalClaims.get().getSubject();
+
+        return officerSubject != null
+                && legalSubject != null
+                && !officerSubject.equals(legalSubject);
     }
 
+    /**
+     * Extracts the verified principal (JWT subject) from a token that has
+     * already passed {@link #validateDualAuthorization}. Never falls back to
+     * an unverified value — if the token doesn't parse/verify at this point
+     * (it should always be the same token already validated above), the
+     * caller must not silently attribute the action to "unknown"; the
+     * approval flow requires a real, verified identity for the audit trail.
+     */
     private String extractPrincipal(String token) {
-        return token != null ? token.substring(0, Math.min(token.length(), 50)) : "unknown";
+        return jwtTokenProvider.parseVerifiedClaims(token)
+                .map(Claims::getSubject)
+                .filter(subject -> subject != null && !subject.isBlank())
+                .orElseThrow(() -> BusinessException.dualAuthorizationRequired());
     }
 
-    private List<String> parseRegulations(String regulationsJson) {
+    /**
+     * SECURITY/COMPLIANCE: an absent/blank config (no regulations
+     * configured at all) legitimately resolves to an empty list — the
+     * caller's empty-list safety net in {@link #checkJurisdictionCompliance}
+     * still fails that closed. A config value that IS present but fails to
+     * parse is different: that's corrupted data, not "nothing configured",
+     * and must fail loudly rather than being silently downgraded to the
+     * same empty list. Swallowing the parse exception here previously made
+     * a corrupted config indistinguishable from "no regulations apply",
+     * which let jurisdiction checks silently pass with zero regulations
+     * evaluated.
+     */
+    private List<String> parseRegulations(String regulationsJson, String jurisdiction) {
         if (regulationsJson == null || regulationsJson.isBlank()) return List.of();
         try {
             return objectMapper.readValue(regulationsJson, List.class);
         } catch (Exception e) {
-            return List.of();
+            log.error("Failed to parse regulations config for jurisdiction {}: {}", jurisdiction, e.getMessage());
+            throw BusinessException.jurisdictionConfigCorrupted(jurisdiction, e.getMessage());
         }
+    }
+
+    /**
+     * SECURITY: builds the exact string that {@link #writeAuditEntry} hashes
+     * into an entry's currentHash. This MUST cover every field an
+     * investigator would actually rely on (tenant, event type, actor,
+     * description, and the details payload) — not just caseId/action/
+     * timestamp — or the hash chain "verifies" while leaving the fields
+     * that matter (what happened, who did it) unprotected against a direct
+     * database edit. Both the writer and the verifier must build this the
+     * same way; keep them in this one shared method rather than duplicating
+     * the concatenation logic.
+     */
+    private String buildAuditHashContent(String previousHash, AuditTrailEntry entry) {
+        return (previousHash != null ? previousHash : "")
+                + entry.getTenantId()
+                + "::" + entry.getCaseId()
+                + "::" + entry.getEventType()
+                + "::" + entry.getAction()
+                + "::" + entry.getActor()
+                + "::" + entry.getDescription()
+                + "::" + entry.getDetailsJson()
+                + "::" + entry.getTimestamp().toString();
     }
 
     private boolean verifyHashChain(List<AuditTrailEntry> entries) {
         String previousHash = null;
         for (var entry : entries) {
-            var expectedHash = HashingUtil.sha256(
-                    (previousHash != null ? previousHash : "") +
-                    entry.getCaseId() + entry.getAction() + entry.getTimestamp().toString());
+            var expectedHash = HashingUtil.sha256(buildAuditHashContent(previousHash, entry));
             if (!expectedHash.equals(entry.getCurrentHash())) {
                 log.warn("Hash chain broken at entry {}: expected {} got {}", entry.getId(), expectedHash, entry.getCurrentHash());
                 return false;
@@ -580,18 +681,20 @@ public class DomainService {
         entry.setDescription(description);
         entry.setTimestamp(Instant.now());
 
-        // Hash chain
-        var lastEntry = caseId != null ? auditTrailRepository.findTopByCaseIdOrderByTimestampDesc(caseId) : Optional.<AuditTrailEntry>empty();
-        var previousHash = lastEntry.map(AuditTrailEntry::getCurrentHash).orElse("");
-        var contentToHash = previousHash + caseId + action + entry.getTimestamp().toString();
-        entry.setPreviousHash(previousHash);
-        entry.setCurrentHash(HashingUtil.sha256(contentToHash));
-
         try {
             entry.setDetailsJson(objectMapper.writeValueAsString(details != null ? details : Map.of()));
         } catch (JsonProcessingException e) {
             entry.setDetailsJson("{}");
         }
+
+        // Hash chain — computed AFTER every hashed field (including
+        // detailsJson) is set on the entry, so the persisted hash actually
+        // covers the full content. See buildAuditHashContent for what's
+        // included and why.
+        var lastEntry = caseId != null ? auditTrailRepository.findTopByTenantIdAndCaseIdOrderByTimestampDesc(tenantId, caseId) : Optional.<AuditTrailEntry>empty();
+        var previousHash = lastEntry.map(AuditTrailEntry::getCurrentHash).orElse("");
+        entry.setPreviousHash(previousHash);
+        entry.setCurrentHash(HashingUtil.sha256(buildAuditHashContent(previousHash, entry)));
 
         auditTrailRepository.save(entry);
     }

@@ -15,18 +15,22 @@ import java.util.Optional;
 @Repository
 public interface AuditTrailRepository extends JpaRepository<AuditTrailEntry, String> {
 
-    List<AuditTrailEntry> findByCaseIdOrderByTimestampAsc(String caseId);
-
+    // SECURITY: caseId is not guaranteed globally unique across tenants —
+    // every lookup here must also be scoped by tenantId, or one tenant's
+    // audit hash chain can pick up another tenant's entry as its
+    // "previous" link (both a cross-tenant data leak and a corruption of
+    // the tamper-evidence chain itself). Do not reintroduce a
+    // tenant-unscoped variant of these methods.
     List<AuditTrailEntry> findByTenantIdAndCaseIdOrderByTimestampAsc(String tenantId, String caseId);
 
     Page<AuditTrailEntry> findByTenantIdAndEventType(String tenantId, String eventType, Pageable pageable);
 
     Page<AuditTrailEntry> findByTenantIdAndTimestampBetween(String tenantId, Instant start, Instant end, Pageable pageable);
 
-    Optional<AuditTrailEntry> findTopByCaseIdOrderByTimestampDesc(String caseId);
+    Optional<AuditTrailEntry> findTopByTenantIdAndCaseIdOrderByTimestampDesc(String tenantId, String caseId);
 
-    @Query("SELECT a.currentHash FROM AuditTrailEntry a WHERE a.caseId = :caseId ORDER BY a.timestamp DESC")
-    List<String> findHashChainByCaseId(@Param("caseId") String caseId);
+    @Query("SELECT a.currentHash FROM AuditTrailEntry a WHERE a.tenantId = :tenantId AND a.caseId = :caseId ORDER BY a.timestamp DESC")
+    List<String> findHashChainByTenantIdAndCaseId(@Param("tenantId") String tenantId, @Param("caseId") String caseId);
 
     long countByTenantIdAndCaseId(String tenantId, String caseId);
 

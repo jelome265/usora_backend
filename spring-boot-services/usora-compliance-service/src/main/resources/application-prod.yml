@@ -54,6 +54,15 @@ compliance:
     port: ${AML_SCREENING_PORT:9090}
   security:
     jwt-secret: ${COMPLIANCE_JWT_SECRET}
+    # PRE-EXISTING GAP, found and fixed while writing this service's Helm
+    # chart: the prod profile overrode jwt-secret but not
+    # rule-signing-secret — meaning production deployments were still
+    # using application.yml's insecure default
+    # ("default-rule-signing-secret-change-in-production-min-32-chars")
+    # to HMAC-sign every dual-authorized compliance rule change. A signing
+    # key that's a known constant in source control provides no real
+    # integrity guarantee at all.
+    rule-signing-secret: ${COMPLIANCE_RULE_SIGNING_SECRET}
   sanctions:
     sources:
       - name: "OFAC"

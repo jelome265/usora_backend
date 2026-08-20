@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "usora-risk-scoring-engine.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-risk-scoring-engine.labels" . | nindent 4 }}
+data:
+  # This service loads its ENTIRE config from a YAML file at
+  # RISK_SCORING_CONFIG (see config/mod.rs::from_env/from_path), not from
+  # individual env vars like the rest of the Rust fleet. Only the fields
+  # that actually need to differ per environment are listed here — every
+  # struct in config/mod.rs now has #[serde(default)], a fix made
+  # alongside this chart specifically so this file can stay minimal
+  # instead of needing to exhaustively restate every ML/business-logic
+  # default (models, feature store, explainability thresholds, etc).
+  # See config/mod.rs's top-of-file comment for the full finding: without
+  # that fix, a config file missing even one nested field would fail to
+  # parse at all, and main.rs previously (also fixed) silently swallowed
+  # that failure and ran with fully-loopback, fully-localhost defaults.
+  #
+  # SECURITY: postgres.url and redis.url are deliberately NOT set here —
+  # this loader had no way to layer a Secret-sourced credential on top of
+  # a file-based config at all until the from_env() fix made alongside
+  # this chart; DATABASE_URL/REDIS_URL env vars (set in deployment.yaml
+  # from a real Secret) now override whatever this file specifies, so a
+  # database password never needs to live in a ConfigMap.
+  risk_scoring.yaml: |
+    server:
+      grpc_addr: "0.0.0.0:{{ .Values.ports.grpc }}"
+      http_addr: "0.0.0.0:{{ .Values.ports.http }}"
+    kafka:
+      brokers: {{ .Values.kafka.bootstrapServers | quote }}
+      dead_letter_topic: {{ .Values.kafka.deadLetterTopic | quote }}
+      retry_count: {{ .Values.kafka.retryCount }}
+      retry_backoff_ms: {{ .Values.kafka.retryBackoffMs }}
+    telemetry:
+      service_name: "usora-risk-scoring-engine"
+      log_level: {{ .Values.logLevel | quote }}

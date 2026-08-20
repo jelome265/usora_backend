@@ -1,0 +1,14 @@
+{{- if gt (int (.Values.autoscaling.minReplicas | default .Values.replicaCount)) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "usora-core.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-core.labels" . | nindent 4 }}
+spec:
+  minAvailable: 50%
+  selector:
+    matchLabels:
+      {{- include "usora-core.selectorLabels" . | nindent 6 }}
+{{- end }}

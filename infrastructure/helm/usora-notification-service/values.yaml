@@ -1,0 +1,111 @@
+replicaCount: 3
+
+nameOverride: ""
+fullnameOverride: ""
+
+springProfile: "prod"
+
+image:
+  repository: usora/notification-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8085"
+  prometheus.io/path: "/actuator/prometheus"
+
+service:
+  type: ClusterIP
+  ports:
+    # No gRPC server of its own — this service only calls OUT to
+    # usora-tenant-service via gRPC (see tenantService below).
+    - name: http
+      port: 8085
+      targetPort: 8085
+      protocol: TCP
+
+postgresql:
+  host: usora-notification-postgresql
+  port: 5432
+  database: usora_notifications
+  existingSecret: ""
+  existingSecretUsernameKey: "username"
+  existingSecretPasswordKey: "password"
+
+redis:
+  host: usora-redis
+  port: 6379
+  # application-prod.yml requires REDIS_HOST/PORT/PASSWORD with no
+  # defaults at all, and enables Redis TLS (spring.data.redis.ssl.enabled:
+  # true) — make sure usora-redis is actually reachable over TLS in this
+  # environment before pointing this chart at it.
+  existingSecret: ""
+  existingSecretPasswordKey: "password"
+
+kafka:
+  bootstrapServers: usora-kafka:9092
+
+tenantService:
+  serviceName: usora-tenant-service
+  port: 9090
+
+smtp:
+  host: ""
+  port: 587
+  existingSecret: ""
+  existingSecretUsernameKey: "username"
+  existingSecretPasswordKey: "password"
+
+# SECURITY: consolidated secret. Expected keys:
+#   jwt-secret         -> JWT_SECRET (application.yml default:
+#                         "defaultSecretKeyMustBeOverriddenInProduction" —
+#                         previously unset even in prod, fixed alongside
+#                         this chart)
+#   encryption-key      -> ENCRYPTION_SECRET_KEY (application.yml
+#                         default: empty string — same fix)
+secrets:
+  existingSecret: ""
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "2Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8085
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8085
+  initialDelaySeconds: 40
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+affinity: {}
+tolerations: []
+nodeSelector: {}

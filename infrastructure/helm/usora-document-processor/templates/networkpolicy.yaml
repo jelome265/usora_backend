@@ -1,0 +1,57 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "usora-document-processor.fullname" . }}-inter-service-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-document-processor.labels" . | nindent 4 }}
+spec:
+  # WHY THIS CHART SHIPS ITS OWN NetworkPolicy, found and fixed while
+  # writing this chart: infrastructure/k8s/base/network-policies.yml's
+  # `allow-inter-service` rule only targets pods labeled
+  # app.kubernetes.io/component=service — it does not cover
+  # component=compute (the label this chart correctly uses, matching its
+  # own node-pool taint/affinity for the dedicated compute pool — see
+  # _helpers.tpl). Under this namespace's default-deny-all policy, that
+  # gap would leave this service completely unreachable — including from
+  # usora-core, its actual caller — with no error surfaced anywhere; the
+  # pods would just look "up" (passing their own liveness/readiness
+  # checks) while being silently unreachable from the rest of the
+  # platform. This policy grants the equivalent of allow-inter-service,
+  # scoped correctly to this pod.
+  podSelector:
+    matchLabels:
+      {{- include "usora-document-processor.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # gRPC (9090) and REST (8080, which also serves /metrics) from other
+    # in-cluster services — primarily usora-core, the orchestrator that
+    # actually invokes document analysis.
+    - ports:
+        - port: 9090
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: service
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: compute
+    # Prometheus/monitoring scrape on 8080 (/metrics) — mirrors the base
+    # allow-metrics-ingress rule's source selectors exactly, since that
+    # rule's own podSelector: {} WOULD already cover this pod for port
+    # 8080; included here too only for a self-contained, at-a-glance
+    # picture of this service's full ingress surface in one file.
+    - ports:
+        - port: 8080
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: prometheus
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring

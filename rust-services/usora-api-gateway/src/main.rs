@@ -46,9 +46,13 @@ async fn main() -> anyhow::Result<()> {
         shutdown_handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
     });
 
+    // Serve with real peer-address info attached to each request
+    // (ConnectInfo<SocketAddr>) so downstream middleware — notably the rate
+    // limiter — can key on the actual TCP peer instead of a client-supplied,
+    // trivially spoofable header. See middleware/rate_limit.rs.
     axum_server::bind_rustls(addr, rustls_config)
         .handle(handle)
-        .serve(app.into_make_service())
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await?;
 
     Ok(())

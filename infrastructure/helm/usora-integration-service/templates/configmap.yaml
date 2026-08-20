@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "usora-integration-service.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-integration-service.labels" . | nindent 4 }}
+data:
+  SPRING_PROFILES_ACTIVE: {{ .Values.springProfile | quote }}
+
+  DATABASE_URL: {{ printf "jdbc:postgresql://%s:%d/%s" .Values.postgresql.host (int .Values.postgresql.port) .Values.postgresql.database | quote }}
+
+  REDIS_HOST: {{ .Values.redis.host | quote }}
+  REDIS_PORT: {{ .Values.redis.port | quote }}
+
+  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.kafka.bootstrapServers | quote }}
+
+  # PRE-EXISTING GAP, found and fixed while writing this chart:
+  # application-prod.yml hardcoded these three external integration
+  # addresses with no env-var override at all. Spring's relaxed
+  # environment-variable binding maps GRPC_CLIENT_<NAME>_ADDRESS to
+  # grpc.client.<name>.address regardless of the literal value already in
+  # the YAML.
+  GRPC_CLIENT_BANKING_SERVICE_ADDRESS: {{ .Values.externalIntegrations.banking.address | quote }}
+  GRPC_CLIENT_GOVERNMENT_SERVICE_ADDRESS: {{ .Values.externalIntegrations.government.address | quote }}
+  GRPC_CLIENT_CREDIT_SERVICE_ADDRESS: {{ .Values.externalIntegrations.creditBureau.address | quote }}

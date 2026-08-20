@@ -12,6 +12,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 use uuid::Uuid;
+use base64::Engine;
 
 use usora_risk_scoring_engine::config::ServiceConfig;
 use usora_risk_scoring_engine::engine::cache::MultiLevelCache;
@@ -31,7 +32,21 @@ use usora_risk_scoring_engine::scoring::engine::PipelineScoringEngine;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let config = Arc::new(ServiceConfig::from_env().unwrap_or_default());
+    // RELIABILITY FIX, found and fixed while writing this service's Helm
+    // chart: `.unwrap_or_default()` here silently swallowed ANY failure
+    // to load/parse the config file (missing file, bad path, malformed
+    // YAML) and ran with ServiceConfig::default() instead — loopback-only
+    // bind addresses ([::1]:...) and localhost Kafka/Postgres/Redis. The
+    // pod would start "successfully" and pass any liveness check that
+    // doesn't itself verify connectivity, while being completely
+    // unreachable from the rest of the cluster and unable to reach its
+    // own dependencies. Failing fast here means a bad config surfaces
+    // immediately as a CrashLoopBackOff, which is visible, instead of a
+    // pod that looks healthy but does nothing.
+    let config = Arc::new(
+        ServiceConfig::from_env()
+            .context("Failed to load risk-scoring-engine config — refusing to silently fall back to loopback-only defaults")?,
+    );
 
     init_telemetry(&config).context("Failed to initialize telemetry")?;
 
@@ -126,9 +141,20 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let grpc_service = RiskScoringServiceImpl::new(orchestrator.clone());
 
+    // Closes an undocumented gap found while writing this service's Helm
+    // chart: no gRPC health service was registered anywhere, unlike the
+    // rest of the Rust fleet (gateway, document-processor) — a native
+    // Kubernetes gRPC readiness/liveness probe against this service had
+    // nothing to talk to and every check would fail forever.
+    let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
+    health_reporter
+        .set_serving::<RiskScoringServiceServer<RiskScoringServiceImpl>>()
+        .await;
+
     let grpc_addr = config.server.grpc_addr.parse()?;
     let grpc_handle = tokio::spawn(async move {
         Server::builder()
+            .add_service(health_service)
             .add_service(RiskScoringServiceServer::new(grpc_service))
             .serve(grpc_addr)
             .await
@@ -195,6 +221,13 @@ fn init_kafka_consumer(
         .set("group.id", &kafka_config.group_id)
         .set("auto.offset.reset", &kafka_config.auto_offset_reset)
         .set("enable.auto.commit", &kafka_config.enable_auto_commit.to_string())
+        // RELIABILITY FIX: see KafkaConfig::dead_letter_topic's doc
+        // comment. Disabling automatic offset storage means an offset is
+        // only marked ready-to-commit once this service has explicitly
+        // called store_offset — which now only happens after a message
+        // is either processed successfully or durably routed to the
+        // dead-letter topic (see run_kafka_consumer/process_kafka_message).
+        .set("enable.auto.offset.store", "false")
         .set("session.timeout.ms", &kafka_config.session_timeout_ms.to_string())
         .set("max.poll.interval.ms", &kafka_config.max_poll_interval_ms.to_string())
         .create()
@@ -226,6 +259,7 @@ async fn run_kafka_consumer(
     config: Arc<ServiceConfig>,
 ) {
     let semaphore = Arc::new(Semaphore::new(config.performance.max_concurrent_per_tenant));
+    let consumer = Arc::new(consumer);
 
     tracing::info!("Kafka consumer started, listening on topic: {}", config.kafka.risk_tasks_topic);
 
@@ -233,34 +267,97 @@ async fn run_kafka_consumer(
     while let Some(result) = stream.next().await {
         match result {
             Ok(message) => {
-                let permit = semaphore.clone().acquire_owned().await;
-                if permit.is_err() {
-                    tracing::warn!("Failed to acquire semaphore permit, skipping message");
-                    continue;
-                }
-                let _permit = permit.unwrap();
+                // RELIABILITY FIX: previously, if the semaphore couldn't
+                // be acquired immediately, the message was silently
+                // skipped (`continue`) with no processing attempt and no
+                // record of the skip beyond a log line — and with
+                // auto-commit still enabled at the time, its offset would
+                // have been marked committed anyway. `acquire_owned`
+                // waiting here (instead of a non-blocking try + skip)
+                // means backpressure slows consumption instead of
+                // silently dropping tasks.
+                let Ok(permit) = semaphore.clone().acquire_owned().await else {
+                    tracing::error!("Concurrency semaphore closed unexpectedly — stopping consumer");
+                    break;
+                };
+
+                let msg_topic = message.topic().to_string();
+                let msg_partition = message.partition();
+                let msg_offset = message.offset();
 
                 match message.payload() {
                     Some(payload) => {
+                        let payload = payload.to_vec();
                         let orchestrator = orchestrator.clone();
                         let producer = producer.clone();
+                        let consumer = consumer.clone();
                         let config = config.clone();
 
                         tokio::spawn(async move {
-                            if let Err(e) = process_kafka_message(
-                                payload,
-                                orchestrator,
-                                &producer,
-                                &config,
-                            )
-                            .await
-                            {
-                                tracing::error!(error = %e, "Failed to process Kafka message");
+                            let _permit = permit;
+
+                            let retry_count = config.kafka.retry_count;
+                            let retry_backoff = std::time::Duration::from_millis(config.kafka.retry_backoff_ms);
+                            let mut attempt = 0u32;
+                            let mut last_err: Option<anyhow::Error> = None;
+
+                            let outcome = loop {
+                                match process_kafka_message(&payload, orchestrator.clone(), &producer, &config).await {
+                                    Ok(()) => break true,
+                                    Err(e) => {
+                                        last_err = Some(e);
+                                        if attempt >= retry_count {
+                                            break false;
+                                        }
+                                        attempt += 1;
+                                        tracing::warn!(attempt, max_attempts = retry_count, "risk scoring failed, retrying after backoff");
+                                        tokio::time::sleep(retry_backoff * attempt).await;
+                                    }
+                                }
+                            };
+
+                            if !outcome {
+                                let e = last_err.expect("outcome is false only when last_err was set");
+                                tracing::error!(
+                                    error = %e,
+                                    attempts = attempt + 1,
+                                    "risk scoring failed after all retries, routing to dead-letter topic"
+                                );
+
+                                let dlq_payload = serde_json::json!({
+                                    "error": e.to_string(),
+                                    "status": "failed",
+                                    "attempts": attempt + 1,
+                                    "original_topic": msg_topic,
+                                    "original_partition": msg_partition,
+                                    "original_offset": msg_offset,
+                                    "task_payload_base64": base64::engine::general_purpose::STANDARD.encode(&payload),
+                                });
+                                let dlq_json = serde_json::to_vec(&dlq_payload).unwrap_or_default();
+                                let record = FutureRecord::to(&config.kafka.dead_letter_topic)
+                                    .key(&Uuid::new_v4().to_string())
+                                    .payload(&dlq_json);
+
+                                if let Err((send_err, _)) = producer.send(record, tokio::time::Duration::from_secs(5)).await {
+                                    // Could not even durably record the
+                                    // failure — leave the offset
+                                    // unstored so this message is
+                                    // redelivered rather than lost.
+                                    tracing::error!(error = %send_err, "failed to publish to dead-letter topic; offset will NOT be stored");
+                                    return;
+                                }
+                            }
+
+                            if let Err(e) = consumer.store_offset(&msg_topic, msg_partition, msg_offset) {
+                                tracing::error!(error = %e, topic = %msg_topic, partition = msg_partition, offset = msg_offset, "failed to store Kafka offset");
                             }
                         });
                     }
                     None => {
                         tracing::warn!("Received Kafka message with empty payload");
+                        if let Err(e) = consumer.store_offset(&msg_topic, msg_partition, msg_offset) {
+                            tracing::error!(error = %e, "failed to store offset for empty-payload message");
+                        }
                     }
                 }
             }

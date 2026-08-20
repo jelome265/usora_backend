@@ -1,0 +1,6 @@
+apiVersion: v2
+name: usora-identity-service
+description: USORA Identity Service — authentication, JWT issuance, JWKS (Java Spring Boot)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

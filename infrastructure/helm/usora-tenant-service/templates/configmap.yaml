@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "usora-tenant-service.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "usora-tenant-service.labels" . | nindent 4 }}
+data:
+  SPRING_PROFILES_ACTIVE: {{ .Values.springProfile | quote }}
+
+  DB_HOST: {{ .Values.postgresql.host | quote }}
+  DB_PORT: {{ .Values.postgresql.port | quote }}
+  DB_NAME: {{ .Values.postgresql.database | quote }}
+
+  REDIS_HOST: {{ .Values.redis.host | quote }}
+  REDIS_PORT: {{ .Values.redis.port | quote }}
+
+  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.kafka.bootstrapServers | quote }}
+
+  IDENTITY_SERVICE_HOST: {{ .Values.identityService.serviceName | quote }}
+  IDENTITY_SERVICE_PORT: {{ .Values.identityService.grpcPort | quote }}
+
+  COMPLIANCE_SERVICE_HOST: {{ .Values.complianceService.serviceName | quote }}
+  COMPLIANCE_SERVICE_PORT: {{ .Values.complianceService.grpcPort | quote }}
+
+  JWKS_URI: {{ printf "http://%s:%d%s" .Values.identityService.serviceName (int .Values.identityService.port) .Values.identityService.jwksPath | quote }}

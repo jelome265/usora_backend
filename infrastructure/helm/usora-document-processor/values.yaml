@@ -1,5 +1,13 @@
 replicaCount: 5
 
+nameOverride: ""
+fullnameOverride: ""
+
+# Matches resources.requests.cpu below (1 concurrent OCR/ML job per
+# requested core is a reasonable starting heuristic for this workload —
+# tune based on real p99 latency and CPU saturation once in staging).
+maxConcurrentJobs: 4
+
 image:
   repository: usora/document-processor
   tag: latest
@@ -20,10 +28,46 @@ podAnnotations:
 service:
   type: ClusterIP
   ports:
-    - name: metrics
+    # PRE-EXISTING GAP, found and fixed while writing this chart: this
+    # only listed a "metrics" port and no gRPC port at all — the primary
+    # way usora-core actually invokes this service (see
+    # DocumentAnalysisServiceServer in main.rs) had no Service port
+    # exposing it.
+    - name: http
       port: 8080
       targetPort: 8080
       protocol: TCP
+    - name: grpc
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+
+postgresql:
+  host: usora-postgresql
+  port: 5432
+  database: usora_documents
+  # SECURITY: no literal credentials in this file — see the equivalent
+  # note in the usora-core chart's values.yaml. This chart's deployment
+  # template requires a real Secret and refuses to render without one;
+  # the app's own compiled-in default (postgres://postgres:postgres@...)
+  # must never be reachable outside local/dev.
+  existingSecret: ""
+  existingSecretUrlKey: "database-url"
+
+redis:
+  host: usora-redis
+  port: 6379
+  existingSecret: ""
+  existingSecretPasswordKey: "password"
+
+security:
+  # SECURITY: closes an undocumented gap found while writing this chart —
+  # the REST API (/api/v1/documents/*) took tenant_id from the request
+  # body with no authentication at all. This chart requires a real Secret
+  # here (see deployment.yaml's `required` guard) — the app itself also
+  # now refuses to start without it (see config.rs::validate()).
+  existingSecret: ""
+  existingSecretJwtSecretKey: "internal-service-jwt-secret"
 
 resources:
   requests:
@@ -73,22 +117,39 @@ tesseract:
 tempStorage:
   enabled: true
   size: 100Gi
-  storageClass: gp3
+  # PRE-EXISTING GAP, found and fixed while writing this chart: a
+  # storageClass field only makes sense for a PersistentVolumeClaim, but
+  # this workload is scaled by a Deployment (up to 50 replicas via
+  # autoscaling.maxReplicas below), not a StatefulSet — a Deployment has
+  # no per-replica PVC mechanism, and a single shared PVC mounted
+  # ReadWriteMany across up to 50 concurrently-scaling pods doing
+  # temp-file OCR/ML scratch work is a correctness hazard (races on
+  # shared temp paths), not a storage decision. This chart uses a
+  # per-pod emptyDir instead — see deployment.yaml. storageClass is kept
+  # here only so an operator who previously relied on it sees why it's
+  # now unused, rather than the field silently vanishing.
+  storageClass: "N/A — see comment above; this chart uses emptyDir, not a PVC"
   mountPath: /tmp/processing
 
 readinessProbe:
-  exec:
-    command:
-      - /bin/grpc_health_probe
-      - -addr=:9090
+  # PRE-EXISTING GAP, found and fixed while writing this chart: exec
+  # probes calling /bin/grpc_health_probe require that binary to exist in
+  # the container image. infrastructure/docker/Dockerfile.rust builds
+  # onto gcr.io/distroless/cc-debian12, which has no shell and no extra
+  # binaries beyond the compiled service itself — /bin/grpc_health_probe
+  # was never going to exist there, so this probe would have failed
+  # forever and every pod would have been killed on first liveness check.
+  # The app already registers a real tonic-health gRPC service (see
+  # main.rs) — using Kubernetes' native gRPC probe (stable since 1.27)
+  # talks to that service directly with no extra binary needed at all.
+  grpc:
+    port: 9090
   initialDelaySeconds: 15
   periodSeconds: 10
 
 livenessProbe:
-  exec:
-    command:
-      - /bin/grpc_health_probe
-      - -addr=:9090
+  grpc:
+    port: 9090
   initialDelaySeconds: 30
   periodSeconds: 30
 

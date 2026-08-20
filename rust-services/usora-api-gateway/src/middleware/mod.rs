@@ -1,59 +1,10 @@
+// NOTE: this module previously contained an unused `MiddlewarePipelineBuilder`
+// and a hand-rolled, wildcard-open `cors` submodule that were never wired
+// into the running app (routes/mod.rs builds the real middleware stack
+// directly). Both were removed as dead code — see finding H2 in
+// docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md. routes/mod.rs::create_router
+// is the single source of truth for how this crate's middleware stack is
+// assembled and ordered; do not reintroduce a second, parallel builder here.
 pub mod auth;
-pub mod cors;
 pub mod rate_limit;
 pub mod tenant;
-
-use axum::Router;
-
-#[derive(Default)]
-pub struct MiddlewarePipelineBuilder {
-    pub enable_auth: bool,
-    pub enable_cors: bool,
-    pub enable_rate_limit: bool,
-    pub enable_tenant: bool,
-}
-
-impl MiddlewarePipelineBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_auth(mut self) -> Self {
-        self.enable_auth = true;
-        self
-    }
-
-    pub fn with_cors(mut self) -> Self {
-        self.enable_cors = true;
-        self
-    }
-
-    pub fn with_rate_limit(mut self) -> Self {
-        self.enable_rate_limit = true;
-        self
-    }
-
-    pub fn with_tenant(mut self) -> Self {
-        self.enable_tenant = true;
-        self
-    }
-
-    pub fn build(self, router: Router) -> Router {
-        let mut app = router;
-
-        if self.enable_tenant {
-            app = app.layer(tenant::TenantLayer::new());
-        }
-        if self.enable_rate_limit {
-            app = app.layer(rate_limit::RateLimitLayer::new(100, 200, 1000));
-        }
-        if self.enable_auth {
-            app = app.layer(auth::AuthLayer::new());
-        }
-        if self.enable_cors {
-            app = app.layer(cors::CorsLayer::new());
-        }
-
-        app
-    }
-}

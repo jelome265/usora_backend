@@ -65,6 +65,25 @@ impl Default for RateLimitingConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct CorsConfig {
+    /// Explicit allowlist of origins permitted to make cross-origin
+    /// requests to this API. SECURITY: this must never default to a
+    /// wildcard — see docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md
+    /// finding C5. An empty list means no cross-origin browser access is
+    /// permitted (server-to-server / same-origin callers are unaffected).
+    pub allowed_origins: Vec<String>,
+}
+
+impl Default for CorsConfig {
+    fn default() -> Self {
+        // Intentionally empty by default: a fresh/misconfigured environment
+        // must fail closed (no cross-origin access) rather than fail open
+        // (any origin). Set CORS_ALLOWED_ORIGINS explicitly per environment.
+        Self { allowed_origins: Vec::new() }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
 pub struct UpstreamConfig {
     pub orchestrator_url: String,
@@ -105,6 +124,7 @@ pub struct Config {
     pub redis: RedisConfig,
     pub kafka: KafkaConfig,
     pub rate_limiting: RateLimitingConfig,
+    pub cors: CorsConfig,
     pub upstream: UpstreamConfig,
     pub observability: ObservabilityConfig,
 }
@@ -118,6 +138,7 @@ impl Default for Config {
             redis: RedisConfig::default(),
             kafka: KafkaConfig::default(),
             rate_limiting: RateLimitingConfig::default(),
+            cors: CorsConfig::default(),
             upstream: UpstreamConfig::default(),
             observability: ObservabilityConfig::default(),
         }
@@ -163,6 +184,13 @@ impl Config {
         }
         if let Ok(v) = std::env::var("RATE_LIMIT_WINDOW_MS") {
             cfg.rate_limiting.window_ms = v.parse()?;
+        }
+        if let Ok(v) = std::env::var("CORS_ALLOWED_ORIGINS") {
+            cfg.cors.allowed_origins = v
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
         }
         if let Ok(v) = std::env::var("UPSTREAM_ORCHESTRATOR_URL") {
             cfg.upstream.orchestrator_url = v;

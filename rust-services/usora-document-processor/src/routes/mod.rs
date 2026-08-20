@@ -4,10 +4,12 @@ use crate::generated::usora::document::v1::{
     SecurityFeaturesRequest, TemplateRequest,
 };
 use crate::grpc::DocumentAnalysisServiceImpl;
-use crate::Config;
+use crate::auth::{require_service_auth, AuthState};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
+    middleware,
+    routing::get,
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -19,15 +21,51 @@ pub struct AppState {
     pub service: Arc<DocumentAnalysisServiceImpl>,
 }
 
-pub fn router(state: AppState) -> axum::Router {
-    axum::Router::new()
+pub fn router(state: AppState, auth: Arc<AuthState>) -> axum::Router {
+    // SECURITY: every route under /api/v1/documents performs
+    // document/biometric forensic analysis and previously had no
+    // authentication at all — see auth.rs for the full finding. Those
+    // routes are nested separately so `require_service_auth` wraps only
+    // them; /metrics stays reachable for the cluster's Prometheus scraper
+    // without a bearer token (it's restricted at the network layer
+    // instead — see this chart's NetworkPolicy).
+    let authenticated_routes = axum::Router::new()
         .route("/api/v1/documents/analyze", axum::routing::post(analyze_document))
         .route("/api/v1/documents/forgery-check", axum::routing::post(forgery_check))
         .route("/api/v1/documents/metadata", axum::routing::post(extract_metadata))
         .route("/api/v1/documents/cross-reference", axum::routing::post(cross_reference))
         .route("/api/v1/documents/security-features", axum::routing::post(security_features))
         .route("/api/v1/documents/templates/{country}/{doc_type}", axum::routing::get(get_template))
-        .with_state(state)
+        .route_layer(middleware::from_fn_with_state(auth, require_service_auth))
+        .with_state(state);
+
+    axum::Router::new()
+        .route("/metrics", get(metrics_handler))
+        .merge(authenticated_routes)
+        .layer(middleware::from_fn(track_rest_metrics))
+}
+
+async fn track_rest_metrics(req: axum::extract::Request, next: middleware::Next) -> axum::response::Response {
+    let route = req.uri().path().to_string();
+    let response = next.run(req).await;
+    let status_class = match response.status().as_u16() {
+        200..=299 => "2xx",
+        300..=399 => "3xx",
+        400..=499 => "4xx",
+        500..=599 => "5xx",
+        _ => "other",
+    };
+    crate::metrics::REST_REQUESTS_TOTAL
+        .with_label_values(&[&route, status_class])
+        .inc();
+    response
+}
+
+async fn metrics_handler() -> Result<String, StatusCode> {
+    crate::metrics::render().map_err(|e| {
+        tracing::error!("failed to render metrics: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -273,15 +311,21 @@ async fn get_template(
 
 mod base64_serde {
     use serde::{Deserialize, Deserializer, Serializer};
+    // PRE-EXISTING COMPILE-BLOCKER, found and fixed alongside the auth/
+    // metrics work in this file: Cargo.toml declares base64 = "0.22", but
+    // the free functions base64::encode/base64::decode used here were
+    // removed as of base64 0.21 in favor of the Engine trait. This module
+    // would not have compiled as checked in.
+    use base64::Engine;
 
     pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
     where S: Serializer {
-        serializer.serialize_str(&base64::encode(bytes))
+        serializer.serialize_str(&base64::engine::general_purpose::STANDARD.encode(bytes))
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
     where D: Deserializer<'de> {
         let s = String::deserialize(deserializer)?;
-        base64::decode(&s).map_err(serde::de::Error::custom)
+        base64::engine::general_purpose::STANDARD.decode(&s).map_err(serde::de::Error::custom)
     }
 }

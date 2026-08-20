@@ -70,3 +70,18 @@ integration:
       failure-threshold: 10
       wait-duration: 60000
       half-open-max-calls: 5
+  # PRE-EXISTING GAP, found and fixed while writing this service's Helm
+  # chart: neither security.jwt.secret nor integration.encryption.key was
+  # overridden anywhere in this prod profile — production deployments
+  # were using application.yml's defaults (an empty JWT secret, and a
+  # hardcoded, visibly-a-placeholder AES key
+  # "AES256KeyMustBe32BytesLongForGCMEncryption" that's nonetheless a
+  # real, usable 32-byte key if never overridden) for signing tokens and
+  # encrypting stored data respectively.
+  encryption:
+    key: ${ENCRYPTION_KEY}
+
+security:
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: usora-integration-service

@@ -3,10 +3,28 @@ package com.usora.integration.security;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.annotation.Order;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
+/**
+ * SECURITY BUG, found and fixed while implementing Postgres row-level
+ * security for this service: this filter previously trusted the
+ * client-supplied X-Tenant-Id header, falling back to parsing a tenant
+ * id out of the URL path (e.g. /webhooks/{tenantId}/...) — both fully
+ * attacker-controlled, with no reference to the verified JWT at all,
+ * even though JwtTokenProvider.getAuthentication already extracts a
+ * verified tenantId into UsoraPrincipal during authentication. Tenant
+ * now comes exclusively from that verified principal.
+ *
+ * SEPARATE FINDING, flagged but NOT resolved here: like
+ * usora-notification-service, this service verifies tokens with an HMAC
+ * secret entirely distinct from usora-identity-service's actual
+ * RS256/JWKS-issued tokens — see JwtTokenProvider.java. Whether that's
+ * an intentional internal-service auth pattern or a genuine integration
+ * gap needs a decision from whoever owns this service's calling pattern.
+ */
 @Component
 @Order(2)
 public class TenantInterceptor implements Filter {
@@ -16,19 +34,13 @@ public class TenantInterceptor implements Filter {
             throws IOException, ServletException {
 
         try {
-            if (request instanceof HttpServletRequest httpRequest) {
-                String tenantId = httpRequest.getHeader("X-Tenant-Id");
-                if (tenantId == null || tenantId.isBlank()) {
-                    tenantId = extractTenantFromPath(httpRequest.getRequestURI());
+            var auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof JwtTokenProvider.UsoraPrincipal principal) {
+                if (principal.tenantId() != null && !principal.tenantId().isBlank()) {
+                    TenantContext.setCurrentTenant(principal.tenantId());
                 }
-
-                if (tenantId != null && !tenantId.isBlank()) {
-                    TenantContext.setCurrentTenant(tenantId);
-                }
-
-                String userId = httpRequest.getHeader("X-User-Id");
-                if (userId != null && !userId.isBlank()) {
-                    TenantContext.setCurrentUserId(userId);
+                if (principal.userId() != null && !principal.userId().isBlank()) {
+                    TenantContext.setCurrentUserId(principal.userId());
                 }
             }
 
@@ -36,17 +48,5 @@ public class TenantInterceptor implements Filter {
         } finally {
             TenantContext.clear();
         }
-    }
-
-    private String extractTenantFromPath(String path) {
-        if (path == null) return null;
-
-        String[] segments = path.split("/");
-        for (int i = 0; i < segments.length - 1; i++) {
-            if ("webhooks".equals(segments[i]) && i + 1 < segments.length) {
-                return segments[i + 1];
-            }
-        }
-        return null;
     }
 }
