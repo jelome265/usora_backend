@@ -2,23 +2,26 @@ package com.usora.core.config;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.composite.CompositeMeterRegistry;
+import io.micrometer.prometheusmetrics.PrometheusConfig;
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
-import io.micrometer.observation.ObservationRegistry;
-import org.springframework.boot.actuate.autoconfigure.observation.ObservationRegistryCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 @Configuration
 public class MetricsConfig {
 
     @Bean
+    @Primary
     public MeterRegistry meterRegistry() {
-        return new CompositeMeterRegistry();
+        CompositeMeterRegistry composite = new CompositeMeterRegistry();
+        PrometheusMeterRegistry prometheus = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        composite.add(prometheus);
+        return composite;
     }
 
     @Bean
-    public ObservationRegistryCustomizer<?> observationRegistryCustomizer() {
-        return (ObservationRegistry registry) -> registry.observationConfig()
-                .observationHandler(observation -> {});
+    public PrometheusMeterRegistry prometheusMeterRegistry() {
+        return new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
     }
 }
