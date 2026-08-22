@@ -1,4 +1,7 @@
 spring:
+  cache:
+    type: none
+
   application:
     name: usora-tenant-service-test
 

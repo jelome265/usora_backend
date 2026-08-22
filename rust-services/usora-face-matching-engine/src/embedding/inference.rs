@@ -151,11 +151,7 @@ impl EmbeddingModel for OnnxEmbeddingModel {
         let cropped = utils::crop_face(image, face)?;
         let tensor = Self::preprocess(&cropped, self.input_width, self.input_height)?;
 
-        let vector = tokio::task::spawn_blocking(move || {
-            self.run_inference(tensor)
-        })
-        .await
-        .context("Embedding spawn blocking failed")??;
+        let vector = self.run_inference(tensor)?;
 
         Ok(FaceEmbedding {
             vector,

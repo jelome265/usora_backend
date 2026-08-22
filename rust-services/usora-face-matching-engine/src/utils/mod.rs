@@ -6,6 +6,7 @@ use image::{
     ImageBuffer, Rgb,
 };
 use ndarray::{Array, Array3, Axis, Dim};
+use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use uuid::Uuid;
 
@@ -83,10 +84,14 @@ pub fn align_face(
     let dy = right_eye[1] - left_eye[1];
     let angle = dy.atan2(dx).to_degrees();
 
-    let rotated = image.rotate(angle);
+    let rotated = if angle.abs() > 45.0 {
+        if angle > 0.0 { image.rotate90() } else { image.rotate270() }
+    } else {
+        image.clone()
+    };
     let scale_x = 112.0 / rotated.width() as f64;
     let scale_y = 112.0 / rotated.height() as f64;
-    let scale = scale_x.max(scale_y) as f32;
+    let scale = (scale_x.max(scale_y)) as f32;
 
     let scaled_width = (rotated.width() as f32 * scale) as u32;
     let scaled_height = (rotated.height() as f32 * scale) as u32;
@@ -263,7 +268,7 @@ pub fn compute_iou(a: &BBox, b: &BBox) -> f64 {
 }
 
 pub fn non_maximum_suppression(
-    detections: &mut [DetectedFace],
+    detections: &mut Vec<DetectedFace>,
     iou_threshold: f64,
     score_threshold: f32,
 ) -> Vec<DetectedFace> {
@@ -290,7 +295,7 @@ pub fn non_maximum_suppression(
     keep
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BBox {
     pub x1: f64,
     pub y1: f64,
