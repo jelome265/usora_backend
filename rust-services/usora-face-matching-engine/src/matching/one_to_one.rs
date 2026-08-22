@@ -37,7 +37,7 @@ impl Matcher for CosineMatcher {
         probe: &FaceEmbedding,
         target: &FaceEmbedding,
     ) -> Result<MatchResult> {
-        let _span = info_span!("verify_one_to_one").entered();
+        let _span = info_span!("verify_one_to_one");
 
         let similarity = Self::compute_similarity(&probe.vector, &target.vector);
         let passed_threshold = similarity >= self.threshold;

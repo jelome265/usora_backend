@@ -47,7 +47,7 @@ impl DslRule {
     fn create_engine() -> Engine {
         let mut engine = Engine::new();
         engine.set_max_operations(50_000);
-        engine.set_max_strings(100);
+        engine.set_max_string_size(100);
         engine.set_max_modules(5);
 
         engine.register_type::<FeatureValue>();
@@ -59,16 +59,16 @@ impl DslRule {
             v.is_int()
         });
         engine.register_fn("is_float", |v: Dynamic| -> bool {
-            matches!(v, Dynamic::Float(_))
+            v.is_float()
         });
         engine.register_fn("is_bool", |v: Dynamic| -> bool {
-            matches!(v, Dynamic::Bool(_))
+            v.is_bool()
         });
         engine.register_fn("to_float", |v: Dynamic| -> f64 {
             if v.is_int() {
                 v.as_int().unwrap() as f64
-            } else if matches!(v, Dynamic::Float(_)) {
-                v.as_float().unwrap()
+            } else if v.is_float() {
+                v.as_float().unwrap_or(0.0)
             } else {
                 0.0
             }
@@ -192,54 +192,53 @@ fn parse_rule_result(
     name: &str,
     priority: i32,
 ) -> Result<RuleResult, RuleError> {
-    let map = match result.as_map() {
-        Some(m) => m.clone(),
-        None => {
-            let triggered = !result.is_unit();
-            return Ok(RuleResult {
-                triggered,
-                rule_id: rule_id.to_string(),
-                rule_name: name.to_string(),
-                priority,
-                score_delta: if triggered { 0.1 } else { 0.0 },
-                risk_level_override: None,
-                explanation: if triggered {
-                    format!("Rule '{}' triggered", name)
-                } else {
-                    "Rule not triggered".into()
-                },
-                metadata: HashMap::new(),
-                execution_time_ms: 0.0,
-            });
-        }
+    let map = if result.is_map() {
+        result.cast::<rhai::Map>()
+    } else {
+        let triggered = !result.is_unit();
+        return Ok(RuleResult {
+            triggered,
+            rule_id: rule_id.to_string(),
+            rule_name: name.to_string(),
+            priority,
+            score_delta: if triggered { 0.1 } else { 0.0 },
+            risk_level_override: None,
+            explanation: if triggered {
+                format!("Rule '{}' triggered", name)
+            } else {
+                "Rule not triggered".into()
+            },
+            metadata: HashMap::new(),
+            execution_time_ms: 0.0,
+        });
     };
 
     let triggered = map
         .get("triggered")
-        .and_then(|d| d.as_bool())
+        .and_then(|d| d.as_bool().ok())
         .unwrap_or(false);
     let score_delta = map
         .get("score_delta")
-        .and_then(|d| d.as_float())
+        .and_then(|d| d.as_float().ok())
         .unwrap_or(0.0);
     let explanation = map
         .get("explanation")
-        .and_then(|d| d.as_str().map(|s| s.to_string()))
+        .and_then(|d| d.clone().into_string().ok())
         .unwrap_or_default();
 
     let risk_level_override = map.get("risk_level").and_then(|d| {
-        d.as_str().map(|s| match s {
-            "low" => RiskLevel::Low,
-            "medium" => RiskLevel::Medium,
-            "high" => RiskLevel::High,
-            "critical" => RiskLevel::Critical,
-            _ => return None,
+        d.clone().into_string().ok().and_then(|s| match s.as_str() {
+            "low" => Some(RiskLevel::Low),
+            "medium" => Some(RiskLevel::Medium),
+            "high" => Some(RiskLevel::High),
+            "critical" => Some(RiskLevel::Critical),
+            _ => None,
         })
     });
 
     let mut metadata = HashMap::new();
-    if let Some(md) = map.get("metadata").and_then(|d| d.as_map()) {
-        for (k, v) in md {
+    if let Some(md) = map.get("metadata").and_then(|d| if d.is_map() { Some(d.read_lock::<rhai::Map>()) } else { None }) {
+        for (k, v) in md.iter() {
             metadata.insert(k.to_string(), v.to_string());
         }
     }

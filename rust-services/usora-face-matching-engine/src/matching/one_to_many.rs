@@ -34,7 +34,7 @@ impl FaissMatcher {
             info!(path = %config.index_path.display(), "Loading existing FAISS index");
             let idx = faiss::read_index(&config.index_path.to_string_lossy())
                 .context("Failed to read FAISS index")?;
-            idx
+            Box::new(idx)
         } else {
             warn!("FAISS index not found, creating empty index. Path: {}", config.index_path.display());
             let flat = faiss::IndexFlatIP::new(config.dimension as i32)?;
@@ -118,7 +118,7 @@ impl FaissMatcher {
                 let ext = self.index_path.extension().unwrap_or_default();
                 parent.join(format!("{}_{}.{}", stem.to_string_lossy(), tenant_id, ext.to_string_lossy()))
             };
-            faiss::write_index(index.as_ref(), &path.to_string_lossy())
+            faiss::write_index(index, &path.to_string_lossy())
                 .context(format!("Failed to write FAISS index for tenant {tenant_id}"))?;
             info!(tenant = %tenant_id, path = %path.display(), "FAISS index saved");
         }
@@ -128,7 +128,7 @@ impl FaissMatcher {
     pub fn save_index(&self, path: &Path) -> Result<()> {
         let index = self.indices.lock().unwrap();
         if let Some(idx) = index.get("__default__") {
-            faiss::write_index(idx.as_ref(), &path.to_string_lossy())
+            faiss::write_index(idx, &path.to_string_lossy())
                 .context("Failed to write FAISS index")?;
         }
         Ok(())
@@ -210,7 +210,7 @@ impl FaissMatcher {
         top_k: usize,
         tenant_id: &str,
     ) -> Result<Vec<MatchResult>> {
-        let _span = info_span!("search_one_to_many", top_k = top_k, tenant = %tenant_id).entered();
+        let _span = info_span!("search_one_to_many", top_k = top_k, tenant = %tenant_id);
 
         let k = top_k.min(1000);
         let query_slice = probe.vector.as_slice();

@@ -169,7 +169,7 @@ impl FeatureStore for RedisFeatureStore {
     async fn health_check(&self) -> Result<(), ModelError> {
         let mut conn = self.conn.write().await;
         redis::cmd("PING")
-            .query_async::<_, String>(&mut *conn)
+            .query_async::<String>(&mut *conn)
             .await
             .map_err(|e| ModelError::FeatureError(e.to_string()))?;
         Ok(())
@@ -350,9 +350,9 @@ impl FeatureStore for PostgresFeatureStore {
 }
 
 pub struct CompositeFeatureStore {
-    redis: Arc<RedisFeatureStore>,
-    postgres: Arc<PostgresFeatureStore>,
-    config: FeatureStoreConfig,
+    pub redis: Arc<RedisFeatureStore>,
+    pub postgres: Arc<PostgresFeatureStore>,
+    pub config: FeatureStoreConfig,
 }
 
 impl CompositeFeatureStore {

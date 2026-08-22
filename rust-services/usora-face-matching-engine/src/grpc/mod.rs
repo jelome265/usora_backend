@@ -67,7 +67,7 @@ impl IdentityVerificationService for IdentityVerificationServiceImpl {
         &self,
         request: Request<FaceVerificationRequest>,
     ) -> Result<Response<FaceVerificationResponse>, Status> {
-        let _span = info_span!("grpc_verify_face").entered();
+        let _span = info_span!("grpc_verify_face");
         let req = request.into_inner();
         let start = std::time::Instant::now();
 
@@ -118,7 +118,7 @@ impl IdentityVerificationService for IdentityVerificationServiceImpl {
         &self,
         request: Request<LivenessVerificationRequest>,
     ) -> Result<Response<LivenessVerificationResponse>, Status> {
-        let _span = info_span!("grpc_verify_liveness").entered();
+        let _span = info_span!("grpc_verify_liveness");
         let req = request.into_inner();
         let start = std::time::Instant::now();
 
@@ -157,7 +157,7 @@ impl IdentityVerificationService for IdentityVerificationServiceImpl {
         &self,
         request: Request<BiometricMatchRequest>,
     ) -> Result<Response<BiometricMatchResponse>, Status> {
-        let _span = info_span!("grpc_match_biometrics").entered();
+        let _span = info_span!("grpc_match_biometrics");
         let req = request.into_inner();
         let start = std::time::Instant::now();
 

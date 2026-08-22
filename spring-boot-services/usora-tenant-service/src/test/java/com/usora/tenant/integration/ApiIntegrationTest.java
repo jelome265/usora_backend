@@ -11,9 +11,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
 
 import java.util.Map;
 import java.util.UUID;
@@ -38,6 +40,10 @@ class ApiIntegrationTest {
     private TenantRepository tenantRepository;
 
     private UUID existingTenantId;
+
+    private JwtRequestPostProcessor platformAdminJwt() {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"));
+    }
 
     @BeforeEach
     void setUp() {
@@ -76,7 +82,7 @@ class ApiIntegrationTest {
         String json = objectMapper.writeValueAsString(request);
 
         MvcResult result = mockMvc.perform(post("/api/v1/tenants")
-                        .with(jwt())
+                        .with(platformAdminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isCreated())
@@ -88,7 +94,7 @@ class ApiIntegrationTest {
 
     @Test
     void getTenant_shouldReturn200() throws Exception {
-        mockMvc.perform(get("/api/v1/tenants/{id}", existingTenantId).with(jwt()))
+        mockMvc.perform(get("/api/v1/tenants/{id}", existingTenantId).with(platformAdminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Existing Tenant"))
                 .andExpect(jsonPath("$.domain").value("existing.example.com"));
@@ -96,14 +102,14 @@ class ApiIntegrationTest {
 
     @Test
     void getTenant_shouldReturn404() throws Exception {
-        mockMvc.perform(get("/api/v1/tenants/{id}", UUID.randomUUID()).with(jwt()))
+        mockMvc.perform(get("/api/v1/tenants/{id}", UUID.randomUUID()).with(platformAdminJwt()))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void listTenants_shouldReturn200() throws Exception {
         mockMvc.perform(get("/api/v1/tenants")
-                        .with(jwt())
+                        .with(platformAdminJwt())
                         .param("page", "0")
                         .param("size", "10"))
                 .andExpect(status().isOk())
@@ -125,7 +131,7 @@ class ApiIntegrationTest {
         String json = objectMapper.writeValueAsString(request);
 
         mockMvc.perform(post("/api/v1/tenants")
-                        .with(jwt())
+                        .with(platformAdminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isConflict())
@@ -135,7 +141,7 @@ class ApiIntegrationTest {
     @Test
     void onboardTenant_shouldReturn400ForMissingFields() throws Exception {
         mockMvc.perform(post("/api/v1/tenants")
-                        .with(jwt())
+                        .with(platformAdminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
@@ -144,7 +150,7 @@ class ApiIntegrationTest {
 
     @Test
     void getTenantStatus_shouldReturn200() throws Exception {
-        mockMvc.perform(get("/api/v1/tenants/{id}/status", existingTenantId).with(jwt()))
+        mockMvc.perform(get("/api/v1/tenants/{id}/status", existingTenantId).with(platformAdminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
     }

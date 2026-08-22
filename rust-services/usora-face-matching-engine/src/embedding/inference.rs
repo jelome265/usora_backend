@@ -146,7 +146,7 @@ impl EmbeddingModel for OnnxEmbeddingModel {
         image: &DynamicImage,
         face: &DetectedFace,
     ) -> Result<FaceEmbedding> {
-        let _span = info_span!("generate_embedding").entered();
+        let _span = info_span!("generate_embedding");
 
         let cropped = utils::crop_face(image, face)?;
         let tensor = Self::preprocess(&cropped, self.input_width, self.input_height)?;

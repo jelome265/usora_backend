@@ -66,7 +66,7 @@ impl FaceMatchingEngine {
         image: &DynamicImage,
         perform_quality_check: bool,
     ) -> Result<Vec<DetectedFace>> {
-        let _span = info_span!("detect_and_extract").entered();
+        let _span = info_span!("detect_and_extract");
         let mut faces = self.face_detector.detect_faces(image).await?;
 
         if perform_quality_check {
@@ -98,7 +98,7 @@ impl FaceMatchingEngine {
         target: &DynamicImage,
         threshold: f64,
     ) -> Result<MatchResult> {
-        let _span = info_span!("verify_faces").entered();
+        let _span = info_span!("verify_faces");
 
         let source_faces = self.detect_and_extract(source, true).await?;
         let target_faces = self.detect_and_extract(target, true).await?;
@@ -134,7 +134,7 @@ impl FaceMatchingEngine {
         top_k: usize,
         tenant_id: &str,
     ) -> Result<Vec<MatchResult>> {
-        let _span = info_span!("identify_face", tenant = %tenant_id).entered();
+        let _span = info_span!("identify_face", tenant = %tenant_id);
 
         let faces = self.detect_and_extract(probe, true).await?;
         let best_face = faces
@@ -166,7 +166,7 @@ impl FaceMatchingEngine {
         challenge_type: &str,
         challenge_data: Option<&str>,
     ) -> Result<LivenessResult> {
-        let _span = info_span!("check_liveness", challenge_type = %challenge_type).entered();
+        let _span = info_span!("check_liveness", challenge_type = %challenge_type);
 
         let faces = self.detect_and_extract(image, true).await?;
         let best_face = faces
@@ -216,7 +216,7 @@ impl FaceMatchingEngine {
         image: &DynamicImage,
         user_id: &str,
     ) -> Result<FaceEmbedding> {
-        let _span = info_span!("register_face", user_id = %user_id).entered();
+        let _span = info_span!("register_face", user_id = %user_id);
 
         let faces = self.detect_and_extract(image, true).await?;
         let best_face = faces
