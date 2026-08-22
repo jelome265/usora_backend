@@ -170,7 +170,7 @@ impl InferenceService {
                 if sorted.is_empty() {
                     return 0.0;
                 }
-                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                 let idx = (sorted.len() as f64 * 0.99).ceil() as usize - 1;
                 sorted[idx.min(sorted.len() - 1)]
             })
@@ -223,7 +223,7 @@ impl InferenceService {
         let predicted_class = ensemble_probs
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(i, _)| i)
             .unwrap_or(0);
 

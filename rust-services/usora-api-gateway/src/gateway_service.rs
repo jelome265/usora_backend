@@ -152,50 +152,85 @@ mod redis_ratelimit {
     pub async fn check(
         conn: &ConnectionManager,
         key: &str,
-        // TODO(rate-limiting owner): see the identical note on
-        // redis_rate_limit_check in middleware/rate_limit.rs -- max_rps
-        // is unused here for the same reason and needs the same fix.
-        _max_rps: u64,
+        max_rps: u64,
         burst: u64,
     ) -> redis::RedisResult<RateLimitResult> {
         let mut conn = conn.clone();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
-        let window = 1000u64;
-        let window_key = format!("{}:{}", key, now / window);
 
-        let count: u64 = redis::cmd("GET")
-            .arg(&window_key)
+        // RELIABILITY FIX, found while auditing .unwrap()/.expect() usage
+        // (H3): this is a second, separate rate-limiting implementation
+        // from middleware/rate_limit.rs's redis_rate_limit_check, live
+        // behind the GatewayService.check_rate_limit gRPC method (called
+        // by other internal services, not just HTTP middleware) — and it
+        // had the identical bug already found and fixed there: max_rps
+        // was accepted as a parameter and never used, so this only
+        // enforced `burst` as a flat per-second cap. A low configured
+        // max_rps alongside a high burst allowed sustained traffic at
+        // the burst rate indefinitely. Fixed the same way: a second,
+        // longer window enforces the sustained rate.
+        let burst_window_ms = 1_000u64;
+        let burst_window_key = format!("{key}:b:{}", now / burst_window_ms);
+
+        let sustained_window_ms = 60_000u64;
+        let sustained_window_key = format!("{key}:s:{}", now / sustained_window_ms);
+        let sustained_cap = max_rps.saturating_mul(60).max(1);
+
+        let burst_count: u64 = redis::cmd("GET")
+            .arg(&burst_window_key)
             .query_async(&mut conn)
             .await
             .unwrap_or(0);
-
-        if count >= burst {
+        if burst_count >= burst {
             return Ok(RateLimitResult {
                 allowed: false,
                 remaining: 0,
-                reset_after: window - (now % window),
-                retry_after: window - (now % window),
+                reset_after: burst_window_ms - (now % burst_window_ms),
+                retry_after: burst_window_ms - (now % burst_window_ms),
+            });
+        }
+
+        let sustained_count: u64 = redis::cmd("GET")
+            .arg(&sustained_window_key)
+            .query_async(&mut conn)
+            .await
+            .unwrap_or(0);
+        if sustained_count >= sustained_cap {
+            return Ok(RateLimitResult {
+                allowed: false,
+                remaining: 0,
+                reset_after: sustained_window_ms - (now % sustained_window_ms),
+                retry_after: sustained_window_ms - (now % sustained_window_ms),
             });
         }
 
         let _: () = redis::cmd("INCR")
-            .arg(&window_key)
+            .arg(&burst_window_key)
+            .query_async(&mut conn)
+            .await?;
+        let _: () = redis::cmd("EXPIRE")
+            .arg(&burst_window_key)
+            .arg(2u64)
             .query_async(&mut conn)
             .await?;
 
+        let _: () = redis::cmd("INCR")
+            .arg(&sustained_window_key)
+            .query_async(&mut conn)
+            .await?;
         let _: () = redis::cmd("EXPIRE")
-            .arg(&window_key)
-            .arg(2u64)
+            .arg(&sustained_window_key)
+            .arg(120u64)
             .query_async(&mut conn)
             .await?;
 
         Ok(RateLimitResult {
             allowed: true,
-            remaining: burst.saturating_sub(count + 1),
-            reset_after: window - (now % window),
+            remaining: burst.saturating_sub(burst_count + 1),
+            reset_after: burst_window_ms - (now % burst_window_ms),
             retry_after: 0,
         })
     }

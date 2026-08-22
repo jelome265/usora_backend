@@ -293,7 +293,7 @@ impl ScoringEngine for PipelineScoringEngine {
             .into_iter()
             .filter(|&(_, v)| v >= min_importance)
             .collect();
-        contributions.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        contributions.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         contributions.truncate(max_features);
 
         let top_drivers: Vec<String> = contributions
