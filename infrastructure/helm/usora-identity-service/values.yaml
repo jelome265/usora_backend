@@ -40,11 +40,21 @@ postgresql:
   # SECURITY: this service is the platform's root of trust for
   # authentication — its DB credentials are at least as sensitive as
   # anything in the fleet. No literal credentials in this file, ever.
-  # application-prod.yml reads a single DATASOURCE_URL (embedding
-  # credentials), not split host/user/password fields like most of the
-  # rest of the fleet.
-  existingSecret: ""
-  existingSecretUrlKey: "database-url"
+  # application-prod.yml reads DATASOURCE_URL/USERNAME/PASSWORD as
+  # separate fields (not one combined URL like most of the rest of the
+  # fleet).
+  #
+  # C7 / RLS: two distinct roles — see usora-core chart's values.yaml for
+  # the full rationale. migrationRole runs Flyway DDL only; runtimeRole
+  # is the restricted, RLS-subject role used for all request traffic.
+  migrationRole:
+    existingSecret: ""
+    existingSecretUsernameKey: "username"
+    existingSecretPasswordKey: "password"
+  runtimeRole:
+    existingSecret: ""
+    existingSecretUsernameKey: "username"
+    existingSecretPasswordKey: "password"
 
 redis:
   host: usora-redis

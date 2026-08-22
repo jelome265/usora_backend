@@ -2,6 +2,7 @@ package com.usora.notification.event;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.usora.notification.dto.RequestDto.SendNotificationRequest;
+import com.usora.notification.security.TenantContext;
 import com.usora.notification.service.DomainService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,39 +19,78 @@ public class DomainEventListener {
     private final DomainService domainService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * PRE-EXISTING BUG, found while implementing Postgres row-level
+     * security for this service: DomainService.sendNotification() reads
+     * TenantContext.getCurrentTenantId() to populate the notification's
+     * NOT NULL tenant_id column — but TenantContext is only ever set
+     * during HTTP JWT authentication (see JwtTokenProvider.java). These
+     * three @KafkaListener methods run on Kafka's consumer threads, with
+     * no HTTP request and no TenantContext at all — every Kafka-
+     * triggered notification has been saving with tenant_id = null,
+     * which should already violate the NOT NULL constraint on every
+     * single message. Each listener wraps its call in a bare
+     * catch (Exception e) { log.error(...) }, so this has been failing
+     * completely silently: every KYC status change, compliance alert,
+     * and verification result notification triggered via Kafka has
+     * never actually been sent, just logged as an error and dropped.
+     *
+     * Fixed by extracting tenantId from the event payload itself and
+     * setting TenantContext for the duration of the call — the same
+     * thing TenantInterceptor does for an HTTP request, just for this
+     * thread instead. Trusting a tenantId field from a Kafka message is
+     * a different trust boundary than trusting an HTTP header from an
+     * external caller (see the header-spoofing fix elsewhere this
+     * session): these events originate from other internal services via
+     * the message bus, not directly from an untrusted end user. If the
+     * publishing event genuinely has no tenantId field, this now fails
+     * loudly and visibly (logged, message not silently accepted) rather
+     * than continuing to save with a value that was always going to be
+     * rejected.
+     */
     @KafkaListener(topics = "${kafka.topics.notification-events:notification.events}",
                    groupId = "${spring.kafka.consumer.group-id:notification-service-group}")
     public void handleKycStatusChanged(Map<String, Object> event) {
         log.info("Received KYC status change event: {}", event);
-        try {
+        withTenantContext(event, () -> {
             var notificationRequest = mapToNotificationRequest(event);
             domainService.sendNotification(notificationRequest);
-        } catch (Exception e) {
-            log.error("Failed to process KYC status change event", e);
-        }
+        });
     }
 
     @KafkaListener(topics = "${kafka.topics.compliance-alerts:compliance.alerts}",
                    groupId = "${spring.kafka.consumer.group-id:notification-service-group}")
     public void handleComplianceAlert(Map<String, Object> event) {
         log.info("Received compliance alert event: {}", event);
-        try {
+        withTenantContext(event, () -> {
             var notificationRequest = mapToNotificationRequest(event);
             domainService.sendNotification(notificationRequest);
-        } catch (Exception e) {
-            log.error("Failed to process compliance alert event", e);
-        }
+        });
     }
 
     @KafkaListener(topics = "${kafka.topics.verification-results:verification.results}",
                    groupId = "${spring.kafka.consumer.group-id:notification-service-group}")
     public void handleVerificationResult(Map<String, Object> event) {
         log.info("Received verification result event: {}", event);
-        try {
+        withTenantContext(event, () -> {
             var notificationRequest = mapToNotificationRequest(event);
             domainService.sendNotification(notificationRequest);
+        });
+    }
+
+    private void withTenantContext(Map<String, Object> event, Runnable action) {
+        var tenantId = (String) event.get("tenantId");
+        if (tenantId == null || tenantId.isBlank()) {
+            log.error("Dropping event with no tenantId field — cannot process without a tenant: {}", event);
+            return;
+        }
+        try {
+            TenantContext.setCurrentTenantId(tenantId);
+            action.run();
         } catch (Exception e) {
-            log.error("Failed to process verification result event", e);
+            log.error("Failed to process event for tenant {}", tenantId, e);
+        } finally {
+            TenantContext.clear();
         }
     }
 

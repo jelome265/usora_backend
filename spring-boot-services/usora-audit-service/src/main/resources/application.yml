@@ -32,6 +32,13 @@ spring:
     enabled: true
     schemas: audit
     locations: classpath:db/migration
+    # C7 / RLS: migrations run as an owner-equivalent role, kept entirely
+    # separate from spring.datasource.* above (the restricted, RLS-subject
+    # runtime role). See V3__row_level_security.sql /
+    # TenantAwareDataSource.java.
+    url: ${SPRING_FLYWAY_URL:${spring.datasource.url}}
+    user: ${SPRING_FLYWAY_USER:${spring.datasource.username}}
+    password: ${SPRING_FLYWAY_PASSWORD:${spring.datasource.password}}
     baseline-on-migrate: true
   kafka:
     bootstrap-servers: ${KAFKA_HOST:localhost}:${KAFKA_PORT:9092}

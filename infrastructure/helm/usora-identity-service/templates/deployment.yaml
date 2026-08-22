@@ -67,19 +67,33 @@ spec:
             - configMapRef:
                 name: {{ include "usora-identity-service.fullname" . }}-config
           env:
-            {{- if .Values.postgresql.existingSecret }}
-            - name: DATASOURCE_URL
+            {{- if .Values.postgresql.runtimeRole.existingSecret }}
+            - name: DATASOURCE_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.postgresql.existingSecret }}
-                  key: {{ .Values.postgresql.existingSecretUrlKey | default "database-url" }}
+                  name: {{ .Values.postgresql.runtimeRole.existingSecret }}
+                  key: {{ .Values.postgresql.runtimeRole.existingSecretUsernameKey | default "username" }}
+            - name: DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.runtimeRole.existingSecret }}
+                  key: {{ .Values.postgresql.runtimeRole.existingSecretPasswordKey | default "password" }}
             {{- else }}
-            # SECURITY: no postgresql.existingSecret configured — falls
-            # back to application.yml's hardcoded dev literal
-            # (jdbc:postgresql://localhost:5432/usora_identity, user
-            # "usora", password "usora_dev"), which will simply fail to
-            # connect outside local dev. Set postgresql.existingSecret
-            # before deploying this chart anywhere shared.
+            {{ required "postgresql.runtimeRole.existingSecret must be set — this is the restricted role RLS depends on (see V4__row_level_security.sql). application.yml's hardcoded dev literal (user \"usora\", password \"usora_dev\") must never be reachable outside local dev." "" }}
+            {{- end }}
+            {{- if .Values.postgresql.migrationRole.existingSecret }}
+            - name: SPRING_FLYWAY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.migrationRole.existingSecret }}
+                  key: {{ .Values.postgresql.migrationRole.existingSecretUsernameKey | default "username" }}
+            - name: SPRING_FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.migrationRole.existingSecret }}
+                  key: {{ .Values.postgresql.migrationRole.existingSecretPasswordKey | default "password" }}
+            {{- else }}
+            {{ required "postgresql.migrationRole.existingSecret must be set — without it Flyway reuses the restricted runtime role and every DDL statement in V4__row_level_security.sql fails." "" }}
             {{- end }}
             {{- if .Values.redis.existingSecret }}
             - name: REDIS_PASSWORD

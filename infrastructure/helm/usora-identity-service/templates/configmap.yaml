@@ -13,6 +13,11 @@ data:
   # doesn't match what usora-tenant-service expects (9091).
   GRPC_SERVER_PORT: {{ .Values.grpcPort | quote }}
 
+  # C7 / RLS: no credentials in the URL — DATASOURCE_USERNAME/PASSWORD
+  # (runtime role) and SPRING_FLYWAY_USER/PASSWORD (migration role) are
+  # set separately in deployment.yaml from two distinct Secrets.
+  DATASOURCE_URL: {{ printf "jdbc:postgresql://%s:%d/%s" .Values.postgresql.host (int .Values.postgresql.port) .Values.postgresql.database | quote }}
+
   REDIS_HOST: {{ .Values.redis.host | quote }}
   REDIS_PORT: {{ .Values.redis.port | quote }}
 

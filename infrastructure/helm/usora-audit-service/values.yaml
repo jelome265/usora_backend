@@ -41,9 +41,18 @@ postgresql:
   # pattern/rationale. This service's audit trail is the immutable
   # evidentiary record for the whole platform; its DB credentials are at
   # least as sensitive as any other service's.
-  existingSecret: ""
-  existingSecretUsernameKey: "username"
-  existingSecretPasswordKey: "password"
+  #
+  # C7 / RLS: two distinct roles — see usora-core chart's values.yaml for
+  # the full rationale. migrationRole runs Flyway DDL only; runtimeRole
+  # is the restricted, RLS-subject role used for all request traffic.
+  migrationRole:
+    existingSecret: ""
+    existingSecretUsernameKey: "username"
+    existingSecretPasswordKey: "password"
+  runtimeRole:
+    existingSecret: ""
+    existingSecretUsernameKey: "username"
+    existingSecretPasswordKey: "password"
 
 redis:
   host: usora-redis

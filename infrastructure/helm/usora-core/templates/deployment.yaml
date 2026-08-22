@@ -72,24 +72,38 @@ spec:
             - configMapRef:
                 name: {{ include "usora-core.fullname" . }}-config
           env:
-            {{- if .Values.postgresql.existingSecret }}
+            {{- if .Values.postgresql.runtimeRole.existingSecret }}
+            # C7 / RLS: this is the RESTRICTED, RLS-subject role — see
+            # V3__row_level_security.sql and TenantAwareDataSource.java.
+            # Must NOT be the same role as migrationRole below.
             - name: DB_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.postgresql.existingSecret }}
-                  key: {{ .Values.postgresql.existingSecretUsernameKey | default "username" }}
+                  name: {{ .Values.postgresql.runtimeRole.existingSecret }}
+                  key: {{ .Values.postgresql.runtimeRole.existingSecretUsernameKey | default "username" }}
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.postgresql.existingSecret }}
-                  key: {{ .Values.postgresql.existingSecretPasswordKey | default "password" }}
+                  name: {{ .Values.postgresql.runtimeRole.existingSecret }}
+                  key: {{ .Values.postgresql.runtimeRole.existingSecretPasswordKey | default "password" }}
             {{- else }}
-            # SECURITY: no postgresql.existingSecret configured for this
-            # environment — the app falls back to its compiled-in default
-            # credentials (username/password both "usora"). That default
-            # must never be reachable outside a throwaway local/dev
-            # environment. Set postgresql.existingSecret before deploying
-            # this chart anywhere shared.
+            {{ required "postgresql.runtimeRole.existingSecret must be set — the app falls back to its compiled-in default credentials (username/password both \"usora\") otherwise, which must never be reachable outside local/dev, and RLS depends on this role being genuinely restricted (see V3__row_level_security.sql)." "" }}
+            {{- end }}
+            {{- if .Values.postgresql.migrationRole.existingSecret }}
+            # C7 / RLS: this is the OWNER-equivalent role used ONLY for
+            # Flyway migrations (DDL) — never for normal request traffic.
+            - name: SPRING_FLYWAY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.migrationRole.existingSecret }}
+                  key: {{ .Values.postgresql.migrationRole.existingSecretUsernameKey | default "username" }}
+            - name: SPRING_FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.migrationRole.existingSecret }}
+                  key: {{ .Values.postgresql.migrationRole.existingSecretPasswordKey | default "password" }}
+            {{- else }}
+            {{ required "postgresql.migrationRole.existingSecret must be set — without it, Flyway falls back to reusing spring.datasource.* (see application.yml), meaning migrations would run as the restricted runtime role and every DDL statement in V3__row_level_security.sql (CREATE ROLE, GRANT, CREATE POLICY) would fail with a permissions error at startup." "" }}
             {{- end }}
             {{- if .Values.redis.existingSecret }}
             - name: REDIS_PASSWORD

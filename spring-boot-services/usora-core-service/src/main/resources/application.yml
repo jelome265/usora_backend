@@ -32,6 +32,14 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+    # C7 / RLS: migrations run DDL (CREATE TABLE, CREATE ROLE, GRANT) that
+    # the restricted runtime role (spring.datasource.* below) must NOT
+    # have — an owner-equivalent role connecting for migrations only,
+    # kept entirely separate from the role that serves normal request
+    # traffic under RLS. See V3__row_level_security.sql.
+    url: ${SPRING_FLYWAY_URL:${spring.datasource.url}}
+    user: ${SPRING_FLYWAY_USER:${spring.datasource.username}}
+    password: ${SPRING_FLYWAY_PASSWORD:${spring.datasource.password}}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka.usora.svc.cluster.local:9092}
     producer:

@@ -37,10 +37,20 @@ postgresql:
   host: usora-integration-postgresql
   port: 5432
   database: usora_integration
-  existingSecret: ""
-  existingSecretUrlKey: "database-url"
-  existingSecretUsernameKey: "username"
-  existingSecretPasswordKey: "password"
+  # C7 / RLS: two distinct roles — see usora-core chart's values.yaml for
+  # the full rationale. migrationRole runs Flyway DDL only; runtimeRole
+  # is the restricted, RLS-subject role used for all request traffic.
+  # This also closes the previously-inert RLS setup this service already
+  # had (ENABLE ROW LEVEL SECURITY with zero policies — see
+  # V3__row_level_security.sql).
+  migrationRole:
+    existingSecret: ""
+    existingSecretUsernameKey: "username"
+    existingSecretPasswordKey: "password"
+  runtimeRole:
+    existingSecret: ""
+    existingSecretUsernameKey: "username"
+    existingSecretPasswordKey: "password"
 
 redis:
   host: usora-redis
