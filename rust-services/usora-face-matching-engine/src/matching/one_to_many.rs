@@ -65,11 +65,12 @@ impl FaissMatcher {
             let flat = faiss::IndexFlatIP::new(dimension as i32)?;
             indices.insert(tenant_id.to_string(), Box::new(flat));
         }
-        Ok(indices.get_mut(tenant_id).unwrap())
+        Ok(indices.get_mut(tenant_id).expect("just inserted above, key must be present"))
     }
 
     pub fn add_embedding(&self, embedding: &FaceEmbedding, user_id: &str, tenant_id: &str) -> Result<()> {
-        let mut indices = self.indices.lock().unwrap();
+        let mut indices = self.indices.lock()
+            .map_err(|_| anyhow::anyhow!("FAISS indices mutex poisoned by an earlier panic"))?;
         let index = Self::get_or_create_tenant_index(
             &mut indices, tenant_id, self.dimension,
         )?;
@@ -81,7 +82,8 @@ impl FaissMatcher {
         index.add_with_ids(vec.as_slice(), &ids)
             .context("Failed to add embedding to index")?;
 
-        let mut pending = self.pending_additions.lock().unwrap();
+        let mut pending = self.pending_additions.lock()
+            .map_err(|_| anyhow::anyhow!("pending_additions mutex poisoned by an earlier panic"))?;
         *pending.entry(tenant_id.to_string()).or_insert(0) += 1;
 
         let count = self.save_counter.fetch_add(1, Ordering::SeqCst);
@@ -99,7 +101,8 @@ impl FaissMatcher {
 
     pub fn remove_embedding(&self, user_id: &str, tenant_id: &str) -> Result<()> {
         let id = Self::user_id_to_faiss_id(user_id, tenant_id);
-        let mut indices = self.indices.lock().unwrap();
+        let mut indices = self.indices.lock()
+            .map_err(|_| anyhow::anyhow!("FAISS indices mutex poisoned by an earlier panic"))?;
         if let Some(index) = indices.get_mut(tenant_id) {
             let selector = faiss::IDSelectorRange::new(id, id + 1)?;
             index.remove_ids(&selector)?;
@@ -108,7 +111,8 @@ impl FaissMatcher {
     }
 
     pub fn flush_all(&self) -> Result<()> {
-        let indices = self.indices.lock().unwrap();
+        let indices = self.indices.lock()
+            .map_err(|_| anyhow::anyhow!("FAISS indices mutex poisoned by an earlier panic"))?;
         for (tenant_id, index) in indices.iter() {
             let path = if tenant_id == "__default__" {
                 self.index_path.clone()
@@ -126,7 +130,8 @@ impl FaissMatcher {
     }
 
     pub fn save_index(&self, path: &Path) -> Result<()> {
-        let index = self.indices.lock().unwrap();
+        let index = self.indices.lock()
+            .map_err(|_| anyhow::anyhow!("FAISS indices mutex poisoned by an earlier panic"))?;
         if let Some(idx) = index.get("__default__") {
             faiss::write_index(idx.as_ref(), &path.to_string_lossy())
                 .context("Failed to write FAISS index")?;
@@ -135,14 +140,21 @@ impl FaissMatcher {
     }
 
     pub fn index_size(&self, tenant_id: &str) -> usize {
-        let indices = self.indices.lock().unwrap();
+        // Not Result-returning — this is a best-effort size query, not a
+        // correctness-critical path. Recovering the poisoned guard
+        // (rather than propagating an error this function has no way to
+        // return) means a prior panic elsewhere degrades this to a
+        // possibly-stale read instead of poisoning every future call to
+        // this specific method too.
+        let indices = self.indices.lock().unwrap_or_else(|e| e.into_inner());
         indices.get(tenant_id)
             .map(|idx| idx.ntotal() as usize)
             .unwrap_or(0)
     }
 
     pub fn train_index(&self, embeddings: &[f32], tenant_id: &str) -> Result<()> {
-        let mut indices = self.indices.lock().unwrap();
+        let mut indices = self.indices.lock()
+            .map_err(|_| anyhow::anyhow!("FAISS indices mutex poisoned by an earlier panic"))?;
         let index = Self::get_or_create_tenant_index(&mut indices, tenant_id, self.dimension)?;
         if !index.is_trained() {
             index.train(embeddings)?;
@@ -216,7 +228,8 @@ impl FaissMatcher {
         let query_slice = probe.vector.as_slice();
 
         let (distances, labels) = {
-            let indices = self.indices.lock().unwrap();
+            let indices = self.indices.lock()
+            .map_err(|_| anyhow::anyhow!("FAISS indices mutex poisoned by an earlier panic"))?;
             let index = match indices.get(tenant_id) {
                 Some(idx) => idx,
                 None => return Ok(Vec::new()),

@@ -9,6 +9,14 @@ spring:
     hikari:
       maximum-pool-size: 30
       minimum-idle: 10
+  # C7 / RLS: migrations run as an owner-equivalent role, kept entirely
+  # separate from spring.datasource.* above (the restricted, RLS-subject
+  # runtime role). See V3__row_level_security.sql /
+  # TenantAwareDataSource.java.
+  flyway:
+    url: ${SPRING_FLYWAY_URL:${spring.datasource.url}}
+    user: ${SPRING_FLYWAY_USER:${spring.datasource.username}}
+    password: ${SPRING_FLYWAY_PASSWORD:${spring.datasource.password}}
   jpa:
     hibernate:
       ddl-auto: validate

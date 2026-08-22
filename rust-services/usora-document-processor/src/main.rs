@@ -64,22 +64,45 @@ async fn main() -> anyhow::Result<()> {
                 signal::ctrl_c().await.ok();
             })
             .await
-            .expect("REST server failed");
     });
 
     info!("gRPC server listening on {}", grpc_addr);
-    Server::builder()
+    let grpc_future = Server::builder()
         .add_service(health_service)
         .add_service(reflection_service)
         .add_service(DocumentAnalysisServiceServer::new(doc_service.as_ref().clone()))
         .serve_with_shutdown(grpc_addr, async {
             signal::ctrl_c().await.ok();
             info!("Shutdown signal received");
-        })
-        .await?;
+        });
+
+    // RELIABILITY FIX (H3), found while auditing .expect() usage: the
+    // REST server previously ran in a spawned task whose JoinHandle was
+    // never awaited — only aborted after the gRPC server below returned.
+    // If axum::serve() ever errored or panicked, that failure was
+    // silently dropped: the REST API (including /metrics and every
+    // document-analysis endpoint) would go dark while the gRPC server —
+    // and its health-check service, which is what this chart's readiness/
+    // liveness probes actually query — kept running and reporting
+    // healthy. tokio::select! now awaits both concurrently and treats
+    // either one failing as fatal to the whole process, so a REST-server
+    // failure surfaces immediately instead of as an invisible partial
+    // outage.
+    tokio::select! {
+        rest_result = rest_handle => {
+            match rest_result {
+                Ok(Ok(())) => info!("REST server exited cleanly"),
+                Ok(Err(e)) => return Err(anyhow::anyhow!("REST server failed: {e}")),
+                Err(e) => return Err(anyhow::anyhow!("REST server task panicked: {e}")),
+            }
+        }
+        grpc_result = grpc_future => {
+            grpc_result?;
+            info!("gRPC server exited cleanly");
+        }
+    }
 
     kafka_handle.abort();
-    rest_handle.abort();
     Ok(())
 }
 

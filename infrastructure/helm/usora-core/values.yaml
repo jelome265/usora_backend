@@ -83,6 +83,34 @@ postgresql:
   # password both "usora") must never be reachable in any environment
   # that uses this chart — see the security.existingSecret requirement
   # below, which this chart's deployment template treats as mandatory.
+  #
+  # C7 / RLS, added alongside V3__row_level_security.sql: this service
+  # now uses TWO distinct database roles, never one —
+  #   - migrationRole: an owner-equivalent role, used ONLY for Flyway
+  #     (spring.flyway.*). Runs DDL: CREATE TABLE, CREATE ROLE, GRANT.
+  #   - runtimeRole: a restricted, non-owner role with no BYPASSRLS
+  #     attribute, used for all normal request traffic
+  #     (spring.datasource.*, wrapped by TenantAwareDataSource). This is
+  #     the role RLS actually applies to — if the app ever connected as
+  #     the owner for normal traffic, every RLS policy in
+  #     V3__row_level_security.sql would be silently bypassed regardless
+  #     of how correct the policies themselves are.
+  # These MUST be different Postgres roles, not just different Secret
+  # object names pointing at the same credential — using the same role
+  # for both defeats the entire point of this fix.
+  migrationRole:
+    existingSecret: ""
+    existingSecretUsernameKey: "username"
+    existingSecretPasswordKey: "password"
+  runtimeRole:
+    # Must match the role name created in
+    # V3__row_level_security.sql (usora_core_runtime) if that migration's
+    # defensive CREATE ROLE block lacked privilege and a DBA provisioned
+    # it out of band instead — the role NAME is not configurable via
+    # this chart, only its credentials are.
+    existingSecret: ""
+    existingSecretUsernameKey: "username"
+    existingSecretPasswordKey: "password"
   existingSecret: ""
   existingSecretUsernameKey: "username"
   existingSecretPasswordKey: "password"
