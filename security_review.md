@@ -1,19 +1,19 @@
 # USORA KYC Platform — Consolidated Enterprise Security, Reliability & Infrastructure Review
 
 **Author:** Jules, Principal Security & Infrastructure Engineer
-**Date:** August 13, 2026
+**Date:** August 2026
 **Classification:** Confidentially Restricted — Internal Engineering Only
-**Target Architecture:** Rust Axum/Tokio API Gateway + 3 Rust Compute Engines + 7 Java Spring Boot 3.4.0 Orchestration Services
+**Target Architecture:** Rust Axum/Tokio API Gateway + 3 Rust Compute Engines + 7 Java Spring Boot Orchestration Services
 
 ---
 
 ## 1. Executive Summary
 
-This document presents a comprehensive, multi-dimensional security and infrastructure audit of the **USORA KYC Platform**. USORA is a high-performance, polyglot compliance and verification system designed for multi-tenant, regulated enterprise environments. At this scale, maintaining zero-trust, strict tenant isolation, cryptographic assurances, robust network topologies, and clean container packaging is paramount to satisfy SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 compliance standards.
+This document presents a comprehensive, multi-dimensional security, reliability, and infrastructure audit of the **USORA KYC Platform**. USORA is a high-performance, polyglot compliance and verification system designed for multi-tenant, regulated enterprise environments. At this scale, maintaining zero-trust architecture, strict tenant isolation, cryptographic assurances, robust network topologies, and clean container packaging is paramount to satisfy SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 compliance standards.
 
-Our static analysis, codebase reviews, and architectural deep-dives have revealed several critical and high-severity gaps across both the **application code** (e.g., total gateway auth outages, forgeable downstream JWTs, tenant-spoofing header trust) and the **infrastructure-as-code / orchestration layers** (e.g., broken regional endpoint interpolations in Terraform, wide-open database egress policies in Kubernetes, un-compilable Kustomize overlays, and sequential, highly inefficient CI/CD workflows).
+Our static analysis, codebase reviews, and architectural deep-dives have revealed several critical and high-severity gaps across both the **application code** (e.g., total gateway auth outages, forgeable downstream JWTs, tenant-spoofing header trust, unimplemented gRPC control plane) and the **infrastructure-as-code / orchestration layers** (e.g., broken regional endpoint interpolations in Terraform, wide-open database egress policies in Kubernetes, un-compilable Kustomize overlays, and sequential, highly inefficient CI/CD workflows).
 
-This consolidated review fuses findings from all prior security audits and deep technical evaluations to establish a single, authoritative, and actionable remediation roadmap.
+This consolidated review fuses findings from all prior security audits (`AUDIT-usora-security-2026-08-03.md`, `rust_review.md`, `docs/infrastructure-deep-review-2026-08-04.md`, and `docs/architecture-security-review-2026-07-31.md`) to establish a single, authoritative, and actionable remediation roadmap.
 
 ---
 
@@ -29,7 +29,7 @@ The USORA deployment infrastructure leverages Terraform for AWS resource provisi
     - Line 273: `service_name = "com.amazonaws..ecr.api"`
     - Line 288: `service_name = "com.amazonaws..ecr.dkr"`
     - Line 303: `service_name = "com.amazonaws..eks"`
-- **Vulnerability Impact:** Because the current AWS region variable (e.g., `${data.aws_region.current.name}`) is omitted, Terraform fails to compile or apply due to invalid service names. If bypassed manually, traffic destined for S3, ECR, and DynamoDB is routed over the public internet instead of the secure AWS private backbone, violating Zero-Trust networking principles.
+- **Vulnerability Impact:** Because the current AWS region variable (`${data.aws_region.current.name}`) is omitted, Terraform fails to compile or apply due to invalid service names. If bypassed manually, traffic destined for S3, ECR, and DynamoDB is routed over the public internet instead of the secure AWS private backbone, violating Zero-Trust networking principles.
 - **Remediation:** Correctly interpolate the AWS region data source:
   ```hcl
   service_name = "com.amazonaws.${data.aws_region.current.name}.s3"
@@ -126,6 +126,11 @@ The USORA deployment infrastructure leverages Terraform for AWS resource provisi
 - **Vulnerability Impact:** KYC evidence uploaded during compliance processes is encrypted at rest using a publicly known, zeroed-out static key. This compromises the confidentiality of highly sensitive personal documents (e.g., passports, driver's licenses) stored within the system.
 - **Remediation:** Throw a runtime exception at application startup if `COMPLIANCE_ENCRYPTION_KEY` is undefined, empty, or lacks sufficient entropy.
 
+### 3.5 Identity User Administration Lacks Tenant Scoping (IDOR Hazard)
+- **Vulnerability:** In `usora-identity-service` (`ApiController.java`), endpoints for user creation (`POST /api/v1/users`) and role modification (`PUT /api/v1/users/{id}/roles`) accept tenant IDs directly from request payload bodies without verifying whether the target tenant matches the caller's authenticated tenant context.
+- **Vulnerability Impact:** An admin user granted scoped privileges in one tenant can manipulate user accounts or elevate permissions in another tenant by altering the JSON request body.
+- **Remediation:** Enforce tenant context checks in `DomainService.java` asserting that body-supplied tenant IDs match the caller's JWT `tid` claim.
+
 ---
 
 ## 4. gRPC Control Plane & Network Security
@@ -145,6 +150,11 @@ The USORA deployment infrastructure leverages Terraform for AWS resource provisi
       .identity(identity);
   ```
 
+### 4.3 Permissive CORS and Edge TLS Configurations
+- **Vulnerability:** In `rust-services/usora-api-gateway/src/routes/mod.rs`, the CORS configuration sets `allow_origin(Any).allow_methods(Any).allow_headers(Any)`. Additionally, `config/mod.rs` defaults minimum TLS version to `TLSv1.2` without enforcing client certificate authentication.
+- **Vulnerability Impact:** Broad CORS rules allow untrusted web domains to trigger cross-origin API interactions, exposing Bearer tokens and sensitive tenant headers to web browser contexts.
+- **Remediation:** Restrict CORS origins to trusted client domains, enumerate allowed headers (`Authorization`, `Content-Type`), and enforce `TLSv1.3` as default edge minimum TLS version.
+
 ---
 
 ## 5. Compute Layer Reliability & Code Integrity (Rust Engines)
@@ -157,7 +167,7 @@ The USORA deployment infrastructure leverages Terraform for AWS resource provisi
 ### 5.2 Dynamic Code Execution Risks via Rhai Scripting (Risk Engine)
 - **Vulnerability:** In `usora-risk-scoring-engine/src/rules/dsl.rs`, dynamic rules are evaluated via the `Rhai` scripting engine. The engine is instantiated using `Engine::new()` and lacks strict memory allocation boundaries.
 - **Vulnerability Impact:** Attackers or malicious tenants could compile scripts containing infinite loops, deep array nesting, or memory-heavy calculations, leading to symmetric resource exhaustion and Out-Of-Memory (OOM) crashes.
-- **Remediation:** Use `Engine::new_raw()` to disable default file I/O and system access. Implement custom memory allocation limiters and progressive CPU limit checks on the engine.
+- **Remediation:** Use `Engine::new_raw()` to disable default file I/O and system access. Implement custom memory allocation limiters and progressive CPU limit checks on the engine. Ensure the `"sync"` feature flag is enabled in `Cargo.toml`.
 
 ### 5.3 FAISS Index Lock Contention & Statefulness Barriers
 - **Vulnerability:** The `usora-face-matching-engine` protects FAISS indices via a global standard library mutex (`Mutex<HashMap<String, Box<dyn faiss::Index>>>`) and persists index files to local disk.
@@ -192,13 +202,14 @@ The USORA deployment infrastructure leverages Terraform for AWS resource provisi
 
 ## 7. Status of Prior Audit Findings
 
-| Prior Finding (2026-07-31) | Original Severity | Current Status | Verification Context (Evidence) |
+| Prior Finding | Original Severity | Current Status | Verification Context (Evidence) |
 |---|---|---|---|
 | **SSRF in Outbound REST Client** | P2 | **RESOLVED** | `integration/.../RestClient.java` calls `EgressUrlGuard.assertSafeDestination()` which checks against RFC1918, loopback, and link-local ranges at call time. |
 | **MRZ Checksum `<` Filler Bypass** | P1 | **RESOLVED** | `document-processor/.../mrz.rs` now properly implements the weighted ICAO 9303 checksum and catches `<` edge-cases. |
 | **JWT Cache Expiry Bypass** | P1 | **RESOLVED** | `api-gateway/.../jwt.rs` has been patched to validate `claims.exp > now` on every LRU cache hit, evicting expired entries. |
 | **Silent AML Screening Failures** | P0 | **RESOLVED** | `compliance/.../DomainService.java` collects screening matches inside violations and fails-closed on system/gRPC errors. |
 | **Unkeyed Dual-Auth Hash** | P1 | **RESOLVED** | `compliance/.../DomainService.java` uses `HashingUtil.hmacSha256` backed by a secure rule signing secret instead of a plain SHA-256 digest. |
+| **Documentation Overclaims** | P3 | **OPEN** | `main.md` and `compliance-mapping.md` claim SOC 2 Type II Certified and 99.99% SLA, which exceed present staging validation. |
 
 ---
 
