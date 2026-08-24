@@ -20,7 +20,7 @@
         <java.version>21</java.version>
         <spring-boot.version>4.1.0</spring-boot.version>
         <drools.version>8.44.1.Final</drools.version>
-        <mapstruct.version>1.6.2</mapstruct.version>
+        <mapstruct.version>1.6.3</mapstruct.version>
         <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
         <grpc.version>1.75.0</grpc.version>
         <protobuf.version>4.28.2</protobuf.version>
