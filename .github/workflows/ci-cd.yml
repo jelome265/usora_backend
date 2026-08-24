@@ -89,7 +89,7 @@ jobs:
         run: mvn checkstyle:check -q || echo "Checkstyle warnings found (non-blocking)"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
 
