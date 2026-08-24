@@ -610,7 +610,7 @@ jobs:
           aws-region: ${{ env.K8S_CLUSTER_REGION }}
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@v5
         with:
           version: latest
 
@@ -717,7 +717,7 @@ jobs:
           aws-region: ${{ env.K8S_CLUSTER_REGION }}
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@v5
         with:
           version: latest
 
@@ -897,7 +897,7 @@ jobs:
           aws-region: ${{ env.K8S_CLUSTER_REGION }}
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@v5
         with:
           version: latest
 
