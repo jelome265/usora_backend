@@ -19,7 +19,7 @@ tract-onnx = "0.21"
 ndarray = "0.16"
 ndarray-stats = "0.6"
 opencv = "0.91"
-faiss = "0.12"
+faiss = "0.13"
 uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
