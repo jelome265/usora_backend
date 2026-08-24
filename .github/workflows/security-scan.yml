@@ -485,7 +485,7 @@ jobs:
 
       - name: Notify Security Team on Findings
         if: steps.security-summary.outputs.verdict == 'failure' && env.SECURITY_SLACK_WEBHOOK_URL != ''
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -505,7 +505,7 @@ jobs:
 
       - name: Notify on Success
         if: steps.security-summary.outputs.verdict == 'success' && env.SECURITY_SLACK_WEBHOOK_URL != ''
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
