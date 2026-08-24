@@ -23,7 +23,7 @@ rustls = "0.23"
 rustls-pemfile = "2"
 x509-parser = "0.16"
 rcgen = "0.13"
-redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
+redis = { version = "1.6", features = ["tokio-comp", "connection-manager"] }
 rdkafka = { version = "0.36", features = ["cmake-build"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
 uuid = { version = "1", features = ["v7", "serde"] }
