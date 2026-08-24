@@ -18,7 +18,7 @@ image = "0.25"
 imageproc = "0.25"
 tesseract = "0.15"
 tract-onnx = "0.21"
-ndarray = "0.16"
+ndarray = "0.17"
 opencv = "0.91"
 pdf = "0.9"
 uuid = { version = "1", features = ["v7", "serde"] }
