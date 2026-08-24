@@ -44,7 +44,7 @@ hex = "0.4"
 rxing = "0.9"
 lazy_static = "1"
 strum = { version = "0.26", features = ["derive"] }
-axum = "0.7"
+axum = "0.8"
 # Added to close an undocumented gap found while writing this service's
 # Helm chart: the REST router in routes/mod.rs took `tenant_id` directly
 # from the request body with no authentication at all, on endpoints that
