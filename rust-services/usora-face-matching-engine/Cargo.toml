@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tonic = "0.12"
+tonic = "0.14"
 # Added to close an undocumented gap found while writing this service's
 # Helm chart: no gRPC health service was registered anywhere.
 tonic-health = "0.12"
