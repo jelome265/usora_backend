@@ -22,7 +22,7 @@
         <mapstruct.version>1.6.3</mapstruct.version>
         <grpc-starter.version>3.1.0.RELEASE</grpc-starter.version>
         <resilience4j.version>2.4.0</resilience4j.version>
-        <jackson.version>2.18.9</jackson.version>
+        <jackson.version>2.22.2</jackson.version>
     </properties>
 
     <dependencies>
