@@ -110,11 +110,13 @@ compliance:
     merkle-verification-ms: 3600000
     sanctions-staleness: "0 */30 * * * *"
   security:
-    jwt-secret: ${COMPLIANCE_JWT_SECRET:default-secret-key-change-in-production-minimum-32-chars}
+    # No defaults: a missing value must fail startup, not silently sign with a
+    # well-known key anyone can read from this file (C-02 remediation).
+    jwt-secret: ${COMPLIANCE_JWT_SECRET:}
     # Secret used to HMAC-sign dual-authorized compliance rule changes so the
     # signature can't be recomputed by anyone who only sees the (public)
     # rule content. Must be distinct from jwt-secret and rotated via Vault/KMS.
-    rule-signing-secret: ${COMPLIANCE_RULE_SIGNING_SECRET:default-rule-signing-secret-change-in-production-min-32-chars}
+    rule-signing-secret: ${COMPLIANCE_RULE_SIGNING_SECRET:}
   client:
     timeout-seconds: 30
 

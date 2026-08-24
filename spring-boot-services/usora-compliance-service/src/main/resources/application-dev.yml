@@ -29,6 +29,7 @@ compliance:
     port: 9090
   security:
     jwt-secret: dev-secret-key-not-for-production-use-change-it-32chars
+    rule-signing-secret: dev-rule-signing-secret-not-for-production-use-32chars
   schedule:
     watchlist-refresh: "0 */5 * * * *"
     report-generation: "0 0 */2 * * *"

@@ -20,7 +20,15 @@ public class JwtTokenProvider {
 
     private final SecretKey secretKey;
 
-    public JwtTokenProvider(@Value("${security.jwt.secret:defaultSecretKeyMustBeOverriddenInProduction}") String secret) {
+    public JwtTokenProvider(@Value("${security.jwt.secret:}") String secret) {
+        // C-02 remediation: there is no development fallback secret. A missing
+        // configuration value must fail application startup, not silently sign
+        // tokens with a well-known key that anyone can read from this file.
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "security.jwt.secret is not configured. Refusing to start with no signing key. " +
+                    "Set the JWT_SECRET environment variable to a securely generated secret.");
+        }
         var keyBytes = secret.getBytes(StandardCharsets.UTF_8);
         if (keyBytes.length < 32) {
             var padded = new byte[32];

@@ -29,6 +29,13 @@ spring:
     username:
     password:
 
+security:
+  jwt:
+    # Local-development-only signing key. Never used in prod/staging — those
+    # profiles require the JWT_SECRET environment variable and fail startup
+    # without it (see C-02 remediation in JwtTokenProvider).
+    secret: dev-only-notification-jwt-secret-not-for-production-use-32chars
+
 notification:
   webhook:
     retry:

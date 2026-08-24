@@ -116,7 +116,7 @@ audit:
       - outcome
   security:
     jwt:
-      secret: ${JWT_SECRET:default-secret-key-change-in-production-minimum-32-chars}
+      secret: ${JWT_SECRET:}
       issuer: usora-audit
   tenant:
     tenants:
@@ -129,8 +129,8 @@ audit:
 aws:
   s3:
     region: ${AWS_REGION:us-east-1}
-    access-key-id: ${AWS_ACCESS_KEY_ID:minioadmin}
-    secret-access-key: ${AWS_SECRET_ACCESS_KEY:minioadmin}
+    access-key-id: ${AWS_ACCESS_KEY_ID:}
+    secret-access-key: ${AWS_SECRET_ACCESS_KEY:}
     endpoint: ${AWS_S3_ENDPOINT:http://localhost:9000}
     bucket:
       cold-storage: usora-audit-cold-storage

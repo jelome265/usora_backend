@@ -24,7 +24,7 @@ public class JwtTokenProvider {
 
     private static final Logger log = LoggerFactory.getLogger(JwtTokenProvider.class);
 
-    @Value("${security.jwt.secret:defaultSecretKeyThatIsLongEnoughForHS256AlgorithmMinimumLength}")
+    @Value("${security.jwt.secret:}")
     private String jwtSecret;
 
     @Value("${security.jwt.issuer:usora-integration-service}")
@@ -34,6 +34,13 @@ public class JwtTokenProvider {
 
     @PostConstruct
     public void init() {
+        // C-02 remediation: no development fallback secret. A missing
+        // configuration value must fail application startup.
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            throw new IllegalStateException(
+                    "security.jwt.secret is not configured. Refusing to start with no signing key. " +
+                    "Set the JWT_SECRET environment variable to a securely generated, base64-encoded secret.");
+        }
         byte[] keyBytes = Decoders.BASE64.decode(jwtSecret);
         this.key = Keys.hmacShaKeyFor(keyBytes);
     }

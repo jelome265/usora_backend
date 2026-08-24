@@ -20,6 +20,12 @@ spring:
   kafka:
     bootstrap-servers: localhost:9092
 
+security:
+  jwt:
+    # Local-development-only signing key (base64), never used in prod/staging —
+    # those profiles require JWT_SECRET and fail startup without it.
+    secret: ZGV2LW9ubHktaW50ZWdyYXRpb24tand0LXNlY3JldC0zMi1jaGFycy1taW4=
+
 logging:
   level:
     com.usora: DEBUG
