@@ -39,7 +39,7 @@ bytes = "1"
 dashmap = "6"
 parking_lot = "0.12"
 rhai = { version = "1.19", features = ["sync"] }
-petgraph = "0.6"
+petgraph = "0.8"
 prost = "0.13"
 prost-types = "0.13"
 tokio-stream = "0.1"
