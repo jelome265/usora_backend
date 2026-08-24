@@ -18,7 +18,7 @@ imageproc = "0.25"
 tract-onnx = "0.21"
 ndarray = "0.16"
 ndarray-stats = "0.6"
-opencv = "0.91"
+opencv = "0.100"
 faiss = "0.12"
 uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
