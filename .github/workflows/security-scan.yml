@@ -410,6 +410,8 @@ jobs:
       - container-scan
     if: always()
     timeout-minutes: 10
+    env:
+      SECURITY_SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -482,7 +484,7 @@ jobs:
         continue-on-error: true
 
       - name: Notify Security Team on Findings
-        if: steps.security-summary.outputs.verdict == 'failure' && secrets.SECURITY_SLACK_WEBHOOK_URL != ''
+        if: steps.security-summary.outputs.verdict == 'failure' && env.SECURITY_SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
@@ -502,7 +504,7 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
 
       - name: Notify on Success
-        if: secrets.SECURITY_SLACK_WEBHOOK_URL != ''
+        if: steps.security-summary.outputs.verdict == 'success' && env.SECURITY_SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.27.0
         with:
           payload: |
