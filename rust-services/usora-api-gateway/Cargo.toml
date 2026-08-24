@@ -9,7 +9,7 @@ axum-extra = { version = "0.9", features = ["typed-header"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.5", features = ["cors", "trace", "limit", "validate-request", "normalize-path", "set-header"] }
 tonic = "0.12"
-tonic-reflection = "0.12"
+tonic-reflection = "0.14"
 prost = "0.13"
 prost-types = "0.13"
 tokio = { version = "1.38", features = ["full"] }
