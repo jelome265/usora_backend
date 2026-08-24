@@ -25,7 +25,7 @@
         <resilience4j.version>2.2.0</resilience4j.version>
         <grpc-spring-boot.version>3.0.0</grpc-spring-boot.version>
         <lombok.version>1.18.36</lombok.version>
-        <testcontainers.version>1.20.4</testcontainers.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencies>
