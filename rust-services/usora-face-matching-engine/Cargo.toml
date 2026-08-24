@@ -45,7 +45,7 @@ hyper = { version = "1", features = ["server", "http1"] }
 http-body-util = "0.1"
 
 [build-dependencies]
-tonic-build = "0.12"
+tonic-build = "0.14"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
