@@ -22,7 +22,7 @@
         <spring-cloud.version>2024.0.0</spring-cloud.version>
         <spring-cloud-stream.version>5.0.0</spring-cloud-stream.version>
         <mapstruct.version>1.6.3</mapstruct.version>
-        <resilience4j.version>2.2.0</resilience4j.version>
+        <resilience4j.version>2.4.0</resilience4j.version>
         <grpc-spring-boot.version>3.0.0</grpc-spring-boot.version>
         <lombok.version>1.18.36</lombok.version>
         <testcontainers.version>1.20.4</testcontainers.version>
