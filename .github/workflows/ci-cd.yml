@@ -22,7 +22,7 @@ env:
   K8S_CLUSTER_REGION: us-east-1
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  MAVEN_OPTS: -Dmaven.repo.local=${{ runner.temp }}/.m2/repository
+  MAVEN_OPTS: -Dmaven.repo.local=${{ github.workspace }}/.m2/repository
   SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
 concurrency:
@@ -79,7 +79,14 @@ jobs:
           cache: maven
 
       - name: Java Checkstyle
-        run: mvn checkstyle:check -pl spring-boot-services -q || echo "Checkstyle warnings found (non-blocking)"
+        # NOTE: there is no module (or artifactId) literally named
+        # "spring-boot-services" in this reactor -- it's a directory prefix,
+        # the declared <module> paths are spring-boot-services/usora-*-service.
+        # `-pl spring-boot-services` therefore failed reactor project
+        # resolution every run; the `|| echo` swallowed that failure so
+        # checkstyle silently never ran. Running across the whole reactor
+        # (which is entirely the seven Spring Boot services) fixes this.
+        run: mvn checkstyle:check -q || echo "Checkstyle warnings found (non-blocking)"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
