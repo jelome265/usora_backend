@@ -26,7 +26,7 @@ chrono = { version = "0.4", features = ["serde"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
 rdkafka = { version = "0.36", features = ["cmake-build"] }
 redis = { version = "0.25", features = ["tokio-comp"] }
-opentelemetry = { version = "0.25", features = ["trace", "metrics"] }
+opentelemetry = { version = "0.32", features = ["trace", "metrics"] }
 opentelemetry-otlp = { version = "0.25", features = ["trace", "metrics", "grpc-tonic"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.27"
