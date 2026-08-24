@@ -25,7 +25,7 @@
         <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
         <resilience4j.version>2.4.0</resilience4j.version>
         <protobuf.version>4.29.3</protobuf.version>
-        <grpc.version>1.75.0</grpc.version>
+        <grpc.version>1.83.1</grpc.version>
         <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
