@@ -24,7 +24,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 sqlx = { version = "0.9", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }
 rdkafka = { version = "0.39", features = ["cmake-build"] }
-redis = { version = "0.27", features = ["tokio-comp", "connection-manager", "json"] }
+redis = { version = "1.6", features = ["tokio-comp", "connection-manager", "json"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 opentelemetry = "0.27"
