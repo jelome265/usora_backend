@@ -19,7 +19,14 @@ public class JwtTokenProvider {
 
     private final SecretKey secretKey;
 
-    public JwtTokenProvider(@Value("${compliance.security.jwt-secret:default-secret-key-change-in-production}") String secret) {
+    public JwtTokenProvider(@Value("${compliance.security.jwt-secret:}") String secret) {
+        // C-02 remediation: no development fallback secret. A missing
+        // configuration value must fail application startup.
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "compliance.security.jwt-secret is not configured. Refusing to start with no signing key. " +
+                    "Set the COMPLIANCE_JWT_SECRET environment variable to a securely generated secret.");
+        }
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 

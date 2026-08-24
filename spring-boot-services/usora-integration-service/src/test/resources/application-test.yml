@@ -30,6 +30,10 @@ spring:
     allow-bean-definition-overriding: true
     allow-circular-references: false
 
+security:
+  jwt:
+    secret: dGVzdC1vbmx5LWludGVncmF0aW9uLWp3dC1zZWNyZXQtMzItY2hhcnMtbWlu
+
 integration:
   webhook:
     idempotency-ttl: 60

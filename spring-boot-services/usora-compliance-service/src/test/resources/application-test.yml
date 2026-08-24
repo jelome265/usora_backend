@@ -31,6 +31,7 @@ compliance:
     port: 19090
   security:
     jwt-secret: test-secret-key-for-testing-only-32-characters-long
+    rule-signing-secret: test-rule-signing-secret-for-testing-only-32-chars
 
 logging:
   level:

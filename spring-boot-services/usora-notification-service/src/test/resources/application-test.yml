@@ -14,3 +14,6 @@ spring:
       auto-startup: false
 server:
   port: 0
+security:
+  jwt:
+    secret: test-only-notification-jwt-secret-for-unit-tests-32chars

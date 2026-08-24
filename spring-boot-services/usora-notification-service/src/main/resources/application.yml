@@ -127,7 +127,7 @@ grpc:
 
 security:
   jwt:
-    secret: ${JWT_SECRET:defaultSecretKeyMustBeOverriddenInProduction}
+    secret: ${JWT_SECRET:}
   encryption:
     secret-key: ${ENCRYPTION_SECRET_KEY:}
 

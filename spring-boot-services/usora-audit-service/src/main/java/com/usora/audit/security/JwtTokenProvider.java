@@ -15,7 +15,7 @@ import java.util.List;
 @Component
 public class JwtTokenProvider {
 
-    @Value("${audit.security.jwt.secret:default-secret-key-change-in-production-minimum-32-chars}")
+    @Value("${audit.security.jwt.secret:}")
     private String jwtSecret;
 
     @Value("${audit.security.jwt.issuer:usora-audit}")
@@ -25,6 +25,13 @@ public class JwtTokenProvider {
 
     @PostConstruct
     public void init() {
+        // C-02 remediation: no development fallback secret. A missing
+        // configuration value must fail application startup.
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            throw new IllegalStateException(
+                    "audit.security.jwt.secret is not configured. Refusing to start with no signing key. " +
+                    "Set the JWT_SECRET environment variable to a securely generated secret.");
+        }
         byte[] keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
         if (keyBytes.length < 32) {
             byte[] padded = new byte[32];
