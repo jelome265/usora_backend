@@ -103,7 +103,7 @@ jobs:
 
       - name: Notify Slack on Failure
         if: failure() && github.ref == 'refs/heads/main'
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -194,7 +194,7 @@ jobs:
 
       - name: Notify Slack on Failure
         if: failure() && github.ref == 'refs/heads/main'
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -268,7 +268,7 @@ jobs:
 
       - name: Notify Slack on Failure
         if: failure() && github.ref == 'refs/heads/main'
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -329,7 +329,7 @@ jobs:
 
       - name: Notify Slack on Failure
         if: failure() && github.ref == 'refs/heads/main'
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -432,7 +432,7 @@ jobs:
 
       - name: Notify Slack on Failure
         if: failure() && github.ref == 'refs/heads/main'
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -554,7 +554,7 @@ jobs:
           push-to-registry: true
 
       - name: Notify Slack on Success
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -574,7 +574,7 @@ jobs:
 
       - name: Notify Slack on Failure
         if: failure()
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -661,7 +661,7 @@ jobs:
           echo "Smoke tests completed"
 
       - name: Notify Slack on Success
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -681,7 +681,7 @@ jobs:
 
       - name: Notify Slack on Failure
         if: failure()
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -767,7 +767,7 @@ jobs:
           echo "Staging smoke tests completed"
 
       - name: Notify Slack on Success
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -787,7 +787,7 @@ jobs:
 
       - name: Notify Slack on Failure
         if: failure()
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -858,7 +858,7 @@ jobs:
 
       - name: Notify Slack on Failure
         if: failure()
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -951,7 +951,7 @@ jobs:
 
       - name: Notify Slack on Success
         if: matrix.canary-stage == 100
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
@@ -971,7 +971,7 @@ jobs:
 
       - name: Notify Slack on Failure
         if: failure()
-        uses: slackapi/slack-github-action@v1.27.0
+        uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
             {
