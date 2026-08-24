@@ -60,7 +60,7 @@ http-body-util = "0.1"
 
 [build-dependencies]
 tonic-build = "0.12"
-prost-build = "0.13"
+prost-build = "0.14"
 
 [[bench]]
 name = "throughput"
