@@ -30,7 +30,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 opentelemetry = "0.27"
 opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.27"
-opentelemetry-semantic-conventions = "0.27"
+opentelemetry-semantic-conventions = "0.32"
 thiserror = "2"
 anyhow = "1"
 rayon = "1"
