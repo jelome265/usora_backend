@@ -26,7 +26,7 @@
         <protobuf.version>4.28.2</protobuf.version>
         <jackson.version>2.17.2</jackson.version>
         <apache-poi.version>5.5.1</apache-poi.version>
-        <jasperreports.version>7.0.7</jasperreports.version>
+        <jasperreports.version>7.0.8</jasperreports.version>
         <protobuf-maven-plugin.version>0.6.1</protobuf-maven-plugin.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
     </properties>
