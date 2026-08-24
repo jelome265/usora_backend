@@ -34,7 +34,7 @@ tracing = "0.1"
 tracing-opentelemetry = "0.27"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
-prometheus = { version = "0.13", features = ["process"] }
+prometheus = { version = "0.14", features = ["process"] }
 metrics-exporter-prometheus = "0.15"
 thiserror = "2"
 anyhow = "1"
