@@ -547,7 +547,7 @@ jobs:
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       - name: Generate Attestations
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.DOCKER_REGISTRY }}/usora
           subject-digest: ${{ steps.generate-tags.outputs.tags }}
