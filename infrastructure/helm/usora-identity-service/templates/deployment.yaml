@@ -113,6 +113,15 @@ spec:
             {{- else }}
             {{ required "security.existingSecret must be set — IDENTITY_ENCRYPTION_KEY has no default and this service refuses to start without it (see JwtTokenProvider.java's constructor). It protects the persisted default JWT signing key at rest; see docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md and V3__system_signing_keys.sql for the bug this fixed." "" }}
             {{- end }}
+            {{- if .Values.security.existingSecret }}
+            - name: OAUTH_API_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.security.existingSecret }}
+                  key: {{ .Values.security.existingSecretOauthApiClientSecretKey | default "oauth-api-client-secret" }}
+            {{- else }}
+            {{ required "security.existingSecret must be set — OAUTH_API_CLIENT_SECRET has no default and this service refuses to start without it (see SecurityConfig.java). PRE-EXISTING GAP found while adding this: neither this nor OAUTH2_ISSUER below had ever been wired into this chart at all." "" }}
+            {{- end }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp

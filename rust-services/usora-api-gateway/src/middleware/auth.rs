@@ -16,26 +16,29 @@ pub struct AuthLayer {
 }
 
 impl AuthLayer {
-    pub fn new() -> Self {
+    /// `validator` should be the single shared, JWKS-populated validator from
+    /// `AppState` -- see AppState::new. Building a fresh
+    /// `JwtValidator::new(None, None)` here (as this used to do) meant an
+    /// empty key set and no issuer/audience enforcement on every request.
+    pub fn new(validator: JwtValidator) -> Self {
         Self {
             bypass_paths: vec!["/health".into(), "/metrics".into()],
-            validator: JwtValidator::new(None, None),
+            validator,
         }
     }
 
-    pub fn with_bypass_paths(paths: Vec<String>) -> Self {
+    pub fn with_bypass_paths(paths: Vec<String>, validator: JwtValidator) -> Self {
         Self {
             bypass_paths: paths,
-            validator: JwtValidator::new(None, None),
+            validator,
         }
     }
 }
 
-impl Default for AuthLayer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// No Default impl: constructing an AuthLayer requires a real, JWKS-populated
+// JwtValidator (see AppState::new) -- a default-constructed one with no keys
+// would silently reject every token, which is exactly the bug this module
+// exists to fix.
 
 impl<S> Layer<S> for AuthLayer {
     type Service = AuthMiddleware<S>;

@@ -93,6 +93,16 @@ grpcPort: 9091
 security:
   existingSecret: ""
   existingSecretEncryptionKeyKey: "encryption-key"
+  existingSecretOauthApiClientSecretKey: "oauth-api-client-secret"
+
+# Public OAuth2/OIDC issuer this service identifies itself as -- embedded in
+# every token it signs and in its /oidc/.well-known/openid-configuration
+# metadata. Must match exactly what downstream verifiers expect: see
+# usora-gateway's identity.host/port values, which build that gateway's
+# JWT_ISSUER from the same assumption (in-cluster DNS name, not a public
+# ingress hostname). Override to the real public issuer if this service is
+# ever reached through an ingress/load balancer instead of directly.
+oauth2Issuer: "http://usora-identity-service:8081"
 
 resources:
   requests:

@@ -1,4 +1,5 @@
 pub mod jwt;
+pub mod jwks_client;
 pub mod mtls;
 pub mod oauth;
 
