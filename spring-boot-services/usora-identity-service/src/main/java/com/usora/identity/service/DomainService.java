@@ -395,6 +395,23 @@ public class DomainService {
         var tenant = tenantRepository.findActiveById(UUID.fromString(request.getTenantId()))
                 .orElseThrow(() -> BusinessException.notFound("Tenant not found: " + request.getTenantId()));
 
+        // SECURITY: this endpoint is gated only by a global SCOPE_admin
+        // authority (see SecurityConfig's requestMatchers for /api/v1/users/**),
+        // and previously trusted request.getTenantId() from the request body
+        // with no check that it matched the authenticated caller's own
+        // tenant. If SCOPE_admin is ever granted per-tenant rather than
+        // globally (status not determinable from source alone -- see the
+        // audit that flagged this), that's a cross-tenant user-creation IDOR:
+        // any tenant admin could create a user in a tenant they don't
+        // administer just by putting a different tenantId in the body.
+        // Reject a mismatch regardless of how admin scope actually works,
+        // rather than relying on that being correctly configured elsewhere.
+        var callerTenantId = TenantContext.getContext().getTenantId();
+        if (callerTenantId != null && !callerTenantId.equals(request.getTenantId())) {
+            throw BusinessException.forbidden(
+                    "Cannot create a user in a tenant other than the caller's own tenant");
+        }
+
         if (userRepository.existsByUsernameAndTenantId(request.getUsername(), tenant.getId())) {
             throw BusinessException.conflict("Username already exists in tenant");
         }
@@ -420,6 +437,16 @@ public class DomainService {
     public ResponseDto.UserResponse updateUserRoles(String userId, RequestDto.RoleUpdateRequest request) {
         var user = userRepository.findById(UUID.fromString(userId))
                 .orElseThrow(() -> BusinessException.notFound("User not found: " + userId));
+
+        // SECURITY: same class of bug as createUser above -- this loaded the
+        // target user purely by id with no check that the user belongs to
+        // the caller's own tenant, so a caller could reassign roles for a
+        // user in a tenant they don't administer.
+        var callerTenantId = TenantContext.getContext().getTenantId();
+        if (callerTenantId != null && !callerTenantId.equals(user.getTenant().getId().toString())) {
+            throw BusinessException.forbidden(
+                    "Cannot update roles for a user in a tenant other than the caller's own tenant");
+        }
 
         var roles = new HashSet<>(user.getRoles() != null ? user.getRoles() : Set.of());
         if (request.getAddRoles() != null) {
