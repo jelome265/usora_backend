@@ -24,6 +24,12 @@ identity:
   jwt:
     key_size: 1024
 
+# Dev-only values, never used in prod/staging -- those must come from a real
+# secret store / the actual public issuer URL, and are required for startup
+# (see SecurityConfig / DomainService fail-fast checks).
+OAUTH_API_CLIENT_SECRET: dev-only-oauth-api-client-secret-not-for-production
+OAUTH2_ISSUER: http://localhost:8081
+
 logging:
   level:
     com.usora: DEBUG
