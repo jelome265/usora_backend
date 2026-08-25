@@ -24,6 +24,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -669,6 +671,29 @@ public class DomainService {
         return true;
     }
 
+    /**
+     * SECURITY: this audit trail's "actor" field previously was always set
+     * to the tenant id, not the individual principal who actually performed
+     * the action -- meaning every audit entry for a tenant looked like it
+     * was performed by "the tenant" itself, with no way to attribute an
+     * action to a specific user/service account, which is the entire point
+     * of forensic attribution. Resolves the authenticated JWT subject
+     * (already verified by this service's resource-server filter chain by
+     * the time a request reaches this method) and falls back to "system"
+     * only when there is genuinely no authenticated caller (e.g. an
+     * internally-scheduled job), never to the tenant id.
+     */
+    private String resolveActor() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof Jwt jwt) {
+            var subject = jwt.getSubject();
+            if (subject != null && !subject.isBlank()) {
+                return subject;
+            }
+        }
+        return "system";
+    }
+
     private void writeAuditEntry(String caseId, String tenantId, String eventType,
                                   String action, String description, Map<String, Object> details) {
         var entry = new AuditTrailEntry();
@@ -677,7 +702,7 @@ public class DomainService {
         entry.setCaseId(caseId != null ? caseId : "system");
         entry.setEventType(eventType);
         entry.setAction(action);
-        entry.setActor(tenantId);
+        entry.setActor(resolveActor());
         entry.setDescription(description);
         entry.setTimestamp(Instant.now());
 
