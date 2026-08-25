@@ -24,8 +24,19 @@ public class EncryptionUtil {
     private final SecretKey key;
     private final SecureRandom secureRandom;
 
-    public EncryptionUtil(@Value("${integration.encryption.key:AES256KeyMustBe32BytesLongForGCMEncryption}") String base64Key) {
+    public EncryptionUtil(@Value("${integration.encryption.key:}") String base64Key) {
         this.secureRandom = new SecureRandom();
+        // SECURITY: this used to fall back to the literal string
+        // "AES256KeyMustBe32BytesLongForGCMEncryption" if
+        // integration.encryption.key was unset -- a constant visible in this
+        // source file, so encrypted data was only as confidential as
+        // plaintext. Fail fast instead.
+        if (base64Key == null || base64Key.isBlank()) {
+            throw new IllegalStateException(
+                    "integration.encryption.key is not configured -- refusing to encrypt/decrypt with a " +
+                    "default key. Set ENCRYPTION_KEY (see application-prod.yml) to a securely generated, " +
+                    "base64-encoded 32-byte value, never a default.");
+        }
         byte[] decodedKey = base64Key.length() == 44
                 ? Base64.getDecoder().decode(base64Key)
                 : base64Key.getBytes();

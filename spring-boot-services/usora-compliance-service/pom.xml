@@ -327,6 +327,20 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <environmentVariables>
+                        <!-- Test-only key for EncryptionUtilTest -- that class reads
+                             System.getenv directly (it's a plain static utility, not
+                             Spring-managed), so this can't be supplied via
+                             application-test.yml the way other test secrets are.
+                             Never used outside this test JVM. -->
+                        <COMPLIANCE_ENCRYPTION_KEY>Y29tcGxpYW5jZS10ZXN0LWtleS0zMi1ieXRlcyEhISE=</COMPLIANCE_ENCRYPTION_KEY>
+                    </environmentVariables>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>

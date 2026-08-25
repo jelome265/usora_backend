@@ -51,3 +51,7 @@ management:
 integration:
   webhook:
     idempotency-ttl: 300
+  # Local-development-only key, never used in prod/staging -- those require
+  # ENCRYPTION_KEY and fail startup without it.
+  encryption:
+    key: dev-only-integration-encryption-key-32b

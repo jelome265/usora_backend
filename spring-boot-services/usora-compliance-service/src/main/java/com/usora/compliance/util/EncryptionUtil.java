@@ -18,9 +18,20 @@ public final class EncryptionUtil {
 
     private static SecretKey getSecretKey() {
         var keyEnv = System.getenv(SECRET_KEY_ENV);
-        var keyBytes = keyEnv != null && !keyEnv.isBlank()
-                ? Base64.getDecoder().decode(keyEnv)
-                : new byte[32]; // default only for dev
+        if (keyEnv == null || keyEnv.isBlank()) {
+            // SECURITY: this used to silently fall back to a 32-byte
+            // all-zero key ("default only for dev") if COMPLIANCE_ENCRYPTION_KEY
+            // was unset. AES-GCM's math is correct either way, but an
+            // all-zero key is a known constant anyone can derive from this
+            // source file, so "encrypted" evidence records were only as
+            // confidential as if they were stored in plaintext. Fail fast
+            // instead of ever encrypting real KYC evidence under a public key.
+            throw new IllegalStateException(
+                    "COMPLIANCE_ENCRYPTION_KEY is not set -- refusing to encrypt/decrypt evidence records " +
+                    "with a default key. Generate one with e.g. `openssl rand -base64 32` and set it via " +
+                    "a secret store, never a plaintext default.");
+        }
+        var keyBytes = Base64.getDecoder().decode(keyEnv);
         return new SecretKeySpec(keyBytes, "AES");
     }
 

@@ -78,7 +78,7 @@ audit:
     key_provider: vault
     key_rotation_days: 90
   encryption:
-    key: ${AUDIT_ENCRYPTION_KEY:default-aes-key-32byte!!change-me!!}
+    key: ${AUDIT_ENCRYPTION_KEY:}
   siem:
     enabled: true
     provider: splunk

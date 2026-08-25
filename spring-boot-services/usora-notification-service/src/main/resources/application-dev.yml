@@ -35,6 +35,10 @@ security:
     # profiles require the JWT_SECRET environment variable and fail startup
     # without it (see C-02 remediation in JwtTokenProvider).
     secret: dev-only-notification-jwt-secret-not-for-production-use-32chars
+  encryption:
+    # Local-development-only key, never used in prod/staging -- those
+    # require ENCRYPTION_SECRET_KEY and fail startup without it.
+    secret-key: bm90aWYtZGV2LWVuY3J5cHRpb24ta2V5LTMyYnl0ZXM=
 
 notification:
   webhook:
