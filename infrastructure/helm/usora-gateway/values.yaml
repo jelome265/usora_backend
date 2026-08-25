@@ -55,6 +55,12 @@ tls:
   serverKey: /etc/tls/server.key
   caCert: /etc/tls/ca.crt
   minVersion: "1.3"
+  # Off by default even though caCert (above) has been present in this
+  # chart since it was written: turning this on requires every caller of
+  # this gateway to already present a client certificate signed by caCert,
+  # or their connections will be rejected at the TLS handshake. Confirm
+  # that's true for this environment before flipping it on.
+  requireClientAuth: false
   cipherSuites:
     - TLS_AES_128_GCM_SHA256
     - TLS_AES_256_GCM_SHA384

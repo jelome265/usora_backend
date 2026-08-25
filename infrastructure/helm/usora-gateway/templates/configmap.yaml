@@ -16,6 +16,12 @@ data:
   TLS_CERT_PATH: {{ .Values.tls.serverCert | quote }}
   TLS_KEY_PATH: {{ .Values.tls.serverKey | quote }}
   TLS_MIN_VERSION: {{ printf "TLSv%s" .Values.tls.minVersion | quote }}
+  # Wires the previously-unused MtlsValidator (auth/mtls.rs) into the actual
+  # TLS handshake -- see load_tls_config in config/mod.rs. tls.caCert has
+  # been present in this chart's values.yaml since it was written but had
+  # no consumer until now.
+  TLS_REQUIRE_CLIENT_AUTH: {{ .Values.tls.requireClientAuth | default false | quote }}
+  TLS_CLIENT_CA_PATH: {{ .Values.tls.caCert | quote }}
   REDIS_POOL_SIZE: {{ .Values.redis.poolMaxSize | quote }}
   KAFKA_BROKERS: {{ .Values.kafka.bootstrapServers | quote }}
   KAFKA_TOPIC_PREFIX: "usora"

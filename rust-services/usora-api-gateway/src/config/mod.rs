@@ -6,6 +6,15 @@ pub struct TlsConfig {
     pub cert_path: String,
     pub key_path: String,
     pub min_version: String,
+    /// If true, the TLS handshake itself requires and verifies a client
+    /// certificate against client_ca_path (mutual TLS). See
+    /// auth::mtls::MtlsValidator, which implemented this verifier but was
+    /// never wired into load_tls_config until now.
+    pub require_client_auth: bool,
+    /// CA bundle used to verify client certificates. Required (and
+    /// validated at startup, see load_tls_config) when
+    /// require_client_auth is true; ignored otherwise.
+    pub client_ca_path: Option<String>,
 }
 
 impl Default for TlsConfig {
@@ -13,7 +22,16 @@ impl Default for TlsConfig {
         Self {
             cert_path: "/etc/certs/tls.crt".into(),
             key_path: "/etc/certs/tls.key".into(),
-            min_version: "TLSv1.2".into(),
+            // SECURITY: was "TLSv1.2". TLS 1.3 removes a number of
+            // long-deprecated, weak cipher suites and handshake modes (CBC
+            // padding-oracle-prone ciphers, static RSA key exchange with no
+            // forward secrecy, renegotiation) that 1.2 still permits
+            // depending on suite negotiation. Default to the stronger floor;
+            // TLS_MIN_VERSION can still override back to "TLSv1.2" for a
+            // client that genuinely can't be upgraded.
+            min_version: "TLSv1.3".into(),
+            require_client_auth: false,
+            client_ca_path: None,
         }
     }
 }
@@ -203,6 +221,12 @@ impl Config {
         if let Ok(v) = std::env::var("TLS_MIN_VERSION") {
             cfg.tls.min_version = v;
         }
+        if let Ok(v) = std::env::var("TLS_REQUIRE_CLIENT_AUTH") {
+            cfg.tls.require_client_auth = v.parse().unwrap_or(false);
+        }
+        if let Ok(v) = std::env::var("TLS_CLIENT_CA_PATH") {
+            cfg.tls.client_ca_path = Some(v);
+        }
         if let Ok(v) = std::env::var("REDIS_URL") {
             cfg.redis.url = v;
         }
@@ -275,9 +299,31 @@ impl Config {
         let key = rustls_pemfile::private_key(&mut key_reader)?
             .ok_or_else(|| anyhow::anyhow!("no private key found"))?;
 
-        let mut config = rustls::ServerConfig::builder_with_protocol_versions(&[self.tls_min_version()])
-            .with_no_client_auth()
-            .with_single_cert(certs, key)?;
+        let builder = rustls::ServerConfig::builder_with_protocol_versions(&[self.tls_min_version()]);
+
+        // SECURITY: this used to be with_no_client_auth() unconditionally --
+        // crate::auth::mtls::MtlsValidator implemented a working client
+        // certificate verifier, but nothing ever called it, so the gateway
+        // never actually performed mutual TLS at the handshake level despite
+        // that module existing. Wiring it in here is opt-in
+        // (TLS_REQUIRE_CLIENT_AUTH) rather than unconditional, since not
+        // every deployment of this gateway necessarily has client
+        // certificate infrastructure in place yet; when it's off, behavior
+        // is unchanged from before.
+        let mut config = if self.tls.require_client_auth {
+            let ca_path = self.tls.client_ca_path.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "TLS_REQUIRE_CLIENT_AUTH is true but TLS_CLIENT_CA_PATH is not set -- refusing to \
+                     start with mTLS requested but no CA to verify client certificates against."
+                )
+            })?;
+            let verifier = crate::auth::mtls::MtlsValidator::new(ca_path)?.client_verifier()?;
+            builder
+                .with_client_cert_verifier(verifier)
+                .with_single_cert(certs, key)?
+        } else {
+            builder.with_no_client_auth().with_single_cert(certs, key)?
+        };
 
         config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         Ok(config)
