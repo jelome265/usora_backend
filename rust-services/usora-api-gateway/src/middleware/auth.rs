@@ -3,8 +3,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use axum::extract::Request;
-use axum::response::{IntoResponse, Response};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use tower::{Layer, Service};
 
 use crate::auth::jwt::JwtValidator;
@@ -71,7 +71,10 @@ where
 
     fn call(&mut self, req: Request) -> Self::Future {
         let path = req.uri().path().to_string();
-        let bypass = self.bypass_paths.iter().any(|p| path == *p || path.starts_with(p));
+        let bypass = self
+            .bypass_paths
+            .iter()
+            .any(|p| path == *p || path.starts_with(p));
 
         // Clone the inner service (cheap -- tower services are designed for
         // this) so `self.inner` isn't consumed before we know whether we're
@@ -101,7 +104,11 @@ where
             let token = match auth_header {
                 Some(ref v) if v.starts_with("Bearer ") => v[7..].to_string(),
                 _ => {
-                    let resp = (StatusCode::UNAUTHORIZED, "Missing or invalid Authorization header").into_response();
+                    let resp = (
+                        StatusCode::UNAUTHORIZED,
+                        "Missing or invalid Authorization header",
+                    )
+                        .into_response();
                     return Ok(resp);
                 }
             };
@@ -113,7 +120,9 @@ where
                     parts.extensions.insert(user);
 
                     if !tid.is_empty() {
-                        parts.extensions.insert(crate::middleware::tenant::TenantContext { tenant_id: tid });
+                        parts
+                            .extensions
+                            .insert(crate::middleware::tenant::TenantContext { tenant_id: tid });
                     }
 
                     let req = Request::from_parts(parts, body);
@@ -121,7 +130,8 @@ where
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "JWT validation failed");
-                    let resp = (StatusCode::UNAUTHORIZED, format!("Invalid token: {e}")).into_response();
+                    let resp =
+                        (StatusCode::UNAUTHORIZED, format!("Invalid token: {e}")).into_response();
                     Ok(resp)
                 }
             }

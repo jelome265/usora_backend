@@ -34,12 +34,12 @@ pub mod proto {
 
 pub mod gateway_service;
 
-use std::sync::Arc;
 use axum::extract::FromRef;
 pub use config::Config;
 use grpc::GrpcClients;
-use redis::aio::ConnectionManager;
 use rdkafka::producer::FutureProducer;
+use redis::aio::ConnectionManager;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -86,7 +86,12 @@ impl AppState {
             Some(producer)
         };
 
-        Ok(Self { config: cfg, grpc_clients, redis, kafka })
+        Ok(Self {
+            config: cfg,
+            grpc_clients,
+            redis,
+            kafka,
+        })
     }
 }
 
