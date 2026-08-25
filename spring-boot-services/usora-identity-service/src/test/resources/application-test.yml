@@ -44,6 +44,13 @@ identity:
   cleanup:
     interval: -1
 
+# Both of these are required for the service to start at all (see
+# SecurityConfig / DomainService fail-fast checks). Test-only values, never
+# used in prod/staging -- those must come from a real secret store / the
+# actual public issuer URL.
+OAUTH_API_CLIENT_SECRET: test-only-oauth-api-client-secret-not-for-production
+OAUTH2_ISSUER: http://localhost:8081
+
 logging:
   level:
     com.usora: DEBUG

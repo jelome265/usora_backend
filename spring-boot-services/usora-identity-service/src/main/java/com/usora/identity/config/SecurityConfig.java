@@ -91,6 +91,13 @@ public class SecurityConfig {
     @Value("${OAUTH_API_CLIENT_SECRET:}")
     private String oauthApiClientSecret;
 
+    // No default here either: an unset issuer would previously fall back to
+    // "http://localhost:8081" verbatim in a real deployment, which is wrong
+    // (leaks internal topology, and won't match what any real gateway/client
+    // expects as `iss`). Fail fast instead — see oauth2Issuer() below.
+    @Value("${OAUTH2_ISSUER:}")
+    private String configuredIssuer;
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         // Work factor 12 matches the floor used elsewhere in this codebase
@@ -157,10 +164,32 @@ public class SecurityConfig {
         return new InMemoryRegisteredClientRepository(publicClient, confidentialClient);
     }
 
+    // SECURITY: this issuer was previously hardcoded as the literal string
+    // "http://localhost:8081" in five places across this class and
+    // DomainService.java (token issuance, well-known OIDC metadata, and the
+    // authorization-server settings that gate signature/claims for every
+    // token this service mints). That value only happens to work when
+    // identity-service is reached at that exact host:port -- in any real
+    // (multi-node, containerized, or load-balanced) deployment it silently
+    // mismatches the `iss` a downstream verifier (e.g. the API gateway) is
+    // configured to expect, and it leaks internal topology into public OIDC
+    // discovery metadata. It must now be supplied via OAUTH2_ISSUER and is
+    // read from a single place (this method) rather than five separately
+    // hardcoded literals that could drift out of sync with each other.
+    private String oauth2Issuer() {
+        if (configuredIssuer == null || configuredIssuer.isBlank()) {
+            throw new IllegalStateException(
+                    "OAUTH2_ISSUER must be set -- refusing to start with no configured issuer. This value " +
+                    "is embedded in every token this service signs and in its public OIDC discovery metadata; " +
+                    "it must match what downstream verifiers (e.g. the API gateway) are configured to expect.");
+        }
+        return configuredIssuer;
+    }
+
     @Bean
     public AuthorizationServerSettings authorizationServerSettings() {
         return AuthorizationServerSettings.builder()
-                .issuer("http://localhost:8081")
+                .issuer(oauth2Issuer())
                 .authorizationEndpoint("/oauth2/authorize")
                 .tokenEndpoint("/oauth2/token")
                 .tokenIntrospectionEndpoint("/oauth2/introspect")

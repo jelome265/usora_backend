@@ -53,6 +53,24 @@ public class DomainService {
     private final TenantConfig tenantConfig;
     private final MeterRegistry meterRegistry;
 
+    // See SecurityConfig.oauth2Issuer() for why this must be configured
+    // rather than left as the "http://localhost:8081" literal this class
+    // used to hardcode in four separate token-issuance call sites plus the
+    // well-known OIDC metadata below -- those five copies could (and, per
+    // the audit that found this, effectively already had) drift out of sync
+    // with the real deployment's issuer.
+    @org.springframework.beans.factory.annotation.Value("${OAUTH2_ISSUER:}")
+    private String configuredIssuer;
+
+    private String issuer() {
+        if (configuredIssuer == null || configuredIssuer.isBlank()) {
+            throw new IllegalStateException(
+                    "OAUTH2_ISSUER must be set -- refusing to issue a token or serve OIDC metadata with no " +
+                    "configured issuer.");
+        }
+        return configuredIssuer;
+    }
+
     public ResponseDto.TokenResponse authenticate(RequestDto.TokenRequest request) {
         Timer.Sample sample = Timer.start(meterRegistry);
 
@@ -96,7 +114,7 @@ public class DomainService {
         try {
             var claims = new JWTClaimsSet.Builder()
                     .subject(client.getClientId())
-                    .issuer("http://localhost:8081")
+                    .issuer(issuer())
                     .audience(Collections.singletonList(client.getTenant().getTenantName()))
                     .issueTime(new Date())
                     .expirationTime(Date.from(Instant.now().plus(client.getAccessTokenTtlSeconds(), ChronoUnit.SECONDS)))
@@ -150,7 +168,7 @@ public class DomainService {
         try {
             var claims = new JWTClaimsSet.Builder()
                     .subject(request.getClientId())
-                    .issuer("http://localhost:8081")
+                    .issuer(issuer())
                     .issueTime(new Date())
                     .expirationTime(Date.from(Instant.now().plus(client.getAccessTokenTtlSeconds(), ChronoUnit.SECONDS)))
                     .claim("tid", tenantId)
@@ -203,7 +221,7 @@ public class DomainService {
         try {
             var claims = new JWTClaimsSet.Builder()
                     .subject(client.getClientId())
-                    .issuer("http://localhost:8081")
+                    .issuer(issuer())
                     .issueTime(new Date())
                     .expirationTime(Date.from(Instant.now().plus(client.getAccessTokenTtlSeconds(), ChronoUnit.SECONDS)))
                     .claim("tid", tenantId)
@@ -265,7 +283,7 @@ public class DomainService {
         try {
             var claims = new JWTClaimsSet.Builder()
                     .subject(user.getId().toString())
-                    .issuer("http://localhost:8081")
+                    .issuer(issuer())
                     .issueTime(new Date())
                     .expirationTime(Date.from(Instant.now().plus(client.getAccessTokenTtlSeconds(), ChronoUnit.SECONDS)))
                     .claim("tid", tenantId)
@@ -421,15 +439,16 @@ public class DomainService {
     }
 
     public Map<String, Object> getOpenIdConfiguration() {
+        var baseUrl = issuer();
         return Map.ofEntries(
-                Map.entry("issuer", "http://localhost:8081"),
-                Map.entry("authorization_endpoint", "http://localhost:8081/oauth2/authorize"),
-                Map.entry("token_endpoint", "http://localhost:8081/oauth2/token"),
-                Map.entry("introspection_endpoint", "http://localhost:8081/oauth2/introspect"),
-                Map.entry("revocation_endpoint", "http://localhost:8081/oauth2/revoke"),
-                Map.entry("jwks_uri", "http://localhost:8081/oauth2/jwks"),
-                Map.entry("userinfo_endpoint", "http://localhost:8081/oidc/userinfo"),
-                Map.entry("registration_endpoint", "http://localhost:8081/oidc/register"),
+                Map.entry("issuer", baseUrl),
+                Map.entry("authorization_endpoint", baseUrl + "/oauth2/authorize"),
+                Map.entry("token_endpoint", baseUrl + "/oauth2/token"),
+                Map.entry("introspection_endpoint", baseUrl + "/oauth2/introspect"),
+                Map.entry("revocation_endpoint", baseUrl + "/oauth2/revoke"),
+                Map.entry("jwks_uri", baseUrl + "/oauth2/jwks"),
+                Map.entry("userinfo_endpoint", baseUrl + "/oidc/userinfo"),
+                Map.entry("registration_endpoint", baseUrl + "/oidc/register"),
                 Map.entry("scopes_supported", List.of("openid", "profile", "email", "admin", "tenant:read", "tenant:write", "users:read", "users:write")),
                 Map.entry("response_types_supported", List.of("code", "token")),
                 Map.entry("grant_types_supported", List.of("authorization_code", "client_credentials", "refresh_token", "password")),
