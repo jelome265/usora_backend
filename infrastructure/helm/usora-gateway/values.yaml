@@ -151,6 +151,17 @@ corsAllowedOrigins: []
 observability:
   otlpEndpoint: "http://usora-otel-collector:4317"
 
+# Used to build IDENTITY_JWKS_URL / JWT_ISSUER (see configmap.yaml). Must
+# match usora-identity-service's own configured OAUTH2_ISSUER exactly --
+# see spring-boot-services/usora-identity-service's SecurityConfig and the
+# PR that parameterized it. jwksRefreshSeconds controls how often the
+# gateway re-fetches keys in the background (see
+# rust-services/usora-api-gateway/src/auth/jwks_client.rs).
+identity:
+  host: usora-identity-service
+  port: 8081
+  jwksRefreshSeconds: 300
+
 readinessProbe:
   # PRE-EXISTING GAP, found and fixed while writing this chart: the
   # application has no HTTP /health/ready or /health/live path anywhere —

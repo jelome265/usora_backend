@@ -34,3 +34,15 @@ data:
   UPSTREAM_COMPUTE_URL: {{ printf "https://%s:%d" .Values.upstream.compute.host (int .Values.upstream.compute.grpcPort) | quote }}
   OTLP_ENDPOINT: {{ .Values.observability.otlpEndpoint | quote }}
   SERVICE_NAME: "usora-api-gateway"
+  IDENTITY_JWKS_URL: {{ printf "http://%s:%d/oauth2/jwks" .Values.identity.host (int .Values.identity.port) | quote }}
+  # SECURITY: must match usora-identity-service's own OAUTH2_ISSUER value
+  # exactly (see that chart's values), or every token this gateway sees will
+  # be rejected on issuer mismatch. Deliberately built from the same
+  # identity.host/port values as IDENTITY_JWKS_URL above rather than set
+  # independently, so the two can't silently drift apart in this chart --
+  # any real mismatch has to come from identity-service's own OAUTH2_ISSUER
+  # being set to something other than this host:port (e.g. behind an
+  # ingress with a public hostname), which then needs an explicit override
+  # here too.
+  JWT_ISSUER: {{ printf "http://%s:%d" .Values.identity.host (int .Values.identity.port) | quote }}
+  JWKS_REFRESH_SECS: {{ .Values.identity.jwksRefreshSeconds | quote }}

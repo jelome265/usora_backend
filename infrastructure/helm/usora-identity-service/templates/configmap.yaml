@@ -24,3 +24,7 @@ data:
   KAFKA_BOOTSTRAP_SERVERS: {{ .Values.kafka.bootstrapServers | quote }}
 
   OPA_URL: {{ .Values.opa.url | quote }}
+
+  # See SecurityConfig/DomainService's oauth2Issuer()/issuer() -- no default,
+  # this service refuses to start without it.
+  OAUTH2_ISSUER: {{ .Values.oauth2Issuer | quote }}

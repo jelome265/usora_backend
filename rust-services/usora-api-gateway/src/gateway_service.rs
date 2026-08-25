@@ -103,8 +103,7 @@ impl gateway::gateway_service_server::GatewayService for GatewayServiceImpl {
             }));
         }
 
-        let validator = crate::auth::jwt::JwtValidator::new(None, None);
-        match validator.validate_token(&token).await {
+        match self.state.jwt_validator.validate_token(&token).await {
             Ok(claims) => Ok(Response::new(gateway::TokenValidationResponse {
                 valid: true,
                 subject: claims.sub,

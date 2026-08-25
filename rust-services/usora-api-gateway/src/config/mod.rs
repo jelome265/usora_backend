@@ -117,6 +117,43 @@ impl Default for ObservabilityConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
+pub struct IdentityConfig {
+    /// OIDC JWKS endpoint of usora-identity-service, e.g.
+    /// "https://usora-identity-service:8081/oauth2/jwks" in a real
+    /// deployment. AppState::new fetches this at startup and logs loudly
+    /// (but does not abort startup) if it's unreachable -- see the comment
+    /// there for why.
+    pub jwks_url: String,
+    /// Expected `iss` claim. Must match identity-service's own OAUTH2_ISSUER
+    /// (see spring-boot-services/usora-identity-service's SecurityConfig).
+    pub issuer: String,
+    /// Expected `aud` claim. identity-service currently issues
+    /// client-credentials tokens with a per-tenant audience (the tenant
+    /// name) rather than one static value shared by every tenant, so this is
+    /// intentionally left unenforced (empty) unless explicitly configured --
+    /// see the comment on JwtValidator construction in AppState::new for why
+    /// forcing a single static audience here would incorrectly reject valid
+    /// tokens for every tenant but one. Set JWT_AUDIENCE only if/when
+    /// identity-service is changed to issue a single shared audience.
+    pub audience: String,
+    /// How often to re-fetch the JWKS in the background, so identity-service
+    /// key rotation is picked up without a gateway restart.
+    pub jwks_refresh_secs: u64,
+}
+
+impl Default for IdentityConfig {
+    fn default() -> Self {
+        Self {
+            jwks_url: "http://localhost:8081/oauth2/jwks".into(),
+            issuer: "http://localhost:8081".into(),
+            audience: String::new(),
+            jwks_refresh_secs: 300,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(unused)]
 pub struct Config {
     pub bind_address: String,
     pub grpc_bind_address: String,
@@ -127,6 +164,7 @@ pub struct Config {
     pub cors: CorsConfig,
     pub upstream: UpstreamConfig,
     pub observability: ObservabilityConfig,
+    pub identity: IdentityConfig,
 }
 
 impl Default for Config {
@@ -141,6 +179,7 @@ impl Default for Config {
             cors: CorsConfig::default(),
             upstream: UpstreamConfig::default(),
             observability: ObservabilityConfig::default(),
+            identity: IdentityConfig::default(),
         }
     }
 }
@@ -203,6 +242,18 @@ impl Config {
         }
         if let Ok(v) = std::env::var("SERVICE_NAME") {
             cfg.observability.service_name = v;
+        }
+        if let Ok(v) = std::env::var("IDENTITY_JWKS_URL") {
+            cfg.identity.jwks_url = v;
+        }
+        if let Ok(v) = std::env::var("JWT_ISSUER") {
+            cfg.identity.issuer = v;
+        }
+        if let Ok(v) = std::env::var("JWT_AUDIENCE") {
+            cfg.identity.audience = v;
+        }
+        if let Ok(v) = std::env::var("JWKS_REFRESH_SECS") {
+            cfg.identity.jwks_refresh_secs = v.parse()?;
         }
 
         Ok(cfg)

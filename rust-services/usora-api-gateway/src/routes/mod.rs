@@ -38,7 +38,7 @@ pub fn create_router(state: Arc<AppState>) -> Router<()> {
         // docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md.
         .route_layer(RateLimitLayer::new(rate_cfg.default_rps, rate_cfg.burst_size, rate_cfg.window_ms))
         .route_layer(TenantLayer::new())
-        .route_layer(AuthLayer::new())
+        .route_layer(AuthLayer::new(state.jwt_validator.clone()))
         .layer(TraceLayer::new_for_http())
         .layer(NormalizePathLayer::trim_trailing_slash())
         .layer(RequestBodyLimitLayer::new(50 * 1024 * 1024))
