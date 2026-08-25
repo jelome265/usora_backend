@@ -23,16 +23,24 @@ public class EncryptionUtil {
     private final SecretKey secretKey;
 
     public EncryptionUtil(@Value("${security.encryption.secret-key:}") String encodedKey) {
+        // SECURITY/CORRECTNESS: this used to silently generate a random,
+        // never-persisted key if security.encryption.secret-key was unset.
+        // That's not a "safe default" -- it's worse than a fixed default in
+        // some ways: every instance in a multi-replica deployment gets a
+        // *different* random key (so one instance can't decrypt data another
+        // instance encrypted), and anything encrypted is permanently
+        // unrecoverable the moment the process restarts. Fail fast instead,
+        // consistent with how every other service in this codebase handles
+        // a missing encryption/signing key.
         if (encodedKey == null || encodedKey.isBlank()) {
-            var keyGen = new SecureRandom();
-            var keyBytes = new byte[32];
-            keyGen.nextBytes(keyBytes);
-            this.secretKey = new SecretKeySpec(keyBytes, "AES");
-            log.warn("Using auto-generated encryption key. Set security.encryption.secret-key in production.");
-        } else {
-            var keyBytes = Base64.getDecoder().decode(encodedKey);
-            this.secretKey = new SecretKeySpec(keyBytes, "AES");
+            throw new IllegalStateException(
+                    "security.encryption.secret-key is not configured -- refusing to encrypt/decrypt with " +
+                    "a randomly-generated, non-persisted key (which would silently differ across " +
+                    "restarts and replicas, permanently losing access to anything encrypted under it). " +
+                    "Set a securely generated, base64-encoded 32-byte value via ENCRYPTION_SECRET_KEY.");
         }
+        var keyBytes = Base64.getDecoder().decode(encodedKey);
+        this.secretKey = new SecretKeySpec(keyBytes, "AES");
     }
 
     public String encrypt(String plaintext) {

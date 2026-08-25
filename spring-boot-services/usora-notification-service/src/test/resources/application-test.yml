@@ -17,3 +17,5 @@ server:
 security:
   jwt:
     secret: test-only-notification-jwt-secret-for-unit-tests-32chars
+  encryption:
+    secret-key: bm90aWYtdGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGU=

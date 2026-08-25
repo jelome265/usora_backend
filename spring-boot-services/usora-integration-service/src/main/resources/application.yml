@@ -223,7 +223,7 @@ integration:
       credit-events: credit-events
       dead-letter: webhook-dead-letter
   encryption:
-    key: ${ENCRYPTION_KEY:AES256KeyMustBe32BytesLongForGCMEncryption}
+    key: ${ENCRYPTION_KEY:}
 
 resilience4j:
   circuitbreaker:

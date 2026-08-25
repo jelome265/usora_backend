@@ -26,7 +26,18 @@ public class EncryptionUtil {
     private final SecretKey secretKey;
     private final SecureRandom secureRandom;
 
-    public EncryptionUtil(@Value("${audit.encryption.key:default-aes-key-32byte!!change-me!!}") String encryptionKey) {
+    public EncryptionUtil(@Value("${audit.encryption.key:}") String encryptionKey) {
+        // SECURITY: this used to fall back to the literal string
+        // "default-aes-key-32byte!!change-me!!" (padded/truncated to 32
+        // bytes below either way) if audit.encryption.key was unset -- a
+        // constant visible in this source file, so encrypted audit data was
+        // only as confidential as plaintext. Fail fast instead.
+        if (encryptionKey == null || encryptionKey.isBlank()) {
+            throw new IllegalStateException(
+                    "audit.encryption.key is not configured -- refusing to encrypt/decrypt with a " +
+                    "default key. Set AUDIT_ENCRYPTION_KEY (or audit.encryption.key) to a securely " +
+                    "generated value, never a default.");
+        }
         byte[] keyBytes = encryptionKey.getBytes(StandardCharsets.UTF_8);
         if (keyBytes.length < 32) {
             byte[] padded = new byte[32];
