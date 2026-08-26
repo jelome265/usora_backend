@@ -17,7 +17,7 @@ serde_yaml = "0.9"
 image = "0.25"
 imageproc = "0.25"
 tesseract = "0.15"
-tract-onnx = "0.21"
+tract-onnx = "0.23"
 ndarray = "0.16"
 opencv = "0.91"
 pdf = "0.9"
@@ -49,7 +49,7 @@ axum = "0.8"
 # Helm chart: the REST router in routes/mod.rs took `tenant_id` directly
 # from the request body with no authentication at all, on endpoints that
 # perform document/biometric forensic analysis. See auth.rs.
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 
 [build-dependencies]
 tonic-build = "0.12"
