@@ -42,6 +42,14 @@ pub async fn health_check(
 
     let uptime = start_time().elapsed().as_secs_f64();
 
+    // AVAILABILITY (F-005): surface JWKS state in the human/dashboard-facing
+    // HTTP health body too. The actual Kubernetes readiness/liveness
+    // signal is the gRPC health service on port 9090 (see main.rs), which
+    // now gates SERVING on this same jwt_validator.is_ready(); this field
+    // just makes that same fact visible without needing grpc_health_probe.
+    let jwks_ready = state.jwt_validator.is_ready();
+    let jwks_age_seconds = state.jwt_validator.jwks_age().map(|d| d.as_secs_f64());
+
     let mut checks = std::collections::HashMap::new();
     checks.insert(
         "upstream".to_string(),
@@ -59,8 +67,12 @@ pub async fn health_check(
             "disabled".to_string()
         },
     );
+    checks.insert(
+        "jwks".to_string(),
+        if jwks_ready { "healthy".to_string() } else { "unready".to_string() },
+    );
 
-    let overall = if upstream_healthy { "healthy" } else { "degraded" };
+    let overall = if upstream_healthy && jwks_ready { "healthy" } else { "degraded" };
 
     health_latency().observe(start.elapsed().as_secs_f64());
 
@@ -69,6 +81,10 @@ pub async fn health_check(
         "version": env!("CARGO_PKG_VERSION"),
         "uptime_seconds": uptime,
         "checks": checks,
+        "auth": {
+            "jwks_loaded": jwks_ready,
+            "jwks_age_seconds": jwks_age_seconds,
+        },
         "request_id": utils::uuid_v7(),
     });
 
