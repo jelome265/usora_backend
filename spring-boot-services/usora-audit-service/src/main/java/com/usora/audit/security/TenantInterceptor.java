@@ -22,24 +22,37 @@ public class TenantInterceptor implements HandlerInterceptor {
      * "tid") — so the JWT path was already a no-op in practice even
      * before the header overwrite. Tenant now comes exclusively from the
      * verified JWT's "tid" claim, full stop.
+     *
+     * F-002 follow-up: previously an authenticated JWT lacking "tid" fell
+     * through with no tenant context set and the request proceeded
+     * regardless. This interceptor is only registered on "/api/**" (see
+     * SecurityConfig#addInterceptors), so every request reaching it is a
+     * tenant-scoped API call from an authenticated principal -- a missing
+     * tenant claim now fails closed with 403 instead of silently
+     * continuing without tenant context.
      */
     @Override
-    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
+            throws java.io.IOException {
         TenantContext.clear();
 
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String tenantId = null;
         if (authentication != null && authentication.isAuthenticated()
                 && authentication.getPrincipal() instanceof Jwt jwt) {
+            tenantId = jwt.getClaimAsString("tid");
+        }
 
-            String tenantId = jwt.getClaimAsString("tid");
-            if (tenantId != null) {
-                TenantContext.setTenantId(tenantId);
-            }
+        if (tenantId == null || tenantId.isBlank()) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "Tenant identity required");
+            return false;
+        }
 
-            String userId = jwt.getClaimAsString("sub");
-            if (userId != null) {
-                TenantContext.setUserId(userId);
-            }
+        TenantContext.setTenantId(tenantId);
+
+        String userId = ((Jwt) authentication.getPrincipal()).getClaimAsString("sub");
+        if (userId != null) {
+            TenantContext.setUserId(userId);
         }
 
         return true;

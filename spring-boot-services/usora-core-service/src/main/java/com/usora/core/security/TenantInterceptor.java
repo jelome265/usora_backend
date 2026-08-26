@@ -36,20 +36,40 @@ public class TenantInterceptor implements HandlerInterceptor {
      * this is the single point where a spoofed tenant would have defeated
      * database-level row isolation too, no matter how carefully that was
      * implemented.
+     *
+     * F-002 follow-up: the JWT-only fix above closed the spoofing hole,
+     * but left a fail-open gap — a validly authenticated JWT with no
+     * (or blank) "tid" claim previously fell through with no tenant
+     * context set, and the request proceeded into tenant-scoped business
+     * logic anyway. This interceptor is only ever registered on
+     * "/api/**" (see SecurityConfig#addInterceptors), so unlike
+     * identity-service's equivalent it never sees pre-authentication
+     * endpoints like token issuance or health/actuator probes — every
+     * request reaching here is expected to be a tenant-scoped API call
+     * from an authenticated principal, so a missing tenant claim now
+     * fails closed with 403 rather than silently proceeding without
+     * tenant context.
      */
     @Override
     public boolean preHandle(@NonNull HttpServletRequest request,
                              @NonNull HttpServletResponse response,
-                             @NonNull Object handler) {
+                             @NonNull Object handler) throws java.io.IOException {
         var auth = SecurityContextHolder.getContext().getAuthentication();
+        String tenantId = null;
         if (auth != null && auth.getPrincipal() instanceof Jwt jwt) {
-            var tenantId = jwt.getClaimAsString("tid");
-            if (tenantId != null && !tenantId.isBlank()) {
-                TenantContext.setCurrentTenantId(tenantId);
-                MDC.put("tenantId", tenantId);
-                log.debug("Tenant context set from verified JWT: {}", tenantId);
-            }
+            tenantId = jwt.getClaimAsString("tid");
         }
+
+        if (tenantId == null || tenantId.isBlank()) {
+            log.warn("Rejecting request to {} {}: authenticated principal has no tenant (tid) claim",
+                    request.getMethod(), request.getRequestURI());
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "Tenant identity required");
+            return false;
+        }
+
+        TenantContext.setCurrentTenantId(tenantId);
+        MDC.put("tenantId", tenantId);
+        log.debug("Tenant context set from verified JWT: {}", tenantId);
         return true;
     }
 
