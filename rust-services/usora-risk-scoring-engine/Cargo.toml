@@ -18,13 +18,13 @@ serde_json = "1"
 base64 = "0.23"
 serde_yaml = "0.9"
 tract-onnx = "0.21"
-ndarray = "0.17"
+ndarray = "0.16"
 ndarray-stats = "0.6"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-sqlx = { version = "0.9", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }
 rdkafka = { version = "0.39", features = ["cmake-build"] }
-redis = { version = "1.6", features = ["tokio-comp", "connection-manager", "json"] }
+redis = { version = "0.25", features = ["tokio-comp", "connection-manager", "json"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 opentelemetry = "0.27"
@@ -38,8 +38,8 @@ async-trait = "0.1"
 bytes = "1"
 dashmap = "6"
 parking_lot = "0.12"
-rhai = { version = "1.19", features = ["sync"] }
-petgraph = "0.8"
+rhai = { version = "=1.18.0", features = ["sync"] }
+petgraph = "0.6"
 prost = "0.13"
 prost-types = "0.14"
 tokio-stream = "0.1"
@@ -47,13 +47,13 @@ futures = "0.3"
 lru = "0.12"
 arc-swap = "1"
 humantime-serde = "1"
-schemars = { version = "1.2", features = ["chrono", "uuid"] }
+schemars = { version = "1.2", features = ["chrono04", "uuid1"] }
 hex = "0.4"
 sha2 = "0.10"
 derivative = "2"
 
 [build-dependencies]
-tonic-build = "0.14"
+tonic-build = "0.12"
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["async_tokio"] }
