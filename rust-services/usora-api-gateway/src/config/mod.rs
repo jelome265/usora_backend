@@ -74,11 +74,29 @@ pub struct RateLimitingConfig {
     pub default_rps: u64,
     pub burst_size: u64,
     pub window_ms: u64,
+    /// F-006: when Redis is unavailable -- either never connected at
+    /// startup (AppState::new) or a command genuinely fails mid-request
+    /// -- the gateway falls back to a per-pod, in-memory rate limiter.
+    /// That limiter has no visibility into any other replica, so an
+    /// attacker who knows (or discovers) Redis is down can distribute
+    /// requests across replicas to multiply their effective budget by
+    /// roughly the replica count. This divisor scales the per-pod local
+    /// ceiling down (default_rps/burst_size divided by this value) so a
+    /// single pod's fallback quota is deliberately conservative rather
+    /// than the full intended *global* budget. Default of 3 matches this
+    /// service's Helm chart minReplicas (infrastructure/helm/usora-gateway/
+    /// values.yaml) -- i.e. the worst case (all traffic pinned to the
+    /// minimum replica count) still can't exceed the intended global rate
+    /// by more than that factor. This does not fully solve the finding
+    /// (it does not distinguish cheap vs. expensive routes, item 4 of the
+    /// remediation plan), but it closes the "full per-pod budget on every
+    /// replica" multiplication the audit specifically calls out.
+    pub local_fallback_divisor: u64,
 }
 
 impl Default for RateLimitingConfig {
     fn default() -> Self {
-        Self { default_rps: 100, burst_size: 200, window_ms: 1000 }
+        Self { default_rps: 100, burst_size: 200, window_ms: 1000, local_fallback_divisor: 3 }
     }
 }
 
@@ -267,6 +285,9 @@ impl Config {
         }
         if let Ok(v) = std::env::var("RATE_LIMIT_WINDOW_MS") {
             cfg.rate_limiting.window_ms = v.parse()?;
+        }
+        if let Ok(v) = std::env::var("RATE_LIMIT_LOCAL_FALLBACK_DIVISOR") {
+            cfg.rate_limiting.local_fallback_divisor = v.parse()?;
         }
         if let Ok(v) = std::env::var("CORS_ALLOWED_ORIGINS") {
             cfg.cors.allowed_origins = v

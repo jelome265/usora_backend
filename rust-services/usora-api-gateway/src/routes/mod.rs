@@ -36,7 +36,23 @@ pub fn create_router(state: Arc<AppState>) -> Router<()> {
         // headers. Do not reorder without re-reading this comment; the
         // original ordering (RateLimit first) was finding C6 in
         // docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md.
-        .route_layer(RateLimitLayer::new(rate_cfg.default_rps, rate_cfg.burst_size, rate_cfg.window_ms))
+        .route_layer({
+            let layer = RateLimitLayer::new(
+                rate_cfg.default_rps,
+                rate_cfg.burst_size,
+                rate_cfg.window_ms,
+                rate_cfg.local_fallback_divisor,
+            );
+            // F-006: actually wire in the shared Redis connection so rate
+            // limiting is coordinated across replicas -- previously this
+            // was never done anywhere, so the layer silently ran fully
+            // local (per-pod) rate limiting at all times, not just when
+            // Redis was genuinely unavailable.
+            match &state.redis {
+                Some(redis) => layer.with_redis(redis.clone()),
+                None => layer,
+            }
+        })
         .route_layer(TenantLayer::new())
         .route_layer(AuthLayer::new(state.jwt_validator.clone()))
         .layer(TraceLayer::new_for_http())

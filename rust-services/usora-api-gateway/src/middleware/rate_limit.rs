@@ -20,11 +20,38 @@ pub struct RateLimitLayer {
     default_rps: u64,
     burst_size: u64,
     window_ms: u64,
+    local_fallback_divisor: u64,
+    // SECURITY/AVAILABILITY (F-006): previously `layer()` below always
+    // hardcoded `redis: None` on the constructed middleware, and nothing
+    // in this codebase ever called `RateLimitMiddleware::with_redis` --
+    // meaning the Redis-backed, cross-replica rate limiter was complete
+    // dead code. Every gateway pod, at all times (not just during a
+    // Redis outage), was enforcing rate limits purely locally, so the
+    // "N replicas => up to Nx the intended budget" multiplication the
+    // audit describes as a *degraded-mode* risk was actually true all the
+    // time. This field is populated from AppState::new's `redis` and
+    // threaded through so `layer()` can actually wire it up.
+    redis: Option<redis::aio::ConnectionManager>,
 }
 
 impl RateLimitLayer {
-    pub fn new(default_rps: u64, burst_size: u64, window_ms: u64) -> Self {
-        Self { default_rps, burst_size, window_ms }
+    pub fn new(default_rps: u64, burst_size: u64, window_ms: u64, local_fallback_divisor: u64) -> Self {
+        Self {
+            default_rps,
+            burst_size,
+            window_ms,
+            local_fallback_divisor: local_fallback_divisor.max(1),
+            redis: None,
+        }
+    }
+
+    /// Wire in the shared Redis connection so rate limiting is actually
+    /// coordinated across replicas instead of silently falling back to
+    /// the per-pod local limiter on every single request. See the `redis`
+    /// field docs above for why this matters.
+    pub fn with_redis(mut self, redis: redis::aio::ConnectionManager) -> Self {
+        self.redis = Some(redis);
+        self
     }
 }
 
@@ -35,10 +62,11 @@ impl<S> Layer<S> for RateLimitLayer {
         RateLimitMiddleware {
             inner,
             buckets: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(10000).unwrap()))),
-            redis: None,
+            redis: self.redis.clone(),
             default_rps: self.default_rps,
             burst_size: self.burst_size,
             window_ms: self.window_ms,
+            local_fallback_divisor: self.local_fallback_divisor,
         }
     }
 }
@@ -51,6 +79,7 @@ pub struct RateLimitMiddleware<S> {
     default_rps: u64,
     burst_size: u64,
     window_ms: u64,
+    local_fallback_divisor: u64,
 }
 
 impl<S> RateLimitMiddleware<S> {
@@ -112,19 +141,40 @@ where
         let default_rps = self.default_rps;
         let burst_size = self.burst_size;
         let window_ms = self.window_ms;
+        let local_fallback_divisor = self.local_fallback_divisor;
 
         let inner = self.inner.call(req);
 
         Box::pin(async move {
             let allowed = if let Some(ref redis_conn) = redis {
                 let key = format!("rl:{bucket_key}");
-                redis_rate_limit_check(redis_conn, &key, default_rps, burst_size).await
+                match redis_rate_limit_check(redis_conn, &key, default_rps, burst_size).await {
+                    RedisRateLimitOutcome::Decided(allowed) => allowed,
+                    RedisRateLimitOutcome::Unavailable => {
+                        // SECURITY (F-006): previously a Redis command error
+                        // here (as opposed to Redis simply not being
+                        // configured) was swallowed via `.unwrap_or(0)` and
+                        // treated as "count is zero", which unconditionally
+                        // ALLOWED the request -- worse than the documented
+                        // finding, since it wasn't even a per-pod local
+                        // fallback, it was no rate limiting at all for as
+                        // long as the Redis error persisted. A genuine
+                        // Redis failure now falls back to the same
+                        // conservative, deliberately-scaled-down per-pod
+                        // local bucket used when Redis was never configured
+                        // in the first place (see local_fallback_divisor).
+                        rate_limit_degraded_total().inc();
+                        local_fallback_check(
+                            &buckets, &bucket_key, default_rps, burst_size, window_ms,
+                            local_fallback_divisor,
+                        ).await
+                    }
+                }
             } else {
-                let mut buckets = buckets.lock().await;
-                let bucket = buckets.get_or_insert_mut(bucket_key.clone(), || {
-                    TokenBucket::new(default_rps, burst_size, window_ms)
-                });
-                bucket.consume_async(1).await
+                local_fallback_check(
+                    &buckets, &bucket_key, default_rps, burst_size, window_ms,
+                    local_fallback_divisor,
+                ).await
             };
 
             if !allowed {
@@ -140,12 +190,56 @@ where
     }
 }
 
+/// Per-pod, in-memory fallback used both when Redis was never configured
+/// and when a configured Redis becomes unavailable mid-request. Always
+/// scaled down by `local_fallback_divisor` (see RateLimitingConfig) since
+/// this bucket has no visibility into any other replica's traffic --
+/// using the full global ceiling per pod would let an attacker multiply
+/// their effective budget by roughly the replica count during exactly the
+/// kind of dependency degradation the finding describes.
+async fn local_fallback_check(
+    buckets: &Arc<Mutex<LruCache<String, TokenBucket>>>,
+    bucket_key: &str,
+    default_rps: u64,
+    burst_size: u64,
+    window_ms: u64,
+    divisor: u64,
+) -> bool {
+    let scaled_rps = (default_rps / divisor).max(1);
+    let scaled_burst = (burst_size / divisor).max(1);
+    let mut buckets = buckets.lock().await;
+    let bucket = buckets.get_or_insert_mut(bucket_key.to_string(), || {
+        TokenBucket::new(scaled_rps, scaled_burst, window_ms)
+    });
+    bucket.consume_async(1).await
+}
+
+fn rate_limit_degraded_total() -> &'static prometheus::Counter {
+    static COUNTER: std::sync::OnceLock<prometheus::Counter> = std::sync::OnceLock::new();
+    COUNTER.get_or_init(|| {
+        prometheus::register_counter!(
+            "gateway_rate_limit_redis_degraded_total",
+            "Requests where a configured Redis rate limiter failed and the gateway fell back to the local, per-pod limiter"
+        ).expect("failed to register rate limit degradation counter")
+    })
+}
+
+/// Outcome of a Redis-backed rate-limit check: either Redis was reachable
+/// and gave a real answer (allowed or denied), or Redis itself is
+/// unavailable and the caller must decide what to do (see
+/// `local_fallback_check`) rather than this function silently picking a
+/// default.
+enum RedisRateLimitOutcome {
+    Decided(bool),
+    Unavailable,
+}
+
 async fn redis_rate_limit_check(
     conn: &redis::aio::ConnectionManager,
     key: &str,
     max_rps: u64,
     burst: u64,
-) -> bool {
+) -> RedisRateLimitOutcome {
     let mut conn = conn.clone();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -171,22 +265,43 @@ async fn redis_rate_limit_check(
     let sustained_window_key = format!("{key}:s:{}", now / sustained_window_ms);
     let sustained_cap = max_rps.saturating_mul(60).max(1);
 
-    let burst_count: u64 = redis::cmd("GET")
+    // SECURITY (F-006): GET on a key that legitimately doesn't exist yet
+    // (the first request in a new window) is expected and must read as
+    // zero. A genuine connection/command failure must NOT be collapsed
+    // into that same zero -- doing so (the previous `.unwrap_or(0)`)
+    // meant a Redis outage silently disabled rate limiting entirely
+    // rather than falling back to anything at all. Querying as
+    // `Option<u64>` lets redis-rs's Nil-reply handling distinguish "key
+    // absent" (`Ok(None)`, expected, treated as 0) from "command actually
+    // failed" (`Err`, reported to the caller as Unavailable).
+    let burst_count: Result<Option<u64>, _> = redis::cmd("GET")
         .arg(&burst_window_key)
         .query_async(&mut conn)
-        .await
-        .unwrap_or(0);
+        .await;
+    let burst_count = match burst_count {
+        Ok(count) => count.unwrap_or(0),
+        Err(e) => {
+            tracing::warn!(error = %e, "Redis rate-limit GET failed -- falling back to local rate limiting");
+            return RedisRateLimitOutcome::Unavailable;
+        }
+    };
     if burst_count >= burst {
-        return false;
+        return RedisRateLimitOutcome::Decided(false);
     }
 
-    let sustained_count: u64 = redis::cmd("GET")
+    let sustained_count: Result<Option<u64>, _> = redis::cmd("GET")
         .arg(&sustained_window_key)
         .query_async(&mut conn)
-        .await
-        .unwrap_or(0);
+        .await;
+    let sustained_count = match sustained_count {
+        Ok(count) => count.unwrap_or(0),
+        Err(e) => {
+            tracing::warn!(error = %e, "Redis rate-limit GET failed -- falling back to local rate limiting");
+            return RedisRateLimitOutcome::Unavailable;
+        }
+    };
     if sustained_count >= sustained_cap {
-        return false;
+        return RedisRateLimitOutcome::Decided(false);
     }
 
     let _: Result<(), _> = redis::cmd("INCR")
@@ -209,5 +324,5 @@ async fn redis_rate_limit_check(
         .query_async(&mut conn)
         .await;
 
-    true
+    RedisRateLimitOutcome::Decided(true)
 }
