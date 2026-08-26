@@ -24,11 +24,7 @@ pub struct RateLimitLayer {
 
 impl RateLimitLayer {
     pub fn new(default_rps: u64, burst_size: u64, window_ms: u64) -> Self {
-        Self {
-            default_rps,
-            burst_size,
-            window_ms,
-        }
+        Self { default_rps, burst_size, window_ms }
     }
 }
 
@@ -135,8 +131,7 @@ where
                 let resp = (
                     axum::http::StatusCode::TOO_MANY_REQUESTS,
                     [("Retry-After", "1")],
-                )
-                    .into_response();
+                ).into_response();
                 return Ok(resp);
             }
 

@@ -1,15 +1,15 @@
+use std::sync::OnceLock;
+use std::time::Instant;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
-use prometheus::{register_counter, register_histogram, Counter, Encoder, Histogram, TextEncoder};
+use prometheus::{Counter, Encoder, Histogram, TextEncoder, register_counter, register_histogram};
 use serde_json::json;
 use std::sync::Arc;
-use std::sync::OnceLock;
-use std::time::Instant;
 
-use crate::utils;
 use crate::AppState;
+use crate::utils;
 
 fn start_time() -> &'static Instant {
     static START: OnceLock<Instant> = OnceLock::new();
@@ -32,7 +32,9 @@ fn health_latency() -> &'static Histogram {
     })
 }
 
-pub async fn health_check(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+pub async fn health_check(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
     let start = Instant::now();
     health_counter().inc();
 
@@ -58,11 +60,7 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> impl IntoRespon
         },
     );
 
-    let overall = if upstream_healthy {
-        "healthy"
-    } else {
-        "degraded"
-    };
+    let overall = if upstream_healthy { "healthy" } else { "degraded" };
 
     health_latency().observe(start.elapsed().as_secs_f64());
 
@@ -94,5 +92,8 @@ pub async fn metrics_handler() -> impl IntoResponse {
             format!("failed to encode metrics: {e}"),
         );
     }
-    (StatusCode::OK, String::from_utf8_lossy(&buffer).to_string())
+    (
+        StatusCode::OK,
+        String::from_utf8_lossy(&buffer).to_string(),
+    )
 }

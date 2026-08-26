@@ -78,11 +78,7 @@ pub struct RateLimitingConfig {
 
 impl Default for RateLimitingConfig {
     fn default() -> Self {
-        Self {
-            default_rps: 100,
-            burst_size: 200,
-            window_ms: 1000,
-        }
+        Self { default_rps: 100, burst_size: 200, window_ms: 1000 }
     }
 }
 
@@ -101,9 +97,7 @@ impl Default for CorsConfig {
         // Intentionally empty by default: a fresh/misconfigured environment
         // must fail closed (no cross-origin access) rather than fail open
         // (any origin). Set CORS_ALLOWED_ORIGINS explicitly per environment.
-        Self {
-            allowed_origins: Vec::new(),
-        }
+        Self { allowed_origins: Vec::new() }
     }
 }
 
@@ -299,13 +293,13 @@ impl Config {
 
     pub fn load_tls_config(&self) -> anyhow::Result<rustls::ServerConfig> {
         let mut cert_reader = std::io::BufReader::new(std::fs::File::open(&self.tls.cert_path)?);
-        let certs = rustls_pemfile::certs(&mut cert_reader).collect::<Result<Vec<_>, _>>()?;
+        let certs = rustls_pemfile::certs(&mut cert_reader)
+            .collect::<Result<Vec<_>, _>>()?;
         let mut key_reader = std::io::BufReader::new(std::fs::File::open(&self.tls.key_path)?);
         let key = rustls_pemfile::private_key(&mut key_reader)?
             .ok_or_else(|| anyhow::anyhow!("no private key found"))?;
 
-        let builder =
-            rustls::ServerConfig::builder_with_protocol_versions(&[self.tls_min_version()]);
+        let builder = rustls::ServerConfig::builder_with_protocol_versions(&[self.tls_min_version()]);
 
         // SECURITY: this used to be with_no_client_auth() unconditionally --
         // crate::auth::mtls::MtlsValidator implemented a working client
