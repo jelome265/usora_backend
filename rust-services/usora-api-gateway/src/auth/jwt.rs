@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 use arc_swap::ArcSwap;
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm};
+use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use lru::LruCache;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::AuthenticatedUser;
@@ -104,7 +104,9 @@ impl JwtValidator {
     }
 
     pub fn check_permissions(claims: &JwtClaims, required: &[&str]) -> bool {
-        required.iter().all(|r| claims.permissions.iter().any(|p| p == r) || claims.roles.iter().any(|p| p == r))
+        required.iter().all(|r| {
+            claims.permissions.iter().any(|p| p == r) || claims.roles.iter().any(|p| p == r)
+        })
     }
 
     pub async fn update_jwks(&self, jwks_map: HashMap<String, DecodingKey>) {
@@ -171,7 +173,10 @@ mod tests {
         }
 
         let result = validator.validate_token(token).await;
-        assert!(result.is_ok(), "expected a cache hit for a non-expired entry");
+        assert!(
+            result.is_ok(),
+            "expected a cache hit for a non-expired entry"
+        );
         assert_eq!(result.unwrap().sub, "user-1");
     }
 

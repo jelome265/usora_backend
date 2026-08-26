@@ -1,20 +1,20 @@
 pub mod api_v1;
 pub mod health;
 
-use std::sync::Arc;
-use axum::Router;
+use axum::http::{header, HeaderValue, Method};
 use axum::routing::get;
+use axum::Router;
+use std::sync::Arc;
 use tower_http::cors::{AllowOrigin, CorsLayer};
-use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::limit::RequestBodyLimitLayer;
-use tower_http::trace::TraceLayer;
+use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
-use axum::http::{HeaderValue, Method, header};
+use tower_http::trace::TraceLayer;
 
-use crate::AppState;
 use crate::middleware::auth::AuthLayer;
 use crate::middleware::rate_limit::RateLimitLayer;
 use crate::middleware::tenant::TenantLayer;
+use crate::AppState;
 
 pub fn create_router(state: Arc<AppState>) -> Router<()> {
     let api_routes = api_v1::routes();
@@ -36,18 +36,20 @@ pub fn create_router(state: Arc<AppState>) -> Router<()> {
         // headers. Do not reorder without re-reading this comment; the
         // original ordering (RateLimit first) was finding C6 in
         // docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md.
-        .route_layer(RateLimitLayer::new(rate_cfg.default_rps, rate_cfg.burst_size, rate_cfg.window_ms))
+        .route_layer(RateLimitLayer::new(
+            rate_cfg.default_rps,
+            rate_cfg.burst_size,
+            rate_cfg.window_ms,
+        ))
         .route_layer(TenantLayer::new())
         .route_layer(AuthLayer::new(state.jwt_validator.clone()))
         .layer(TraceLayer::new_for_http())
         .layer(NormalizePathLayer::trim_trailing_slash())
         .layer(RequestBodyLimitLayer::new(50 * 1024 * 1024))
-        .layer(
-            SetResponseHeaderLayer::overriding(
-                axum::http::header::SERVER,
-                HeaderValue::from_static("usora-api-gateway"),
-            ),
-        )
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::SERVER,
+            HeaderValue::from_static("usora-api-gateway"),
+        ))
         .layer(cors_layer)
         .with_state(state);
 
@@ -79,7 +81,13 @@ fn build_cors_layer(allowed_origins: &[String]) -> CorsLayer {
 
     CorsLayer::new()
         .allow_origin(AllowOrigin::list(origins))
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
         .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT])
         .max_age(std::time::Duration::from_secs(600))
 }

@@ -5,32 +5,46 @@ use tonic::transport::Channel;
 #[derive(Clone)]
 pub struct GrpcClients {
     pub identity: proto::identity::identity_service_client::IdentityServiceClient<Channel>,
-    pub document: proto::document::document_analysis_service_client::DocumentAnalysisServiceClient<Channel>,
+    pub document:
+        proto::document::document_analysis_service_client::DocumentAnalysisServiceClient<Channel>,
     pub tenant: proto::tenant::tenant_service_client::TenantServiceClient<Channel>,
     pub audit: proto::audit::audit_service_client::AuditServiceClient<Channel>,
     pub compliance: proto::compliance::compliance_service_client::ComplianceServiceClient<Channel>,
-    pub notification: proto::notification::notification_service_client::NotificationServiceClient<Channel>,
+    pub notification:
+        proto::notification::notification_service_client::NotificationServiceClient<Channel>,
     orchestrator_authority: String,
     compute_authority: String,
 }
 
 impl GrpcClients {
     pub async fn connect(config: &Config) -> anyhow::Result<Self> {
-        let orch_channel = Channel::from_shared(config.upstream.orchestrator_url.clone())?
-            .connect_lazy();
+        let orch_channel =
+            Channel::from_shared(config.upstream.orchestrator_url.clone())?.connect_lazy();
 
-        let comp_channel = Channel::from_shared(config.upstream.compute_url.clone())?
-            .connect_lazy();
+        let comp_channel =
+            Channel::from_shared(config.upstream.compute_url.clone())?.connect_lazy();
 
         let orchestrator_authority = Self::authority_of(&config.upstream.orchestrator_url)?;
         let compute_authority = Self::authority_of(&config.upstream.compute_url)?;
 
-        let identity = proto::identity::identity_service_client::IdentityServiceClient::new(orch_channel.clone());
-        let document = proto::document::document_analysis_service_client::DocumentAnalysisServiceClient::new(comp_channel.clone());
-        let tenant = proto::tenant::tenant_service_client::TenantServiceClient::new(orch_channel.clone());
-        let audit = proto::audit::audit_service_client::AuditServiceClient::new(orch_channel.clone());
-        let compliance = proto::compliance::compliance_service_client::ComplianceServiceClient::new(comp_channel.clone());
-        let notification = proto::notification::notification_service_client::NotificationServiceClient::new(comp_channel.clone());
+        let identity = proto::identity::identity_service_client::IdentityServiceClient::new(
+            orch_channel.clone(),
+        );
+        let document =
+            proto::document::document_analysis_service_client::DocumentAnalysisServiceClient::new(
+                comp_channel.clone(),
+            );
+        let tenant =
+            proto::tenant::tenant_service_client::TenantServiceClient::new(orch_channel.clone());
+        let audit =
+            proto::audit::audit_service_client::AuditServiceClient::new(orch_channel.clone());
+        let compliance = proto::compliance::compliance_service_client::ComplianceServiceClient::new(
+            comp_channel.clone(),
+        );
+        let notification =
+            proto::notification::notification_service_client::NotificationServiceClient::new(
+                comp_channel.clone(),
+            );
 
         Ok(Self {
             identity,
@@ -53,7 +67,11 @@ impl GrpcClients {
             .ok_or_else(|| anyhow::anyhow!("URL has no host: {url}"))?;
         let port = uri
             .port_u16()
-            .unwrap_or(if uri.scheme_str() == Some("https") { 443 } else { 80 });
+            .unwrap_or(if uri.scheme_str() == Some("https") {
+                443
+            } else {
+                80
+            });
         Ok(format!("{host}:{port}"))
     }
 
