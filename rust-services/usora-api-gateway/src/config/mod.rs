@@ -106,6 +106,22 @@ impl Default for CorsConfig {
 pub struct UpstreamConfig {
     pub orchestrator_url: String,
     pub compute_url: String,
+    /// CA bundle used to verify the orchestrator/compute upstreams' server
+    /// certificates. Without this, these URLs default to "https://" but
+    /// GrpcClients::connect never actually configured any TLS transport for
+    /// them (tonic's default Channel has no TLS backend enabled unless you
+    /// call .tls_config() -- the https:// scheme alone does nothing), so
+    /// the channel was, despite its URL, unauthenticated and either
+    /// plaintext or simply broken depending on what was actually listening
+    /// on the other end. See GrpcClients::connect for how this is used.
+    pub tls_ca_path: Option<String>,
+    /// Shared bearer token attached as `authorization: Bearer <token>` on
+    /// every outbound call to the orchestrator/compute upstreams, so those
+    /// services can at least authenticate that a call came from this
+    /// gateway (rather than any host that can reach their gRPC port) until
+    /// per-service mTLS client identities are set up. Optional: if unset,
+    /// no interceptor is attached and calls go out exactly as before.
+    pub internal_service_token: Option<String>,
 }
 
 impl Default for UpstreamConfig {
@@ -113,6 +129,8 @@ impl Default for UpstreamConfig {
         Self {
             orchestrator_url: "https://orchestrator:9090".into(),
             compute_url: "https://compute:9090".into(),
+            tls_ca_path: None,
+            internal_service_token: None,
         }
     }
 }
@@ -260,6 +278,12 @@ impl Config {
         }
         if let Ok(v) = std::env::var("UPSTREAM_COMPUTE_URL") {
             cfg.upstream.compute_url = v;
+        }
+        if let Ok(v) = std::env::var("UPSTREAM_TLS_CA_PATH") {
+            cfg.upstream.tls_ca_path = Some(v);
+        }
+        if let Ok(v) = std::env::var("INTERNAL_SERVICE_TOKEN") {
+            cfg.upstream.internal_service_token = Some(v);
         }
         if let Ok(v) = std::env::var("OTLP_ENDPOINT") {
             cfg.observability.otlp_endpoint = v;
