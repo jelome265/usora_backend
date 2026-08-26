@@ -38,6 +38,12 @@ data:
   CORS_ALLOWED_ORIGINS: {{ join "," .Values.corsAllowedOrigins | quote }}
   UPSTREAM_ORCHESTRATOR_URL: {{ printf "https://%s:%d" .Values.upstream.orchestrator.host (int .Values.upstream.orchestrator.grpcPort) | quote }}
   UPSTREAM_COMPUTE_URL: {{ printf "https://%s:%d" .Values.upstream.compute.host (int .Values.upstream.compute.grpcPort) | quote }}
+  # SECURITY: closes the gap where these URLs said "https://" but
+  # GrpcClients::connect never configured any TLS transport for them at
+  # all (see grpc/mod.rs). Same CA this pod already mounts for its own
+  # inbound TLS (see the tls-certs volume below) -- the orchestrator and
+  # compute upstreams are provisioned from the same cert-manager issuer.
+  UPSTREAM_TLS_CA_PATH: "/etc/tls/ca.crt"
   OTLP_ENDPOINT: {{ .Values.observability.otlpEndpoint | quote }}
   SERVICE_NAME: "usora-api-gateway"
   IDENTITY_JWKS_URL: {{ printf "http://%s:%d/oauth2/jwks" .Values.identity.host (int .Values.identity.port) | quote }}
