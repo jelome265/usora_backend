@@ -28,8 +28,8 @@ rdkafka = { version = "0.36", features = ["cmake-build"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
 uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-opentelemetry = { version = "0.25", features = ["trace", "metrics"] }
-opentelemetry-otlp = { version = "0.25", features = ["trace", "metrics", "grpc-tonic"] }
+opentelemetry = { version = "0.27", features = ["trace", "metrics"] }
+opentelemetry-otlp = { version = "0.27", features = ["trace", "metrics", "grpc-tonic"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.27"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
@@ -48,7 +48,7 @@ hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
 tonic-health = "0.12"
 base64 = "0.22"
-rand = "0.10"
+rand = "0.8"
 sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
