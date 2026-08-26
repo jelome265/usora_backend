@@ -169,7 +169,11 @@ jobs:
                 --namespace usora \
                 --set redis.existingSecret=placeholder \
                 --set postgresql.existingSecret=placeholder \
+                --set postgresql.runtimeRole.existingSecret=placeholder \
+                --set postgresql.migrationRole.existingSecret=placeholder \
                 --set security.existingSecret=placeholder \
+                --set secrets.existingSecret=placeholder \
+                --set smtp.existingSecret=placeholder \
                 > "$rendered"; then
               echo "::error::helm template failed for $chart_name"
               status=1

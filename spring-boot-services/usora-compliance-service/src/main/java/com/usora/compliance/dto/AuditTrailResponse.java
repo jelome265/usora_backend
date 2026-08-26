@@ -2,6 +2,7 @@ package com.usora.compliance.dto;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 public record AuditTrailResponse(
         String caseId,
@@ -23,6 +24,5 @@ public record AuditTrailResponse(
             String currentHash,
             Instant timestamp
     ) {
-        public record Map<K, V> {}
     }
 }
