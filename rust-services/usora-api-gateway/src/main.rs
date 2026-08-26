@@ -86,9 +86,52 @@ async fn serve_grpc(state: Arc<AppState>, address: &str) -> anyhow::Result<()> {
     let addr: SocketAddr = address.parse()?;
 
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
+
+    // AVAILABILITY (F-005): previously this unconditionally called
+    // set_serving() here regardless of whether the gateway had ever
+    // successfully loaded a JWKS key set -- meaning a pod that came up
+    // with zero verification keys (e.g. identity-service unreachable at
+    // startup) still reported itself SERVING to Kubernetes' readiness
+    // probe (see infrastructure/helm/usora-gateway/values.yaml, which
+    // points both readiness and liveness at this same gRPC health
+    // service). Kubernetes would then keep routing real traffic to a
+    // replica that rejects every single authenticated request --
+    // "healthy but useless" is worse than "not ready yet", since the
+    // latter at least gives Kubernetes a reason to stop sending traffic
+    // and, during a rolling restart, to hold the previous good replica in
+    // service instead.
+    //
+    // Report NOT_SERVING until jwt_validator confirms at least one JWKS
+    // load has actually succeeded (AppState::new attempts this
+    // synchronously before we ever get here, but a slow/unreachable
+    // identity-service at startup means that fetch can still be
+    // in-flight or have already failed by the time this task runs).
+    // Once ready, this never reports NOT_SERVING again for JWKS
+    // staleness alone -- a transient refresh failure correctly keeps
+    // using the last-known-good key set (see jwks_client.rs) rather than
+    // being treated as an outage; flapping readiness for that would be
+    // wrong, not more correct.
     health_reporter
-        .set_serving::<usora_api_gateway::proto::gateway::gateway_service_server::GatewayServiceServer<usora_api_gateway::gateway_service::GatewayServiceImpl>>()
+        .set_not_serving::<usora_api_gateway::proto::gateway::gateway_service_server::GatewayServiceServer<usora_api_gateway::gateway_service::GatewayServiceImpl>>()
         .await;
+
+    let ready_validator = state.jwt_validator.clone();
+    let mut ready_reporter = health_reporter.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
+        loop {
+            interval.tick().await;
+            if ready_validator.is_ready() {
+                ready_reporter
+                    .set_serving::<usora_api_gateway::proto::gateway::gateway_service_server::GatewayServiceServer<usora_api_gateway::gateway_service::GatewayServiceImpl>>()
+                    .await;
+                tracing::info!(
+                    "JWKS loaded -- reporting SERVING on the gRPC health service (readiness/liveness probes)"
+                );
+                break;
+            }
+        }
+    });
 
     let gateway_service = usora_api_gateway::proto::gateway::gateway_service_server::GatewayServiceServer::new(
         usora_api_gateway::gateway_service::GatewayServiceImpl::new(state),

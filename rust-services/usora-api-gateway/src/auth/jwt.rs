@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use arc_swap::ArcSwap;
 use dashmap::DashSet;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm};
@@ -62,6 +62,23 @@ pub struct JwtValidator {
     // here, but this at least gives the gateway a real enforcement point
     // to wire that into.
     revoked_jtis: Arc<DashSet<String>>,
+    // SECURITY/AVAILABILITY (F-005): true once at least one JWKS fetch has
+    // ever succeeded. A gateway that has never loaded a valid key set
+    // rejects every token (correctly, fail-closed) but was previously
+    // reported healthy/serving regardless -- letting Kubernetes route
+    // real traffic to a replica that could not authenticate anyone. This
+    // flag is the source of truth main.rs's gRPC health reporter uses to
+    // decide when to start reporting SERVING. It only ever goes false ->
+    // true: once a key set has loaded, later refresh failures correctly
+    // keep the last-known-good keys in place (see spawn_refresh_task) and
+    // must not flip readiness back off for what is normal, recoverable
+    // JWKS staleness.
+    ready: Arc<AtomicBool>,
+    // AVAILABILITY (F-005): wall-clock time of the last successful JWKS
+    // load, so an operator/alert can detect a key set that is technically
+    // present but has gone stale for far longer than jwks_refresh_secs
+    // would ever explain (remediation item 5: alarm on key-set staleness).
+    last_jwks_success: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
 }
 
 fn fingerprint(token: &str) -> [u8; 32] {
@@ -88,6 +105,8 @@ impl JwtValidator {
             cache: Arc::new(Mutex::new(LruCache::new(1000.try_into().unwrap()))),
             jwks_epoch: Arc::new(AtomicU64::new(0)),
             revoked_jtis: Arc::new(DashSet::new()),
+            ready: Arc::new(AtomicBool::new(false)),
+            last_jwks_success: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -183,6 +202,30 @@ impl JwtValidator {
         // trying to diff old/new key sets, since a missed diff would
         // silently reintroduce the trust gap this exists to close.
         self.jwks_epoch.fetch_add(1, Ordering::AcqRel);
+
+        // AVAILABILITY (F-005): every call here represents a successful
+        // fetch (fetch_jwks errors out on an empty/unparseable document
+        // rather than ever calling this with nothing usable -- see
+        // jwks_client.rs), so this is always safe to treat as "ready" and
+        // "just refreshed", never a reason to go back to not-ready.
+        self.ready.store(true, Ordering::Release);
+        if let Ok(mut last) = self.last_jwks_success.lock() {
+            *last = Some(std::time::Instant::now());
+        }
+    }
+
+    /// True once at least one JWKS fetch has ever succeeded. See the
+    /// `ready` field docs -- this is what main.rs's gRPC health reporter
+    /// gates SERVING on.
+    pub fn is_ready(&self) -> bool {
+        self.ready.load(Ordering::Acquire)
+    }
+
+    /// How long it's been since the last successful JWKS load, if there
+    /// has ever been one. `None` means no successful load has happened
+    /// yet (equivalent to `is_ready() == false`).
+    pub fn jwks_age(&self) -> Option<std::time::Duration> {
+        self.last_jwks_success.lock().ok()?.map(|t| t.elapsed())
     }
 
     pub fn validation(&self) -> &Validation {
