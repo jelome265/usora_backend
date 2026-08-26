@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use arc_swap::ArcSwap;
+use dashmap::DashSet;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm};
 use lru::LruCache;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 
 use super::AuthenticatedUser;
@@ -21,11 +24,50 @@ pub struct JwtClaims {
     pub aud: Option<Vec<String>>,
 }
 
+/// A cache entry pairs the validated claims with the JWKS epoch that was
+/// current when validation happened (see `jwks_epoch` on `JwtValidator`).
+/// A hit is only trustworthy if the epoch still matches -- otherwise the
+/// key set has rotated since this token was verified and the entry must
+/// be treated as a miss, forcing full re-validation against the current
+/// keys.
+#[derive(Debug, Clone)]
+struct CachedValidation {
+    claims: JwtClaims,
+    jwks_epoch: u64,
+}
+
 #[derive(Clone)]
 pub struct JwtValidator {
     validation: Validation,
     jwks: Arc<ArcSwap<HashMap<String, DecodingKey>>>,
-    cache: Arc<Mutex<LruCache<String, JwtClaims>>>,
+    // SECURITY (F-003): previously keyed by the raw bearer token, which
+    // meant every cache entry -- and any heap/core dump of this process --
+    // held live, still-valid bearer tokens in the clear. Keyed instead by
+    // a SHA-256 fingerprint of the token, which is sufficient to recognize
+    // a repeat request without retaining a credential that can be replayed
+    // if disclosed.
+    cache: Arc<Mutex<LruCache<[u8; 32], CachedValidation>>>,
+    // SECURITY (F-003): incremented on every JWKS rotation (see
+    // `update_jwks`) so cached validations are automatically invalidated
+    // the moment the key set changes, rather than staying trusted until
+    // `exp` or LRU eviction regardless of key state.
+    jwks_epoch: Arc<AtomicU64>,
+    // SECURITY (F-003): explicit revocation list for `jti`s that must stop
+    // being accepted before their natural expiry (compromised token,
+    // emergency session/user revocation, credential rotation). This is an
+    // in-memory, single-instance set -- it does NOT survive a restart and
+    // does NOT propagate across gateway replicas. A production-ready
+    // implementation needs a shared store (e.g. Redis) so revocation is
+    // effective cluster-wide; tracked as an explicit follow-up, not solved
+    // here, but this at least gives the gateway a real enforcement point
+    // to wire that into.
+    revoked_jtis: Arc<DashSet<String>>,
+}
+
+fn fingerprint(token: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    hasher.finalize().into()
 }
 
 impl JwtValidator {
@@ -44,35 +86,50 @@ impl JwtValidator {
             validation,
             jwks: Arc::new(ArcSwap::new(Arc::new(HashMap::new()))),
             cache: Arc::new(Mutex::new(LruCache::new(1000.try_into().unwrap()))),
+            jwks_epoch: Arc::new(AtomicU64::new(0)),
+            revoked_jtis: Arc::new(DashSet::new()),
         }
     }
 
+    /// Revoke a `jti` immediately, regardless of remaining `exp`. Intended
+    /// for emergency session/user revocation and compromised-credential
+    /// response. See the `revoked_jtis` field docs for the current
+    /// single-instance limitation.
+    pub fn revoke_jti(&self, jti: &str) {
+        self.revoked_jtis.insert(jti.to_string());
+    }
+
     pub async fn validate_token(&self, token: &str) -> Result<JwtClaims, jwt::Error> {
+        let key = fingerprint(token);
+        let current_epoch = self.jwks_epoch.load(Ordering::Acquire);
+
         {
             let mut cache = self.cache.lock().await;
-            // Clone out of the cache immediately (rather than holding a
-            // borrow across the possible `pop` below) to keep the
-            // lock-scoped borrow checking simple and unambiguous.
-            let cached_claims = cache.get(token).cloned();
+            let cached = cache.get(&key).cloned();
 
-            if let Some(claims) = cached_claims {
-                // SECURITY: the LRU cache has no time-based eviction, only a
-                // capacity limit — so a cache hit alone does not mean the
-                // token is still valid. Re-check `exp` against wall-clock
-                // time on every hit; otherwise an expired token can keep
-                // validating successfully until it happens to be evicted.
+            if let Some(entry) = cached {
+                // SECURITY (F-003): a cache hit is trustworthy only if
+                // none of exp, JWKS epoch, or revocation state have moved
+                // since this token was last verified. Any one of these
+                // failing means we fall through to full re-validation
+                // rather than returning previously-trusted claims.
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs() as usize)
                     .unwrap_or(usize::MAX);
 
-                if claims.exp > now {
-                    return Ok(claims);
+                let still_current_key_set = entry.jwks_epoch == current_epoch;
+                let not_expired = entry.claims.exp > now;
+                let not_revoked = entry.claims.jti.as_deref()
+                    .map(|jti| !self.revoked_jtis.contains(jti))
+                    .unwrap_or(true);
+
+                if still_current_key_set && not_expired && not_revoked {
+                    return Ok(entry.claims);
                 }
 
-                // Expired: drop the stale entry so it doesn't keep getting
-                // hit (and treated as a cache "hit") on every subsequent call.
-                cache.pop(token);
+                // Stale on any axis: drop it so it isn't hit again.
+                cache.pop(&key);
             }
         }
 
@@ -80,14 +137,23 @@ impl JwtValidator {
 
         let kid = header.kid.clone().unwrap_or_default();
         let jwks = self.jwks.load();
-        let key = jwks.get(&kid).ok_or(jwt::Error::MissingKey)?;
+        let signing_key = jwks.get(&kid).ok_or(jwt::Error::MissingKey)?;
 
-        let token_data = decode::<JwtClaims>(token, key, &self.validation)?;
+        let token_data = decode::<JwtClaims>(token, signing_key, &self.validation)?;
         let claims = token_data.claims;
+
+        if let Some(jti) = claims.jti.as_deref() {
+            if self.revoked_jtis.contains(jti) {
+                return Err(jwt::Error::Revoked);
+            }
+        }
 
         {
             let mut cache = self.cache.lock().await;
-            cache.put(token.to_string(), claims.clone());
+            cache.put(key, CachedValidation {
+                claims: claims.clone(),
+                jwks_epoch: current_epoch,
+            });
         }
 
         Ok(claims)
@@ -109,6 +175,14 @@ impl JwtValidator {
 
     pub async fn update_jwks(&self, jwks_map: HashMap<String, DecodingKey>) {
         self.jwks.store(Arc::new(jwks_map));
+        // SECURITY (F-003): bump the epoch on every rotation so every
+        // cached validation -- even ones for keys that are still
+        // present in the new map -- is forced to re-validate at least
+        // once against the current key set. This is deliberately
+        // coarse (rotate-anything invalidates everything) rather than
+        // trying to diff old/new key sets, since a missed diff would
+        // silently reintroduce the trust gap this exists to close.
+        self.jwks_epoch.fetch_add(1, Ordering::AcqRel);
     }
 
     pub fn validation(&self) -> &Validation {
@@ -129,6 +203,8 @@ pub mod jwt {
         Expired,
         #[error("Invalid audience")]
         InvalidAudience,
+        #[error("Token has been revoked")]
+        Revoked,
     }
 }
 
@@ -150,6 +226,12 @@ mod tests {
         }
     }
 
+    fn sample_claims_with_jti(exp: usize, jti: &str) -> JwtClaims {
+        let mut claims = sample_claims(exp);
+        claims.jti = Some(jti.to_string());
+        claims
+    }
+
     fn now_secs() -> usize {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -157,18 +239,19 @@ mod tests {
             .as_secs() as usize
     }
 
-    /// A cache entry whose `exp` is still in the future must be served
-    /// straight from cache.
+    async fn seed_cache(validator: &JwtValidator, token: &str, claims: JwtClaims, jwks_epoch: u64) {
+        let mut cache = validator.cache.lock().await;
+        cache.put(fingerprint(token), CachedValidation { claims, jwks_epoch });
+    }
+
+    /// A cache entry whose `exp` is still in the future, at the current
+    /// JWKS epoch, and not revoked must be served straight from cache.
     #[tokio::test]
     async fn cache_hit_returns_claims_when_not_expired() {
         let validator = JwtValidator::new(None, None);
         let token = "not-a-real-jwt-but-only-used-as-a-cache-key";
         let claims = sample_claims(now_secs() + 3600);
-
-        {
-            let mut cache = validator.cache.lock().await;
-            cache.put(token.to_string(), claims.clone());
-        }
+        seed_cache(&validator, token, claims, 0).await;
 
         let result = validator.validate_token(token).await;
         assert!(result.is_ok(), "expected a cache hit for a non-expired entry");
@@ -186,11 +269,7 @@ mod tests {
         let validator = JwtValidator::new(None, None);
         let token = "not-a-real-jwt-but-only-used-as-a-cache-key";
         let expired_claims = sample_claims(now_secs().saturating_sub(3600));
-
-        {
-            let mut cache = validator.cache.lock().await;
-            cache.put(token.to_string(), expired_claims);
-        }
+        seed_cache(&validator, token, expired_claims, 0).await;
 
         let result = validator.validate_token(token).await;
         assert!(
@@ -208,18 +287,73 @@ mod tests {
         let validator = JwtValidator::new(None, None);
         let token = "not-a-real-jwt-but-only-used-as-a-cache-key";
         let expired_claims = sample_claims(now_secs().saturating_sub(3600));
-
-        {
-            let mut cache = validator.cache.lock().await;
-            cache.put(token.to_string(), expired_claims);
-        }
+        seed_cache(&validator, token, expired_claims, 0).await;
 
         let _ = validator.validate_token(token).await;
 
         let mut cache = validator.cache.lock().await;
         assert!(
-            cache.get(token).is_none(),
+            cache.get(&fingerprint(token)).is_none(),
             "expired entry should have been popped from the cache"
         );
+    }
+
+    /// SECURITY REGRESSION TEST (F-003): a token cached under one JWKS
+    /// epoch must NOT be trusted once the key set has rotated, even if
+    /// `exp` is still far in the future. The rotated epoch forces a miss,
+    /// which then fails for the right reason here (fake token can't
+    /// really be decoded) rather than being silently accepted.
+    #[tokio::test]
+    async fn cache_entry_from_stale_jwks_epoch_is_not_trusted() {
+        let validator = JwtValidator::new(None, None);
+        let token = "not-a-real-jwt-but-only-used-as-a-cache-key";
+        let claims = sample_claims(now_secs() + 3600);
+        seed_cache(&validator, token, claims, 0).await;
+
+        // Simulate a JWKS rotation happening after this entry was cached.
+        validator.update_jwks(HashMap::new()).await;
+
+        let result = validator.validate_token(token).await;
+        assert!(
+            result.is_err(),
+            "a cache entry from a prior JWKS epoch must not be trusted after rotation"
+        );
+    }
+
+    /// SECURITY REGRESSION TEST (F-003): a revoked `jti` must be rejected
+    /// even while otherwise unexpired and cached under the current epoch.
+    #[tokio::test]
+    async fn revoked_jti_is_rejected_from_cache() {
+        let validator = JwtValidator::new(None, None);
+        let token = "not-a-real-jwt-but-only-used-as-a-cache-key";
+        let claims = sample_claims_with_jti(now_secs() + 3600, "session-abc");
+        seed_cache(&validator, token, claims, 0).await;
+
+        validator.revoke_jti("session-abc");
+
+        let result = validator.validate_token(token).await;
+        assert!(
+            result.is_err(),
+            "a revoked jti must not be served from cache even if unexpired"
+        );
+    }
+
+    /// The cache must never be keyed by the raw bearer token string —
+    /// only by its fingerprint — so a heap inspection of the cache can't
+    /// recover a live, replayable credential. The key type is `[u8; 32]`
+    /// (a fixed-size SHA-256 digest), which structurally cannot contain
+    /// the original token; this test just confirms the fingerprint used
+    /// to store and look up an entry is deterministic and differs from
+    /// the raw token bytes.
+    #[test]
+    fn cache_key_is_a_fingerprint_not_the_raw_token() {
+        let token = "a-sensitive-bearer-token-value";
+        let fp = fingerprint(token);
+        assert_ne!(
+            fp.as_slice(),
+            token.as_bytes(),
+            "the cache key must not equal the raw token bytes"
+        );
+        assert_eq!(fp, fingerprint(token), "fingerprinting must be deterministic");
     }
 }
