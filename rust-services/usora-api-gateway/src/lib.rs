@@ -95,11 +95,24 @@ impl AppState {
         // validate_token RPC via AppState, instead of each call site
         // building its own empty one.
         //
-        // Audience is intentionally left unenforced unless JWT_AUDIENCE is
-        // explicitly set -- see the comment on IdentityConfig::audience for
-        // why (identity-service currently issues a per-tenant audience, not
-        // one static value every valid token would share).
+        // F-004: audience is now always enforced. identity-service issues
+        // every token with the same stable service audience regardless of
+        // grant type (see DomainService::SERVICE_AUDIENCE and
+        // SecurityConfig::tokenCustomizer), so there is no longer a reason
+        // to treat an empty configured value as "skip the check" -- doing
+        // that historically meant a valid signature and issuer alone were
+        // sufficient to authenticate to this gateway, with no check at all
+        // that the token was actually meant for this API. IdentityConfig's
+        // default is a non-empty "usora-api", so this only becomes `None`
+        // if an operator explicitly blanks out JWT_AUDIENCE, which is not a
+        // supported configuration.
         let audience = if cfg.identity.audience.is_empty() {
+            tracing::warn!(
+                "JWT_AUDIENCE is empty -- audience validation is DISABLED. \
+                 This is not a supported configuration outside of local \
+                 development; set JWT_AUDIENCE to identity-service's issued \
+                 audience (default \"usora-api\") in every other environment."
+            );
             None
         } else {
             Some(cfg.identity.audience.clone())

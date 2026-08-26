@@ -41,6 +41,27 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DomainService {
 
+    /**
+     * F-004 remediation: previously only the client_credentials path set an
+     * "aud" claim at all, and it set it to the tenant's name -- meaning
+     * every tenant had its own audience value, tenant identity was
+     * (incorrectly) duplicated between "tid" and "aud", and the other three
+     * grant types (authorization_code, refresh_token, password) issued
+     * tokens with no audience claim whatsoever. That's why the gateway's
+     * JwtValidator historically had to treat audience enforcement as
+     * optional (see IdentityConfig::audience in the gateway) -- there was
+     * no single value it could safely require across all tenants and grant
+     * types without rejecting valid tokens.
+     *
+     * Every token this service issues now carries the same stable service
+     * audience, "usora-api" -- identifying this platform's API surface as
+     * the intended consumer, the same way every token shares one issuer.
+     * Tenant identity stays exactly where it already correctly lives: the
+     * "tid" claim. This constant must match the gateway's expected audience
+     * (IdentityConfig::audience / JWT_AUDIENCE).
+     */
+    private static final String SERVICE_AUDIENCE = "usora-api";
+
     private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
     private final OAuth2ClientRepository oAuth2ClientRepository;
@@ -115,7 +136,7 @@ public class DomainService {
             var claims = new JWTClaimsSet.Builder()
                     .subject(client.getClientId())
                     .issuer(issuer())
-                    .audience(Collections.singletonList(client.getTenant().getTenantName()))
+                    .audience(Collections.singletonList(SERVICE_AUDIENCE))
                     .issueTime(new Date())
                     .expirationTime(Date.from(Instant.now().plus(client.getAccessTokenTtlSeconds(), ChronoUnit.SECONDS)))
                     .claim("tid", tenantId)
@@ -169,6 +190,7 @@ public class DomainService {
             var claims = new JWTClaimsSet.Builder()
                     .subject(request.getClientId())
                     .issuer(issuer())
+                    .audience(Collections.singletonList(SERVICE_AUDIENCE))
                     .issueTime(new Date())
                     .expirationTime(Date.from(Instant.now().plus(client.getAccessTokenTtlSeconds(), ChronoUnit.SECONDS)))
                     .claim("tid", tenantId)
@@ -222,6 +244,7 @@ public class DomainService {
             var claims = new JWTClaimsSet.Builder()
                     .subject(client.getClientId())
                     .issuer(issuer())
+                    .audience(Collections.singletonList(SERVICE_AUDIENCE))
                     .issueTime(new Date())
                     .expirationTime(Date.from(Instant.now().plus(client.getAccessTokenTtlSeconds(), ChronoUnit.SECONDS)))
                     .claim("tid", tenantId)
@@ -284,6 +307,7 @@ public class DomainService {
             var claims = new JWTClaimsSet.Builder()
                     .subject(user.getId().toString())
                     .issuer(issuer())
+                    .audience(Collections.singletonList(SERVICE_AUDIENCE))
                     .issueTime(new Date())
                     .expirationTime(Date.from(Instant.now().plus(client.getAccessTokenTtlSeconds(), ChronoUnit.SECONDS)))
                     .claim("tid", tenantId)

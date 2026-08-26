@@ -203,6 +203,14 @@ public class SecurityConfig {
     @Bean
     public OAuth2TokenCustomizer<JwtEncodingContext> tokenCustomizer(JwtTokenProvider jwtTokenProvider) {
         return context -> {
+            // F-004: Spring's authorization server does not populate "aud"
+            // by default. Every token issued through this path must carry
+            // the same stable service audience as the manually-built tokens
+            // in DomainService, so the gateway can enforce one non-empty
+            // audience value across every issuance path instead of treating
+            // audience validation as optional.
+            context.getClaims().audience(java.util.List.of("usora-api"));
+
             var principal = context.getPrincipal();
             if (principal != null) {
                 var tenantContext = com.usora.identity.security.TenantContext.getContext();
