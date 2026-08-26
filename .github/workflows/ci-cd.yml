@@ -313,7 +313,7 @@ jobs:
             ${{ runner.os }}-maven-
 
       - name: Run Maven Verify
-        run: mvn verify -B -f pom.xml -Dspring-boot.version=3.4.0
+        run: mvn verify -B -f pom.xml
 
       - name: Upload Test Results
         if: always()
