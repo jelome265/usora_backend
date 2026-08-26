@@ -163,14 +163,16 @@ pub struct IdentityConfig {
     /// Expected `iss` claim. Must match identity-service's own OAUTH2_ISSUER
     /// (see spring-boot-services/usora-identity-service's SecurityConfig).
     pub issuer: String,
-    /// Expected `aud` claim. identity-service currently issues
-    /// client-credentials tokens with a per-tenant audience (the tenant
-    /// name) rather than one static value shared by every tenant, so this is
-    /// intentionally left unenforced (empty) unless explicitly configured --
-    /// see the comment on JwtValidator construction in AppState::new for why
-    /// forcing a single static audience here would incorrectly reject valid
-    /// tokens for every tenant but one. Set JWT_AUDIENCE only if/when
-    /// identity-service is changed to issue a single shared audience.
+    /// Expected `aud` claim. F-004: identity-service now issues every token,
+    /// across all four grant types and both its OAuth2-authorization-server
+    /// path and its manual JWTClaimsSet path, with the same stable service
+    /// audience ("usora-api") rather than the tenant-specific value it used
+    /// to set only for client_credentials tokens. That means this can now
+    /// default to a real, non-empty value and be enforced unconditionally
+    /// instead of being treated as optional -- see the (now removed) `if
+    /// audience.is_empty() { None }` branch this used to require in
+    /// AppState::new. Override with JWT_AUDIENCE only if identity-service's
+    /// audience value changes; do not blank it out to disable enforcement.
     pub audience: String,
     /// How often to re-fetch the JWKS in the background, so identity-service
     /// key rotation is picked up without a gateway restart.
@@ -182,7 +184,7 @@ impl Default for IdentityConfig {
         Self {
             jwks_url: "http://localhost:8081/oauth2/jwks".into(),
             issuer: "http://localhost:8081".into(),
-            audience: String::new(),
+            audience: "usora-api".into(),
             jwks_refresh_secs: 300,
         }
     }
