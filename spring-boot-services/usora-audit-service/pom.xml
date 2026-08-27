@@ -48,6 +48,26 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
+        <!-- BUG found while migrating this service off HMAC onto JWKS for
+             F-011: SecurityConfig already referenced NimbusJwtDecoder,
+             JwtAuthenticationConverter, and JwtGrantedAuthoritiesConverter
+             BEFORE this change -- none of which live in
+             spring-boot-starter-security. Those classes are provided by
+             spring-security-oauth2-resource-server /
+             spring-security-oauth2-jose, neither of which was declared
+             here. This service's build could not have compiled without
+             one of these being pulled in transitively by something else;
+             declaring them explicitly regardless, matching core-service's
+             pom, since relying on an undeclared transitive dependency for
+             a security-critical class is itself fragile. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-resource-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-jose</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>

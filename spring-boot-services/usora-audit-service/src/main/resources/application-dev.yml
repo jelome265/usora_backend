@@ -1,4 +1,9 @@
 spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8081/oauth2/jwks
   datasource:
     url: jdbc:postgresql://localhost:5432/usora_audit_dev
     username: usora_dev
@@ -20,9 +25,6 @@ audit:
   siem:
     url: http://localhost:8089
     token: dev-siem-token
-  security:
-    jwt:
-      secret: dev-jwt-secret-key-minimum-32-characters-long
   tenant:
     tenants:
       default:
