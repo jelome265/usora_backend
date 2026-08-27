@@ -14,6 +14,11 @@ spring:
       minimum-idle: 5
       idle-timeout: 300000
       connection-timeout: 20000
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${JWK_SET_URI:http://identity.usora.svc.cluster.local:8080/oauth2/jwks}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -114,10 +119,15 @@ audit:
       - resource_id
       - tenant_id
       - outcome
-  security:
-    jwt:
-      secret: ${JWT_SECRET:}
-      issuer: usora-audit
+  # F-011: audit.security.jwt.secret (HMAC) removed entirely -- this
+  # service now verifies tokens against usora-identity-service's real
+  # RS256/JWKS endpoint (see spring.security.oauth2.resourceserver.jwt.
+  # jwk-set-uri below, and SecurityConfig). The old "issuer: usora-audit"
+  # is also gone: that was this service's own self-assigned issuer for
+  # tokens it signed itself under the old HMAC scheme, not
+  # identity-service's real issuer value, so it would have been wrong to
+  # carry forward as an expected-issuer check. Matches core-service's
+  # JwtDecoder, which also does not enforce issuer.
   tenant:
     tenants:
       default:

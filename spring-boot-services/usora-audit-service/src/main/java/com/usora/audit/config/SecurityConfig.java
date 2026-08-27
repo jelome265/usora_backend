@@ -1,8 +1,7 @@
 package com.usora.audit.config;
 
-import com.usora.audit.security.JwtTokenProvider;
-import com.usora.audit.security.PermissionEvaluator;
 import com.usora.audit.security.TenantInterceptor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -18,19 +17,36 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-import javax.crypto.spec.SecretKeySpec;
-import java.util.List;
-
+/**
+ * F-011: this service previously verified tokens with its own HMAC secret
+ * (audit.security.jwt.secret / JwtTokenProvider) -- a parallel credential
+ * system entirely distinct from usora-identity-service's actual
+ * RS256/JWKS-issued tokens, with its own independent secret and no
+ * relationship to the platform's real token issuer. A token genuinely
+ * issued by identity-service could not previously be validated here at
+ * all (wrong algorithm, wrong key material).
+ *
+ * Now standardized on the same JWKS-backed oauth2ResourceServer contract
+ * core-service uses (see spring.security.oauth2.resourceserver.jwt.
+ * jwk-set-uri in application.yml). The custom JwtTokenProvider
+ * (HMAC-based) is removed entirely -- see git history if it's ever
+ * needed for reference.
+ *
+ * Authority mapping is unchanged: identity-service issues a "permissions"
+ * claim (a plain list of scope strings), and this service's existing
+ * requestMatchers() checks expect "SCOPE_"-prefixed authorities (e.g.
+ * hasAuthority("SCOPE_audit:read")), so authorityPrefix("SCOPE_") +
+ * authoritiesClaimName("permissions") are preserved exactly as before --
+ * only the JwtDecoder underneath changes.
+ */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig implements WebMvcConfigurer {
 
-    private final JwtTokenProvider jwtTokenProvider;
     private final TenantInterceptor tenantInterceptor;
 
-    public SecurityConfig(JwtTokenProvider jwtTokenProvider, TenantInterceptor tenantInterceptor) {
-        this.jwtTokenProvider = jwtTokenProvider;
+    public SecurityConfig(TenantInterceptor tenantInterceptor) {
         this.tenantInterceptor = tenantInterceptor;
     }
 
@@ -58,7 +74,6 @@ public class SecurityConfig implements WebMvcConfigurer {
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt
-                                .decoder(jwtDecoder())
                                 .jwtAuthenticationConverter(jwtAuthenticationConverter())
                         )
                 );
@@ -66,9 +81,9 @@ public class SecurityConfig implements WebMvcConfigurer {
     }
 
     @Bean
-    public JwtDecoder jwtDecoder() {
-        byte[] secret = jwtTokenProvider.getSigningKey().getEncoded();
-        return NimbusJwtDecoder.withSecretKey(new SecretKeySpec(secret, "HmacSHA256")).build();
+    public JwtDecoder jwtDecoder(
+            @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwkSetUri) {
+        return NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
     }
 
     @Bean

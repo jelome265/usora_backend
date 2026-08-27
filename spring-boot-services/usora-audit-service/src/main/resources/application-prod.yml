@@ -1,4 +1,9 @@
 spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${JWK_SET_URI:http://identity.usora.svc.cluster.local:8080/oauth2/jwks}
   datasource:
     url: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=require
     username: ${DB_USER}
@@ -32,10 +37,6 @@ audit:
     token: ${SIEM_TOKEN}
     batch_size: 500
     flush_interval: 2s
-  security:
-    jwt:
-      secret: ${JWT_SECRET}
-      issuer: usora-audit
   blockchain:
     grpc:
       host: ${BLOCKCHAIN_GRPC_HOST}
