@@ -467,6 +467,19 @@ impl Config {
         }
     }
 
+	pub fn log_effective_security_summary(&self, redis_connected: bool) {
+    tracing::info!(
+        tls_min_version = %self.tls.min_version,
+        mtls_require_client_auth = self.tls.require_client_auth,
+        upstream_tls_configured = self.upstream.tls_ca_path.is_some(),
+        upstream_service_token_configured = self.upstream.internal_service_token.is_some(),
+        jwt_audience_enforced = !self.identity.audience.is_empty(),
+        jwt_issuer = %self.identity.issuer,
+        rate_limit_backend = if redis_connected { "redis" } else { "local-only" },
+        "effective security configuration at startup (F-008)"
+    );
+		}
+
     pub fn tls_min_version(&self) -> anyhow::Result<&'static rustls::SupportedProtocolVersion> {
         match self.tls.min_version.to_lowercase().as_str() {
             "tlsv1.2" => Ok(&rustls::version::TLS12),
