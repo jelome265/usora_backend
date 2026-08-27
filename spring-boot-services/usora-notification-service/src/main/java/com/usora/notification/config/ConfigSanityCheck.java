@@ -47,8 +47,16 @@ public class ConfigSanityCheck {
     @Value("${spring.data.redis.host:}")
     private String redisHost;
 
-    @Value("${security.jwt.secret:}")
-    private String jwtSecret;
+    // F-011: this service no longer signs/verifies its own tokens with an
+    // HMAC secret -- it now verifies against identity-service's RS256/JWKS
+    // endpoint, the same as core-service/audit-service. The check this
+    // field used to support (security.jwt.secret blank) no longer applies
+    // -- that property doesn't exist anymore -- so this now checks that
+    // the JWKS URI is actually configured and non-loopback instead. See
+    // the loopback check below, which already covers this via
+    // containsLoopback(jwkSetUri).
+    @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}")
+    private String jwkSetUri;
 
     @PostConstruct
     public void validate() {
@@ -74,8 +82,12 @@ public class ConfigSanityCheck {
             problems.add("spring.data.redis.host resolves to a loopback host (" + redact(redisHost)
                     + ") -- REDIS_HOST must point at the real cache");
         }
-        if (jwtSecret.isBlank()) {
-            problems.add("security.jwt.secret is blank -- JWT_SECRET must be set from a real secret");
+        if (jwkSetUri.isBlank()) {
+            problems.add("spring.security.oauth2.resourceserver.jwt.jwk-set-uri is blank -- "
+                    + "JWK_SET_URI must be set (or the property default must resolve to a real endpoint)");
+        } else if (containsLoopback(jwkSetUri)) {
+            problems.add("spring.security.oauth2.resourceserver.jwt.jwk-set-uri resolves to a loopback host ("
+                    + redact(jwkSetUri) + ") -- JWK_SET_URI must point at the real identity-service");
         }
 
         if (!problems.isEmpty()) {

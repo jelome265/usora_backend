@@ -14,10 +14,12 @@ import java.sql.Statement;
  * C7 / Postgres row-level security — see usora-core-service's
  * TenantAwareDataSource.java for the full mechanism explanation. Note
  * that for this service specifically, TenantContext is populated from
- * two different call sites: JwtTokenProvider (HTTP requests) and
- * DomainEventListener (Kafka-triggered sends, fixed alongside this
- * migration — see that class's javadoc for why that fix was necessary
- * for RLS not to break the Kafka path entirely).
+ * two different call sites: TenantInterceptor (HTTP requests, via the
+ * verified JWT's "tid" claim — see F-011 for why this moved off a
+ * service-local HMAC token) and DomainEventListener (Kafka-triggered
+ * sends, fixed alongside the RLS migration — see that class's javadoc
+ * for why that fix was necessary for RLS not to break the Kafka path
+ * entirely).
  */
 public class TenantAwareDataSource extends DelegatingDataSource {
 

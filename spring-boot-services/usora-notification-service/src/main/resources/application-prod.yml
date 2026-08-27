@@ -93,13 +93,18 @@ grpc:
       negotiation-type: tls
 
 # PRE-EXISTING GAP, found and fixed while writing this service's Helm
-# chart: neither security.jwt.secret nor security.encryption.secret-key
-# was overridden anywhere in this prod profile — production deployments
-# were using application.yml's insecure defaults
-# ("defaultSecretKeyMustBeOverriddenInProduction" for JWT signing, and an
-# empty string for the encryption key) with no override in place.
+# chart: security.encryption.secret-key was not overridden anywhere in
+# this prod profile — production deployments were using application.yml's
+# insecure default (an empty string) with no override in place.
+#
+# F-011: security.jwt.secret is gone from this file entirely (see
+# application.yml and SecurityConfig) -- this service now verifies tokens
+# against identity-service's RS256/JWKS the same way core-service and
+# audit-service do, instead of an independent HMAC secret.
 security:
-  jwt:
-    secret: ${JWT_SECRET}
+  oauth2:
+    resourceserver:
+      jwt:
+        jwk-set-uri: ${JWK_SET_URI:http://identity.usora.svc.cluster.local:8080/oauth2/jwks}
   encryption:
     secret-key: ${ENCRYPTION_SECRET_KEY}
