@@ -19,6 +19,7 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::from_env()?;
     let state = Arc::new(AppState::new(config.clone()).await?);
+    config.log_effective_security_summary(state.redis.is_some());
 
     let app = routes::create_router(state.clone());
 

@@ -257,10 +257,41 @@ impl Config {
             cfg.tls.key_path = v;
         }
         if let Ok(v) = std::env::var("TLS_MIN_VERSION") {
+            // SECURITY (F-008): previously any unrecognized value here
+            // (a typo like "TLSv1.3 " with trailing whitespace, "TLS1.3"
+            // missing the dot, "SSLv3") was accepted here and only
+            // discovered to be meaningless later in tls_min_version(),
+            // which silently mapped every unrecognized string to TLS 1.2 --
+            // quietly downgrading the floor below the intended TLS 1.3
+            // default with no error at any point. Reject anything that
+            // isn't one of the two versions this gateway actually supports,
+            // right where the value is read, rather than let it reach
+            // load_tls_config() having already been silently reinterpreted.
+            let normalized = v.trim().to_lowercase();
+            if normalized != "tlsv1.2" && normalized != "tlsv1.3" {
+                anyhow::bail!(
+                    "TLS_MIN_VERSION={v:?} is not a supported value (expected \"TLSv1.2\" or \
+                     \"TLSv1.3\"). Refusing to start rather than silently falling back to TLS 1.2 -- \
+                     see F-008."
+                );
+            }
             cfg.tls.min_version = v;
         }
         if let Ok(v) = std::env::var("TLS_REQUIRE_CLIENT_AUTH") {
-            cfg.tls.require_client_auth = v.parse().unwrap_or(false);
+            // SECURITY (F-008): `.parse().unwrap_or(false)` silently turned
+            // ANY unparseable value -- a typo like "ture", an empty string
+            // from a botched Helm template, "True" with capitalization
+            // Rust's bool parser doesn't accept, anything -- into `false`,
+            // i.e. mTLS silently OFF. A security-relevant boolean must
+            // reject invalid input outright rather than quietly picking the
+            // weaker of the two possible states.
+            cfg.tls.require_client_auth = v.trim().parse().map_err(|_| {
+                anyhow::anyhow!(
+                    "TLS_REQUIRE_CLIENT_AUTH={v:?} is not a valid boolean (expected \"true\" or \
+                     \"false\"). Refusing to start rather than silently treating an invalid value \
+                     as \"false\" (mTLS disabled) -- see F-008."
+                )
+            })?;
         }
         if let Ok(v) = std::env::var("TLS_CLIENT_CA_PATH") {
             cfg.tls.client_ca_path = Some(v);
@@ -330,11 +361,51 @@ impl Config {
         Ok(cfg)
     }
 
-    pub fn tls_min_version(&self) -> &'static rustls::SupportedProtocolVersion {
+    /// F-008 remediation item 5: emit a redacted summary of the security-
+    /// relevant configuration this gateway actually resolved at startup,
+    /// so an operator (or an incident responder) can see what posture is
+    /// really in effect from the logs alone, rather than having to
+    /// separately reconstruct it from environment variables, Helm values,
+    /// and this source file. Deliberately excludes any secret value
+    /// itself (INTERNAL_SERVICE_TOKEN's value, key file contents) --
+    /// only whether each control is configured/enabled.
+    ///
+    /// `redis_connected` is passed in rather than derived from
+    /// `self.redis.url` alone, since a non-empty URL only means Redis was
+    /// *configured* -- AppState::new may still have failed to connect
+    /// (see its fallback-to-local-rate-limiting path), and this summary
+    /// is meant to reflect the actually-effective state, not just intent.
+    pub fn log_effective_security_summary(&self, redis_connected: bool) {
+        tracing::info!(
+            tls_min_version = %self.tls.min_version,
+            mtls_require_client_auth = self.tls.require_client_auth,
+            upstream_tls_configured = self.upstream.tls_ca_path.is_some(),
+            upstream_service_token_configured = self.upstream.internal_service_token.is_some(),
+            jwt_audience_enforced = !self.identity.audience.is_empty(),
+            jwt_issuer = %self.identity.issuer,
+            rate_limit_backend = if redis_connected { "redis" } else { "local-only" },
+            "effective security configuration at startup (F-008)"
+        );
+    }
+
+    /// F-008: this used to silently map any unrecognized `min_version`
+    /// string to TLS 1.2 (`_ => &rustls::version::TLS12`), which meant a
+    /// value that reached this point already having bypassed
+    /// `from_env()`'s validation -- or any future caller that constructs
+    /// `Config` some other way -- would silently downgrade the TLS floor
+    /// instead of failing. `from_env()` now rejects unsupported values
+    /// before they ever reach here (see the TLS_MIN_VERSION parsing
+    /// above), so this returning `Result` is defense in depth for that
+    /// invariant, not the primary enforcement point.
+    pub fn tls_min_version(&self) -> anyhow::Result<&'static rustls::SupportedProtocolVersion> {
         match self.tls.min_version.to_lowercase().as_str() {
-            "tlsv1.2" => &rustls::version::TLS12,
-            "tlsv1.3" => &rustls::version::TLS13,
-            _ => &rustls::version::TLS12,
+            "tlsv1.2" => Ok(&rustls::version::TLS12),
+            "tlsv1.3" => Ok(&rustls::version::TLS13),
+            other => anyhow::bail!(
+                "tls.min_version={other:?} is not a supported TLS version (expected \"tlsv1.2\" or \
+                 \"tlsv1.3\"). This should have been rejected by Config::from_env() already -- refusing \
+                 to silently fall back to a weaker floor here."
+            ),
         }
     }
 
@@ -346,7 +417,7 @@ impl Config {
         let key = rustls_pemfile::private_key(&mut key_reader)?
             .ok_or_else(|| anyhow::anyhow!("no private key found"))?;
 
-        let builder = rustls::ServerConfig::builder_with_protocol_versions(&[self.tls_min_version()]);
+        let builder = rustls::ServerConfig::builder_with_protocol_versions(&[self.tls_min_version()?]);
 
         // SECURITY: this used to be with_no_client_auth() unconditionally --
         // crate::auth::mtls::MtlsValidator implemented a working client
