@@ -1,10 +1,13 @@
 use std::sync::Arc;
 use usora_document_processor::{
     config::Config,
+    extraction::{barcode::BarcodeEngine, mrz::MrzEngine, Extractor},
+    models::{ColorSpace, DocumentImage, ImageFormat},
     pipeline::{PipelineBuilder, PipelineContext},
-    models::{DocumentImage, ImageFormat, ColorSpace},
-    extraction::{Extractor, mrz::MrzEngine, barcode::BarcodeEngine},
-    validation::{ValidationEngine, authenticity::AuthenticityCheckEngine, tamper_detection::TamperDetectionEngine},
+    validation::{
+        authenticity::AuthenticityCheckEngine, tamper_detection::TamperDetectionEngine,
+        ValidationEngine,
+    },
     DocumentProcessor,
 };
 
@@ -51,15 +54,20 @@ fn create_test_image(width: u32, height: u32, text_lines: &[&str]) -> Vec<u8> {
     }
 
     let mut buf = Vec::new();
-    img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).unwrap();
+    img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+        .unwrap();
     buf
 }
 
 fn create_mrz_test_image() -> Vec<u8> {
-    create_test_image(800, 300, &[
-        "P<UTOSTEVENSON<<HENRY<<<<<<<<<<<<<<<<<<<<<<<<",
-        "L898902C<UTO6801022F0310018<<<<<<<<<<<<<<<<8",
-    ])
+    create_test_image(
+        800,
+        300,
+        &[
+            "P<UTOSTEVENSON<<HENRY<<<<<<<<<<<<<<<<<<<<<<<<",
+            "L898902C<UTO6801022F0310018<<<<<<<<<<<<<<<<8",
+        ],
+    )
 }
 
 #[tokio::test]
@@ -75,16 +83,17 @@ async fn test_pipeline_ingestion_stage() {
         dpi: None,
     };
 
-    let mut pipeline = PipelineBuilder::default()
-        .with_ingestion()
-        .build();
+    let mut pipeline = PipelineBuilder::default().with_ingestion().build();
 
     let ctx = PipelineContext::new(img);
     let result = pipeline.execute(ctx).await;
 
     assert!(result.is_ok(), "Pipeline ingestion should succeed");
     let ctx = result.unwrap();
-    assert!(!ctx.image.data.is_empty(), "Image data should remain after ingestion");
+    assert!(
+        !ctx.image.data.is_empty(),
+        "Image data should remain after ingestion"
+    );
     assert!(ctx.image.width > 0, "Width should be set");
     assert!(ctx.image.height > 0, "Height should be set");
 }
@@ -128,7 +137,10 @@ async fn test_full_pipeline() {
     assert!(result.is_ok(), "Full document processing should succeed");
     let doc = result.unwrap();
     assert_eq!(doc.status.to_string(), "Completed");
-    assert!(doc.processing_time_ms > 0.0, "Processing time should be positive");
+    assert!(
+        doc.processing_time_ms > 0.0,
+        "Processing time should be positive"
+    );
 }
 
 #[tokio::test]
@@ -166,7 +178,10 @@ async fn test_mrz_extraction_from_image() {
     let engine = MrzEngine::new();
     let result = engine.extract(&img).await;
 
-    assert!(result.is_ok(), "MRZ extraction from image should succeed or fail gracefully");
+    assert!(
+        result.is_ok(),
+        "MRZ extraction from image should succeed or fail gracefully"
+    );
 }
 
 #[tokio::test]
@@ -185,13 +200,19 @@ async fn test_barcode_extraction() {
     let engine = BarcodeEngine::new();
     let result = engine.extract(&img).await;
 
-    assert!(result.is_ok() || result.is_err(), "Barcode extraction should complete");
+    assert!(
+        result.is_ok() || result.is_err(),
+        "Barcode extraction should complete"
+    );
 }
 
 #[tokio::test]
 async fn test_mrz_checksum_validation() {
     let result = MrzEngine::parse_any("P<UTOSTEVENSON<<HENRY<<<<<<<<<<<<<<<<<<<<<<<<\nL898902C<UTO6801022F0310018<<<<<<<<<<<<<<<<8\n").unwrap();
-    assert!(result.checksums_valid, "MRZ checksums should be valid for test data");
+    assert!(
+        result.checksums_valid,
+        "MRZ checksums should be valid for test data"
+    );
 }
 
 #[tokio::test]
@@ -219,9 +240,14 @@ async fn test_validation_tamper_detection() {
 
     assert!(results.is_ok(), "Tamper detection should complete");
     let results = results.unwrap();
-    assert!(!results.is_empty(), "Should produce tamper detection results");
+    assert!(
+        !results.is_empty(),
+        "Should produce tamper detection results"
+    );
 
-    let photo = results.iter().find(|r| r.field == "tamper_photo_substitution");
+    let photo = results
+        .iter()
+        .find(|r| r.field == "tamper_photo_substitution");
     assert!(photo.is_some(), "Should include photo substitution check");
 
     let ela = results.iter().find(|r| r.field == "tamper_ela_artifacts");
@@ -241,8 +267,14 @@ async fn test_validation_engine_aggregation() {
     assert!(result.is_ok(), "Combined validation should complete");
     let validation = result.unwrap();
     assert!(!validation.flags.is_empty(), "Should produce flags");
-    assert!(validation.authenticity.overall_score >= 0.0, "Overall score should be non-negative");
-    assert!(validation.authenticity.overall_score <= 1.0, "Overall score should not exceed 1.0");
+    assert!(
+        validation.authenticity.overall_score >= 0.0,
+        "Overall score should be non-negative"
+    );
+    assert!(
+        validation.authenticity.overall_score <= 1.0,
+        "Overall score should not exceed 1.0"
+    );
 }
 
 #[tokio::test]
@@ -279,14 +311,15 @@ async fn test_pipeline_error_handling() {
         dpi: None,
     };
 
-    let mut pipeline = PipelineBuilder::default()
-        .with_ingestion()
-        .build();
+    let mut pipeline = PipelineBuilder::default().with_ingestion().build();
 
     let ctx = PipelineContext::new(img);
     let result = pipeline.execute(ctx).await;
 
-    assert!(result.is_ok(), "Pipeline should handle empty data gracefully");
+    assert!(
+        result.is_ok(),
+        "Pipeline should handle empty data gracefully"
+    );
 }
 
 #[tokio::test]
@@ -306,25 +339,33 @@ async fn test_image_format_detection() {
 #[tokio::test]
 async fn test_nfc_bac_key_derivation() {
     let keys = usora_document_processor::extraction::nfc::NfcEngine::compute_bac_keys(
-        "L898902C",
-        "680102",
-        "100318",
+        "L898902C", "680102", "100318",
     );
-    assert!(!keys.k_enc.is_empty(), "BAC encryption key should be derived");
+    assert!(
+        !keys.k_enc.is_empty(),
+        "BAC encryption key should be derived"
+    );
     assert!(!keys.k_mac.is_empty(), "BAC MAC key should be derived");
-    assert_ne!(keys.k_enc, keys.k_mac, "Encryption and MAC keys should differ");
+    assert_ne!(
+        keys.k_enc, keys.k_mac,
+        "Encryption and MAC keys should differ"
+    );
 }
 
 #[tokio::test]
 async fn test_nfc_simulation() {
     let fields = usora_document_processor::extraction::nfc::NfcEngine::simulate_nfc_extraction(
-        "L898902C",
-        "680102",
-        "100318",
+        "L898902C", "680102", "100318",
     );
     assert!(!fields.is_empty(), "NFC simulation should produce fields");
-    assert!(fields.iter().any(|f| f.name == "nfc_bac_keys_generated"), "Should include BAC keys generated flag");
-    assert!(fields.iter().any(|f| f.name.starts_with("nfc_dg")), "Should include data group fields");
+    assert!(
+        fields.iter().any(|f| f.name == "nfc_bac_keys_generated"),
+        "Should include BAC keys generated flag"
+    );
+    assert!(
+        fields.iter().any(|f| f.name.starts_with("nfc_dg")),
+        "Should include data group fields"
+    );
 }
 
 #[tokio::test]
@@ -332,7 +373,11 @@ async fn test_utils_base64_roundtrip() {
     let original = b"Hello, Document Processor Test!";
     let encoded = usora_document_processor::utils::image_to_base64(original);
     let decoded = usora_document_processor::utils::base64_to_image(&encoded).unwrap();
-    assert_eq!(original.to_vec(), decoded, "Base64 roundtrip should preserve data");
+    assert_eq!(
+        original.to_vec(),
+        decoded,
+        "Base64 roundtrip should preserve data"
+    );
 }
 
 #[tokio::test]
@@ -340,22 +385,37 @@ async fn test_utils_sha256() {
     let data = b"test document data";
     let hash = usora_document_processor::utils::sha256_hash(data);
     assert_eq!(hash.len(), 64, "SHA-256 hex should be 64 characters");
-    assert!(hash.chars().all(|c| c.is_ascii_hexdigit()), "SHA-256 should be hex");
+    assert!(
+        hash.chars().all(|c| c.is_ascii_hexdigit()),
+        "SHA-256 should be hex"
+    );
 }
 
 #[tokio::test]
 async fn test_utils_file_type_detection() {
     let png_header: [u8; 4] = [0x89, 0x50, 0x4E, 0x47];
-    assert_eq!(usora_document_processor::utils::detect_file_type(&png_header), "image/png");
+    assert_eq!(
+        usora_document_processor::utils::detect_file_type(&png_header),
+        "image/png"
+    );
 
     let jpeg_header: [u8; 4] = [0xFF, 0xD8, 0xFF, 0xE0];
-    assert_eq!(usora_document_processor::utils::detect_file_type(&jpeg_header), "image/jpeg");
+    assert_eq!(
+        usora_document_processor::utils::detect_file_type(&jpeg_header),
+        "image/jpeg"
+    );
 
     let pdf_header: [u8; 4] = [0x25, 0x50, 0x44, 0x46];
-    assert_eq!(usora_document_processor::utils::detect_file_type(&pdf_header), "application/pdf");
+    assert_eq!(
+        usora_document_processor::utils::detect_file_type(&pdf_header),
+        "application/pdf"
+    );
 
     let unknown: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
-    assert_eq!(usora_document_processor::utils::detect_file_type(&unknown), "unknown");
+    assert_eq!(
+        usora_document_processor::utils::detect_file_type(&unknown),
+        "unknown"
+    );
 }
 
 #[tokio::test]
@@ -376,7 +436,9 @@ async fn test_document_processor_with_empty_data() {
 async fn test_postprocessing_cross_field_validation() {
     use usora_document_processor::models::ExtractedField;
     use usora_document_processor::models::ExtractionMethod;
-    use usora_document_processor::pipeline::{PipelineContext, postprocessing::PostprocessingStage};
+    use usora_document_processor::pipeline::{
+        postprocessing::PostprocessingStage, PipelineContext,
+    };
 
     let data = create_test_image(100, 100, &[]);
     let img = DocumentImage {
@@ -434,9 +496,16 @@ async fn test_postprocessing_cross_field_validation() {
     assert!(result.is_ok(), "Post-processing should succeed");
 
     if let Some(ref doc) = ctx.document {
-        let mrz_field = doc.data.fields.iter().find(|f| f.method == ExtractionMethod::Mrz && f.name == "date_of_birth");
+        let mrz_field = doc
+            .data
+            .fields
+            .iter()
+            .find(|f| f.method == ExtractionMethod::Mrz && f.name == "date_of_birth");
         if let Some(field) = mrz_field {
-            assert!(field.confidence < 0.95, "MRZ DOB confidence should be reduced when OCR disagrees");
+            assert!(
+                field.confidence < 0.95,
+                "MRZ DOB confidence should be reduced when OCR disagrees"
+            );
         }
     }
 }

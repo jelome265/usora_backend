@@ -138,7 +138,10 @@ impl Config {
                 default_ttl_secs: env_or_default("REDIS_DEFAULT_TTL_SECS", "3600"),
             },
             postgres: PostgresConfig {
-                url: env_or_default("POSTGRES_URL", "postgres://postgres:postgres@localhost:5432/usora"),
+                url: env_or_default(
+                    "POSTGRES_URL",
+                    "postgres://postgres:postgres@localhost:5432/usora",
+                ),
                 max_connections: env_or_default("POSTGRES_MAX_CONNECTIONS", "20"),
                 min_connections: env_or_default("POSTGRES_MIN_CONNECTIONS", "5"),
                 acquire_timeout_secs: env_or_default("POSTGRES_ACQUIRE_TIMEOUT_SECS", "30"),
@@ -160,7 +163,10 @@ impl Config {
                 min_face_size: env_or_default("MIN_FACE_SIZE", "40"),
                 max_face_size: env_or_default("MAX_FACE_SIZE", "2000"),
                 embedding_dimension: env_or_default("EMBEDDING_DIMENSION", "512"),
-                detection_confidence_threshold: env_or_default("DETECTION_CONFIDENCE_THRESHOLD", "0.7"),
+                detection_confidence_threshold: env_or_default(
+                    "DETECTION_CONFIDENCE_THRESHOLD",
+                    "0.7",
+                ),
                 input_width: env_or_default("MODEL_INPUT_WIDTH", "112"),
                 input_height: env_or_default("MODEL_INPUT_HEIGHT", "112"),
             },
