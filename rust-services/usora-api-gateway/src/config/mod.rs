@@ -251,6 +251,18 @@ impl Default for Config {
     }
 }
 
+/// F-009: shared loopback detection for the production config-sanity check
+/// above. Kept simple (substring match) deliberately -- this only ever
+/// runs against this gateway's own known config *keys*, not arbitrary
+/// user input, so false positives (e.g. a hostname that legitimately
+/// contains "localhost" as a substring) are an acceptable, very unlikely
+/// tradeoff against the alternative of a silent miss from a stricter
+/// parser rejecting a URL shape it doesn't recognize.
+fn is_loopback_url(value: &str) -> bool {
+    let lower = value.to_lowercase();
+    lower.contains("localhost") || lower.contains("127.0.0.1") || lower.contains("://0.0.0.0")
+}
+
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         let mut cfg = Config::default();
@@ -401,24 +413,47 @@ impl Config {
             return Ok(());
         }
 
-        let mut problems = Vec::new();
+        let mut problems: Vec<String> = Vec::new();
 
         if !self.tls.require_client_auth {
             problems.push(
-                "TLS_REQUIRE_CLIENT_AUTH must be true in production (inbound mTLS is currently optional)"
+                "TLS_REQUIRE_CLIENT_AUTH must be true in production (inbound mTLS is currently optional)".to_string()
             );
         }
         if self.upstream.tls_ca_path.is_none() {
             problems.push(
                 "UPSTREAM_TLS_CA_PATH must be set in production (outbound calls to orchestrator/compute \
-                 would otherwise have no TLS transport configured despite their https:// URLs)"
+                 would otherwise have no TLS transport configured despite their https:// URLs)".to_string()
             );
         }
         if self.upstream.internal_service_token.is_none() {
             problems.push(
                 "INTERNAL_SERVICE_TOKEN must be set in production (orchestrator/compute would otherwise \
-                 accept calls from this gateway with no service-identity proof at all)"
+                 accept calls from this gateway with no service-identity proof at all)".to_string()
             );
+        }
+
+        // F-009: this gateway's defaults for the identity JWKS endpoint,
+        // OAuth2 issuer, and both upstream service URLs are all loopback
+        // addresses (see IdentityConfig::default / UpstreamConfig::default)
+        // -- reasonable so a bare `cargo run` works locally with nothing
+        // configured, but if any of those defaults survive unnoticed into
+        // an ENVIRONMENT=production deployment, the gateway starts up
+        // "successfully" while actually pointed at nothing real. Reject
+        // any of these that still resolve to a loopback host once
+        // production is declared explicitly.
+        for (name, value) in [
+            ("IDENTITY_JWKS_URL", self.identity.jwks_url.as_str()),
+            ("JWT_ISSUER", self.identity.issuer.as_str()),
+            ("UPSTREAM_ORCHESTRATOR_URL", self.upstream.orchestrator_url.as_str()),
+            ("UPSTREAM_COMPUTE_URL", self.upstream.compute_url.as_str()),
+        ] {
+            if is_loopback_url(value) {
+                problems.push(format!(
+                    "{name} still resolves to a loopback address in production -- it must point at the \
+                     real service, not the built-in local-development default"
+                ));
+            }
         }
 
         if problems.is_empty() {
@@ -426,7 +461,7 @@ impl Config {
         } else {
             anyhow::bail!(
                 "ENVIRONMENT=production but required transport-security configuration is missing; \
-                 refusing to start (F-007):\n  - {}",
+                 refusing to start (F-007/F-009):\n  - {}",
                 problems.join("\n  - ")
             );
         }
