@@ -53,7 +53,23 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: "*"
+        # SECURITY (F-010): "*" trusted every package on the classpath for
+        # Spring Kafka's JsonDeserializer, which -- when a message header
+        # names a type (see spring.json.use.type.headers below) -- will
+        # instantiate whatever class the header claims, with no
+        # restriction. The consumers of this deserializer
+        # (DomainEventListener) only ever deserialize into
+        # java.util.Map<String, Object> in practice -- there is no custom
+        # event DTO type in play here at all. Rather than merely narrow
+        # the trusted-package string to match that (which would still
+        # leave header-driven type selection active), this pins every
+        # message to LinkedHashMap unconditionally and stops honoring the
+        # __TypeId__ header entirely -- removing the actual attack surface
+        # (a message dictating what class to instantiate) rather than just
+        # shrinking its blast radius.
+        spring.json.trusted.packages: "java.util,java.lang"
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: java.util.LinkedHashMap
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
