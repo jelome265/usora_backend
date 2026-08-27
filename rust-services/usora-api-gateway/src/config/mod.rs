@@ -213,6 +213,16 @@ impl Default for IdentityConfig {
 pub struct Config {
     pub bind_address: String,
     pub grpc_bind_address: String,
+    /// F-007: deployment environment label ("development", "staging",
+    /// "production"), used solely by the validation at the end of
+    /// from_env() to fail startup when production-unsafe settings (no
+    /// mTLS, no upstream TLS, no internal service token) are combined
+    /// with a production environment. Defaults to "development" so an
+    /// unset ENVIRONMENT never *silently* becomes stricter than before;
+    /// every real deployment must set ENVIRONMENT=production explicitly
+    /// to get the new fail-closed checks, the same way Helm charts in
+    /// this repo already set an explicit Spring profile per environment.
+    pub environment: String,
     pub tls: TlsConfig,
     pub redis: RedisConfig,
     pub kafka: KafkaConfig,
@@ -228,6 +238,7 @@ impl Default for Config {
         Self {
             bind_address: "0.0.0.0:8443".into(),
             grpc_bind_address: "0.0.0.0:9090".into(),
+            environment: "development".into(),
             tls: TlsConfig::default(),
             redis: RedisConfig::default(),
             kafka: KafkaConfig::default(),
@@ -249,6 +260,9 @@ impl Config {
         }
         if let Ok(v) = std::env::var("GRPC_BIND_ADDRESS") {
             cfg.grpc_bind_address = v;
+        }
+        if let Ok(v) = std::env::var("ENVIRONMENT") {
+            cfg.environment = v;
         }
         if let Ok(v) = std::env::var("TLS_CERT_PATH") {
             cfg.tls.cert_path = v;
@@ -327,7 +341,64 @@ impl Config {
             cfg.identity.jwks_refresh_secs = v.parse()?;
         }
 
+        cfg.validate_production_transport_security()?;
+
         Ok(cfg)
+    }
+
+    /// F-007: transport authentication (inbound mTLS, outbound TLS +
+    /// service token to orchestrator/compute) was entirely opt-in --
+    /// every one of these controls defaulted to off/unset, with no
+    /// mechanism to stop a production deployment from silently running
+    /// that way. Per remediation item 5 ("optional development plaintext
+    /// mode only behind a development profile that cannot load in
+    /// production"), a deployment that explicitly declares itself
+    /// production must have all of these actually configured, or refuse
+    /// to start rather than come up in a degraded-trust state.
+    ///
+    /// This does not implement full mTLS/SPIFFE (items 1-3, 6) -- it only
+    /// makes the *existing* opt-in controls mandatory once an operator
+    /// says "this is production", closing the gap where they could be
+    /// silently left off in exactly the environment where that matters
+    /// most.
+    fn validate_production_transport_security(&self) -> anyhow::Result<()> {
+        let is_production = matches!(
+            self.environment.to_lowercase().as_str(),
+            "production" | "prod"
+        );
+        if !is_production {
+            return Ok(());
+        }
+
+        let mut problems = Vec::new();
+
+        if !self.tls.require_client_auth {
+            problems.push(
+                "TLS_REQUIRE_CLIENT_AUTH must be true in production (inbound mTLS is currently optional)"
+            );
+        }
+        if self.upstream.tls_ca_path.is_none() {
+            problems.push(
+                "UPSTREAM_TLS_CA_PATH must be set in production (outbound calls to orchestrator/compute \
+                 would otherwise have no TLS transport configured despite their https:// URLs)"
+            );
+        }
+        if self.upstream.internal_service_token.is_none() {
+            problems.push(
+                "INTERNAL_SERVICE_TOKEN must be set in production (orchestrator/compute would otherwise \
+                 accept calls from this gateway with no service-identity proof at all)"
+            );
+        }
+
+        if problems.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "ENVIRONMENT=production but required transport-security configuration is missing; \
+                 refusing to start (F-007):\n  - {}",
+                problems.join("\n  - ")
+            );
+        }
     }
 
     pub fn tls_min_version(&self) -> &'static rustls::SupportedProtocolVersion {
