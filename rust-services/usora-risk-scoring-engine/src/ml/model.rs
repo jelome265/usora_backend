@@ -1,8 +1,6 @@
 use crate::config::ModelConfig;
 use crate::ml::{ModelEnsemble, ModelError};
-use crate::models::{
-    EnsembleResult, ModelMetadata, ModelMetrics, ModelType,
-};
+use crate::models::{EnsembleResult, ModelMetadata, ModelMetrics, ModelType};
 use crate::utils::{compute_checksum, Stopwatch};
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
@@ -15,8 +13,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tract_onnx::prelude::*;
 
+type TractModel = SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>;
+
 pub struct ModelInstance {
-    model: RunnableModel<TypedFact, Box<dyn TypedOp>, Box<dyn TypedOp>>,
+    model: TractModel,
     metadata: ModelMetadata,
     config: ModelConfig,
     inference_count: AtomicU64,
@@ -97,11 +97,8 @@ impl ModelInstance {
         let batch_size = batch_features.len();
         let flat: Vec<f32> = batch_features.iter().flatten().copied().collect();
 
-        let tensor = Tensor::from_shape(
-            &[batch_size, self.config.input_features],
-            &flat,
-        )
-        .map_err(|e| ModelError::InferenceFailed(e.to_string()))?;
+        let tensor = Tensor::from_shape(&[batch_size, self.config.input_features], &flat)
+            .map_err(|e| ModelError::InferenceFailed(e.to_string()))?;
 
         let result = self
             .model
@@ -135,9 +132,17 @@ impl ModelInstance {
         let errors = self.error_count.load(Ordering::Relaxed);
         ModelMetrics {
             inference_count: count,
-            avg_latency_ms: if count > 0 { total_latency / count as f64 } else { 0.0 },
+            avg_latency_ms: if count > 0 {
+                total_latency / count as f64
+            } else {
+                0.0
+            },
             p99_latency_ms: 0.0,
-            error_rate: if count > 0 { errors as f64 / count as f64 } else { 0.0 },
+            error_rate: if count > 0 {
+                errors as f64 / count as f64
+            } else {
+                0.0
+            },
             drift_score: self.metadata.metrics.drift_score,
             last_drift_check: self.metadata.metrics.last_drift_check,
         }
@@ -219,7 +224,8 @@ impl ModelLifecycle {
         interval_seconds: u64,
         cancel: tokio_util::sync::CancellationToken,
     ) {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_seconds));
+        let mut interval =
+            tokio::time::interval(tokio::time::Duration::from_secs(interval_seconds));
         loop {
             tokio::select! {
                 _ = interval.tick() => {
@@ -271,8 +277,7 @@ impl ModelRegistry {
     }
 
     pub async fn reload_all(&self) -> Vec<(String, Result<(), ModelError>)> {
-        let models: Vec<Arc<ModelLifecycle>> =
-            self.models.read().await.values().cloned().collect();
+        let models: Vec<Arc<ModelLifecycle>> = self.models.read().await.values().cloned().collect();
         let mut results = Vec::new();
         for m in models {
             let id = m.config().model_id.clone();
@@ -340,8 +345,7 @@ impl ModelEnsemble for ModelLifecycle {
 
         let mut feature_importance = HashMap::new();
         for (i, prob) in probabilities.iter().enumerate() {
-            feature_importance
-                .insert(format!("class_{}", instance.config.class_labels[i]), *prob);
+            feature_importance.insert(format!("class_{}", instance.config.class_labels[i]), *prob);
         }
 
         Ok(EnsembleResult {
@@ -399,8 +403,7 @@ impl ModelEnsemble for ModelLifecycle {
             .map(|output| {
                 let probabilities: Vec<f64> = {
                     let max = output.iter().cloned().fold(f32::NEG_INFINITY, f32::max) as f64;
-                    let exp: Vec<f64> =
-                        output.iter().map(|&v| ((v as f64) - max).exp()).collect();
+                    let exp: Vec<f64> = output.iter().map(|&v| ((v as f64) - max).exp()).collect();
                     let sum: f64 = exp.iter().sum();
                     if sum > f64::EPSILON {
                         exp.iter().map(|&v| v / sum).collect()
@@ -418,10 +421,7 @@ impl ModelEnsemble for ModelLifecycle {
 
                 let mut fi = HashMap::new();
                 for (i, prob) in probabilities.iter().enumerate() {
-                    fi.insert(
-                        format!("class_{}", cfg.class_labels[i]),
-                        *prob,
-                    );
+                    fi.insert(format!("class_{}", cfg.class_labels[i]), *prob);
                 }
 
                 EnsembleResult {
@@ -503,8 +503,8 @@ impl ModelEnsemble for ModelLifecycle {
         Ok(contributions)
     }
 
-    fn metadata(&self) -> &ModelMetadata {
-        &self.current().metadata
+    fn metadata(&self) -> ModelMetadata {
+        self.current().metadata.clone()
     }
 
     fn name(&self) -> &str {

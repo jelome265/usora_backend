@@ -209,7 +209,7 @@ impl Default for ModelsConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct ModelConfig {
     pub model_id: String,
@@ -316,7 +316,7 @@ impl Default for TelemetryConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct TenantOverrides {
     pub tenant_id: String,

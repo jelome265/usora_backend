@@ -51,7 +51,7 @@ impl InferenceService {
             .await
             .ok_or_else(|| ModelError::NotFound(model_id.to_string()))?;
 
-        let normalized = self.normalization.normalize(raw_features);
+        let normalized = self.normalization.normalize_f64(raw_features);
         let feature_map: FeatureMap = normalized
             .into_iter()
             .enumerate()
@@ -106,7 +106,7 @@ impl InferenceService {
         let normalized_batch: Vec<FeatureMap> = batch
             .iter()
             .map(|raw| {
-                let normalized = self.normalization.normalize(raw);
+                let normalized = self.normalization.normalize_f64(raw);
                 normalized
                     .into_iter()
                     .enumerate()
@@ -138,7 +138,7 @@ impl InferenceService {
             .await
             .ok_or_else(|| ModelError::NotFound(model_id.to_string()))?;
 
-        let normalized = self.normalization.normalize(raw_features);
+        let normalized = self.normalization.normalize_f64(raw_features);
         let feature_map: FeatureMap = normalized
             .into_iter()
             .enumerate()
@@ -228,9 +228,10 @@ impl InferenceService {
             .unwrap_or(0);
 
         let latency = sw.elapsed_ms();
-        let first = all_results.into_iter().next().unwrap_or_else(|| {
-            panic!("Ensemble must have at least one model result")
-        });
+        let first = all_results
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("Ensemble must have at least one model result"));
 
         Ok(EnsembleResult {
             scores: ensemble_probs.clone(),

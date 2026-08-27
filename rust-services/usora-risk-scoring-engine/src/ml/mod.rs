@@ -11,16 +11,13 @@ pub type FeatureMap = HashMap<String, f64>;
 #[async_trait]
 pub trait ModelEnsemble: Send + Sync {
     async fn predict(&self, features: &FeatureMap) -> Result<EnsembleResult, ModelError>;
-    async fn predict_batch(
-        &self,
-        batch: &[FeatureMap],
-    ) -> Result<Vec<EnsembleResult>, ModelError>;
+    async fn predict_batch(&self, batch: &[FeatureMap]) -> Result<Vec<EnsembleResult>, ModelError>;
     async fn explain(
         &self,
         features: &FeatureMap,
         result: &EnsembleResult,
     ) -> Result<HashMap<String, f64>, ModelError>;
-    fn metadata(&self) -> &crate::models::ModelMetadata;
+    fn metadata(&self) -> crate::models::ModelMetadata;
     fn name(&self) -> &str;
     fn version(&self) -> &str;
 }

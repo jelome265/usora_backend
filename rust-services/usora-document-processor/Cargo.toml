@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tonic = "0.12"
-tonic-health = "0.12"
-tonic-reflection = "0.14"
-prost = "0.13"
-prost-types = "0.13"
-tokio = { version = "1.38", features = ["full"] }
-tokio-util = "0.7"
+tonic = "0.12.3"
+tonic-health = "0.12.3"
+tonic-reflection = "0.12.3"
+prost = "0.13.5"
+prost-types = "0.13.5"
+tokio = { version = "1.53.1", features = ["full"] }
+tokio-util = "0.7.19"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
@@ -23,14 +23,14 @@ opencv = "0.91"
 pdf = "0.9"
 uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
-rdkafka = { version = "0.36", features = ["cmake-build"] }
-redis = { version = "1.6", features = ["tokio-comp"] }
-opentelemetry = { version = "0.27", features = ["trace", "metrics"] }
-opentelemetry-otlp = { version = "0.27", features = ["trace", "metrics", "grpc-tonic"] }
-tracing = "0.1"
-tracing-opentelemetry = "0.27"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
+rdkafka = { version = "0.36.2", features = ["cmake-build"] }
+redis = { version = "0.25.5", features = ["tokio-comp"] }
+opentelemetry = { version = "0.27.1", features = ["trace", "metrics"] }
+opentelemetry-otlp = { version = "0.27.0", features = ["trace", "metrics", "grpc-tonic"] }
+tracing = "0.1.44"
+tracing-opentelemetry = "0.27.0"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 prometheus = { version = "0.14", features = ["process"] }
 thiserror = "2"
 anyhow = "1"
@@ -44,7 +44,7 @@ hex = "0.4"
 rxing = "0.9"
 lazy_static = "1"
 strum = { version = "0.28", features = ["derive"] }
-axum = "0.8"
+axum = "0.8.9"
 # Added to close an undocumented gap found while writing this service's
 # Helm chart: the REST router in routes/mod.rs took `tenant_id` directly
 # from the request body with no authentication at all, on endpoints that
@@ -52,8 +52,8 @@ axum = "0.8"
 jsonwebtoken = "10"
 
 [build-dependencies]
-tonic-build = "0.12"
-prost-build = "0.13"
+tonic-build = "0.12.3"
+prost-build = "0.13.5"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_tokio"] }

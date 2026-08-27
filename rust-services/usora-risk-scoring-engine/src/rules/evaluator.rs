@@ -17,6 +17,11 @@ struct AlphaMemory {
 }
 
 #[derive(Clone)]
+struct BetaMemory {
+    tokens: Vec<NodeIndex>,
+}
+
+#[derive(Clone)]
 enum Condition {
     FieldEquals(String, String),
     FieldGreaterThan(String, f64),

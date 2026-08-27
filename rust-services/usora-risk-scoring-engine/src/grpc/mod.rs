@@ -1,4 +1,5 @@
 use crate::engine::orchestrator::ScoringOrchestrator;
+use crate::engine::RiskEngine;
 use crate::engine::RiskEngineError;
 use crate::models::{
     ApplicantScoringRequest as InternalRequest, ExplainabilityRequest, FeatureValue,
@@ -30,7 +31,9 @@ impl RiskScoringServiceImpl {
             RiskEngineError::FeatureError(msg) => Status::failed_precondition(msg),
             RiskEngineError::MlError(msg) => Status::internal(format!("ML error: {}", msg)),
             RiskEngineError::RuleError(msg) => Status::internal(format!("Rule error: {}", msg)),
-            RiskEngineError::ScoringError(msg) => Status::internal(format!("Scoring error: {}", msg)),
+            RiskEngineError::ScoringError(msg) => {
+                Status::internal(format!("Scoring error: {}", msg))
+            }
             RiskEngineError::CacheError(msg) => Status::internal(format!("Cache error: {}", msg)),
             RiskEngineError::ConfigError(msg) => Status::failed_precondition(msg),
             RiskEngineError::TenantIsolationError(msg) => Status::permission_denied(msg),
@@ -72,21 +75,24 @@ impl RiskScoringServiceImpl {
             rule_version: response.rule_version.clone(),
             processing_time_ms: response.processing_time_ms,
             computed_at: response.computed_at.to_rfc3339(),
-            explanation: response.explanation.as_ref().map(|e| risk_scoring::ScoreExplanation {
-                method: e.method.clone(),
-                base_score: e.base_score,
-                feature_contributions: e
-                    .feature_contributions
-                    .iter()
-                    .map(|fc| risk_scoring::FeatureContribution {
-                        feature_name: fc.feature_name.clone(),
-                        importance: fc.importance,
-                        shap_value: fc.shap_value,
-                    })
-                    .collect(),
-                top_risk_drivers: e.top_risk_drivers.clone(),
-                confidence: e.confidence,
-            }),
+            explanation: response
+                .explanation
+                .as_ref()
+                .map(|e| risk_scoring::ScoreExplanation {
+                    method: e.method.clone(),
+                    base_score: e.base_score,
+                    feature_contributions: e
+                        .feature_contributions
+                        .iter()
+                        .map(|fc| risk_scoring::FeatureContribution {
+                            feature_name: fc.feature_name.clone(),
+                            importance: fc.importance,
+                            shap_value: fc.shap_value,
+                        })
+                        .collect(),
+                    top_risk_drivers: e.top_risk_drivers.clone(),
+                    confidence: e.confidence,
+                }),
         }
     }
 }
@@ -205,7 +211,11 @@ impl risk_scoring::risk_scoring_service_server::RiskScoringService for RiskScori
         };
 
         self.orchestrator
-            .update_model(&internal_req.model_id, &internal_req.model_path, &internal_req.new_version)
+            .update_model(
+                &internal_req.model_id,
+                &internal_req.model_path,
+                &internal_req.new_version,
+            )
             .await
             .map_err(Self::map_to_status)?;
 
@@ -223,8 +233,8 @@ impl risk_scoring::risk_scoring_service_server::RiskScoringService for RiskScori
         request: Request<risk_scoring::ExplainabilityRequest>,
     ) -> Result<Response<risk_scoring::ExplainabilityResponse>, Status> {
         let req = request.into_inner();
-        let score_id = Uuid::parse_str(&req.score_id)
-            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+        let score_id =
+            Uuid::parse_str(&req.score_id).map_err(|e| Status::invalid_argument(e.to_string()))?;
 
         let internal_req = ExplainabilityRequest {
             score_id,
