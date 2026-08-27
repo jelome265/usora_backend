@@ -11,7 +11,7 @@ use tonic::transport::{Certificate, Channel, ClientTlsConfig};
 /// when no token is configured, so this can be applied unconditionally
 /// without branching the client types on whether auth is enabled.
 #[derive(Clone)]
-struct BearerAuth(Option<std::sync::Arc<str>>);
+pub(crate) struct BearerAuth(Option<std::sync::Arc<str>>);
 
 impl Interceptor for BearerAuth {
     fn call(&mut self, mut req: tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status> {
@@ -25,7 +25,7 @@ impl Interceptor for BearerAuth {
     }
 }
 
-type AuthedChannel = InterceptedService<Channel, BearerAuth>;
+pub(crate) type AuthedChannel = InterceptedService<Channel, BearerAuth>;
 
 #[derive(Clone)]
 pub struct GrpcClients {
