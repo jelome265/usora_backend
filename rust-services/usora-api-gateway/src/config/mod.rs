@@ -467,7 +467,7 @@ impl Config {
         }
     }
 
-    pub fn tls_min_version(&self) -> &'static rustls::SupportedProtocolVersion {
+    pub fn tls_min_version(&self) -> anyhow::Result<&'static rustls::SupportedProtocolVersion> {
         match self.tls.min_version.to_lowercase().as_str() {
             "tlsv1.2" => Ok(&rustls::version::TLS12),
             "tlsv1.3" => Ok(&rustls::version::TLS13),
