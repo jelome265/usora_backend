@@ -3,7 +3,7 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:usora_notifications}
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME:usora_notifications}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     hikari:
@@ -89,7 +89,7 @@ logging:
 grpc:
   client:
     tenant-service:
-      address: static://${TENANT_SERVICE_HOST:localhost}:${TENANT_SERVICE_PORT:9090}
+      address: static://${TENANT_SERVICE_HOST}:${TENANT_SERVICE_PORT:9090}
       negotiation-type: tls
 
 # PRE-EXISTING GAP, found and fixed while writing this service's Helm
