@@ -53,7 +53,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${JWT_ISSUER_URI}
+          # F-011: see application-dev.yml for why issuer-uri was dropped
+          # and jwk-set-uri corrected to identity-service's real endpoint.
           jwk-set-uri: ${JWK_SET_URI}
 
 compliance:
@@ -61,7 +62,7 @@ compliance:
     host: ${AML_SCREENING_HOST:aml-screening-service}
     port: ${AML_SCREENING_PORT:9090}
   security:
-    jwt-secret: ${COMPLIANCE_JWT_SECRET}
+    # F-011: jwt-secret removed -- see application.yml.
     # PRE-EXISTING GAP, found and fixed while writing this service's Helm
     # chart: the prod profile overrode jwt-secret but not
     # rule-signing-secret — meaning production deployments were still

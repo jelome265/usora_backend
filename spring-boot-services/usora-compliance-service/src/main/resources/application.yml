@@ -67,8 +67,9 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8081/auth/realms/usora}
-          jwk-set-uri: ${JWK_SET_URI:http://localhost:8081/auth/realms/usora/protocol/openid-connect/certs}
+          # F-011: see application-dev.yml for why issuer-uri was dropped
+          # and jwk-set-uri corrected to identity-service's real endpoint.
+          jwk-set-uri: ${JWK_SET_URI:http://identity.usora.svc.cluster.local:8080/oauth2/jwks}
 
 compliance:
   rules:
@@ -110,12 +111,14 @@ compliance:
     merkle-verification-ms: 3600000
     sanctions-staleness: "0 */30 * * * *"
   security:
-    # No defaults: a missing value must fail startup, not silently sign with a
-    # well-known key anyone can read from this file (C-02 remediation).
-    jwt-secret: ${COMPLIANCE_JWT_SECRET:}
+    # F-011: jwt-secret (COMPLIANCE_JWT_SECRET) removed -- JwtTokenProvider
+    # no longer signs/verifies with its own HMAC key; it now verifies
+    # against identity-service's real JWKS via the injected JwtDecoder
+    # (see spring.security.oauth2.resourceserver.jwt.jwk-set-uri above and
+    # JwtTokenProvider/SecurityConfig for the replacement).
     # Secret used to HMAC-sign dual-authorized compliance rule changes so the
     # signature can't be recomputed by anyone who only sees the (public)
-    # rule content. Must be distinct from jwt-secret and rotated via Vault/KMS.
+    # rule content. Must be distinct from any JWT signing key and rotated via Vault/KMS.
     rule-signing-secret: ${COMPLIANCE_RULE_SIGNING_SECRET:}
   client:
     timeout-seconds: 30

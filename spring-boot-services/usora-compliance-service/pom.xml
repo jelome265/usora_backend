@@ -60,6 +60,20 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
+        <!-- F-011: SecurityConfig/JwtTokenProvider use NimbusJwtDecoder,
+             JwtAuthenticationConverter, JwtGrantedAuthoritiesConverter --
+             none of which live in spring-boot-starter-security. Same
+             missing-dependency bug found and fixed in core-service and
+             audit-service while doing this migration; the oauth2ResourceServer
+             config already present here would have needed this too. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-resource-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-jose</artifactId>
+        </dependency>
         <!--
             PRE-EXISTING GAP, fixed while implementing the C2 dual-authorization
             fix (docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md): this module's

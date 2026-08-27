@@ -20,15 +20,25 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:8081/auth/realms/usora-dev
-          jwk-set-uri: http://localhost:8081/auth/realms/usora-dev/protocol/openid-connect/certs
+          # F-011: this pointed at a stale Keycloak-style realm path
+          # (".../auth/realms/usora-dev/protocol/openid-connect/certs")
+          # that identity-service has never actually served -- this
+          # service's tokens could never have been verified against the
+          # real identity-service JWKS with this value. Also dropped
+          # issuer-uri: Spring Boot's resourceserver auto-config uses it
+          # both to auto-discover jwk-set-uri via OIDC discovery metadata
+          # AND to validate the "iss" claim, but identity-service doesn't
+          # serve a conforming .well-known/openid-configuration document
+          # here -- relying on that auto-discovery working would be an
+          # unverified assumption. Matches core-service/audit-service,
+          # which use jwk-set-uri directly with no issuer enforcement.
+          jwk-set-uri: http://localhost:8081/oauth2/jwks
 
 compliance:
   aml-screening:
     host: localhost
     port: 9090
   security:
-    jwt-secret: dev-secret-key-not-for-production-use-change-it-32chars
     rule-signing-secret: dev-rule-signing-secret-not-for-production-use-32chars
   schedule:
     watchlist-refresh: "0 */5 * * * *"

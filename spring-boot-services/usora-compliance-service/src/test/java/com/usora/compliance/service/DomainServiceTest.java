@@ -13,15 +13,16 @@ import com.usora.compliance.security.TenantContext;
 import com.usora.compliance.util.HashingUtil;
 import com.usora.compliance.client.GrpcClient;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
@@ -37,7 +38,20 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class DomainServiceTest {
 
-    private static final String TEST_JWT_SECRET = "test-secret-key-at-least-32-bytes-long-for-hmac";
+    /**
+     * F-011: JwtTokenProvider now verifies against a real JwtDecoder
+     * (JWKS-backed in production; here, an in-memory RSA keypair) rather
+     * than an HMAC secret string -- see JwtTokenProvider's own javadoc.
+     * NimbusJwtDecoder.withPublicKey(...) gives genuine RS256 signature
+     * verification against this test's own keypair with no network call
+     * and no real JWKS endpoint required, which is the right test double
+     * here: same JwtDecoder contract the real JWKS-backed bean satisfies,
+     * still a real cryptographic check, not a mocked "always valid" stub.
+     */
+    private final KeyPair testKeyPair = generateTestKeyPair();
+    private final JwtDecoder jwtDecoder = NimbusJwtDecoder
+            .withPublicKey((java.security.interfaces.RSAPublicKey) testKeyPair.getPublic())
+            .build();
 
     @Mock private ComplianceRuleRepository ruleRepository;
     @Mock private EvidenceRecordRepository evidenceRepository;
@@ -49,12 +63,12 @@ class DomainServiceTest {
     @Mock private GrpcClient grpcClient;
 
     /**
-     * A real (not mocked) JwtTokenProvider, backed by a real HMAC key, so
+     * A real (not mocked) JwtTokenProvider, backed by a real JwtDecoder, so
      * the dual-authorization regression tests below exercise genuine
      * signature verification rather than a mocked "always valid" stub —
      * a mock here would defeat the point of the test.
      */
-    private final JwtTokenProvider jwtTokenProvider = new JwtTokenProvider(TEST_JWT_SECRET);
+    private final JwtTokenProvider jwtTokenProvider = new JwtTokenProvider(jwtDecoder);
 
     private DomainService domainService;
 
@@ -67,13 +81,22 @@ class DomainServiceTest {
         TenantContext.setCurrentTenant("tenant1");
     }
 
+    private static KeyPair generateTestKeyPair() {
+        try {
+            var generator = KeyPairGenerator.getInstance("RSA");
+            generator.initialize(2048);
+            return generator.generateKeyPair();
+        } catch (Exception e) {
+            throw new IllegalStateException("failed to generate test RSA keypair", e);
+        }
+    }
+
     private String signedToken(String subject, String role, Instant expiry) {
-        SecretKey key = Keys.hmacShaKeyFor(TEST_JWT_SECRET.getBytes(StandardCharsets.UTF_8));
         return Jwts.builder()
                 .subject(subject)
                 .claim("roles", List.of(role))
                 .expiration(Date.from(expiry))
-                .signWith(key)
+                .signWith(testKeyPair.getPrivate())
                 .compact();
     }
 
