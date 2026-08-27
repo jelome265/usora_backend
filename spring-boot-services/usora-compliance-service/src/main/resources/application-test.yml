@@ -32,7 +32,6 @@ compliance:
     host: localhost
     port: 19090
   security:
-    jwt-secret: test-secret-key-for-testing-purposes-only-32characters
     rule-signing-secret: test-rule-signing-secret-for-testing-only-32chars
   schedule:
     watchlist-refresh: "0 0 0 1 1 *"

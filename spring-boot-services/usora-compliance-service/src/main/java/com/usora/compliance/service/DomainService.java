@@ -2,7 +2,6 @@ package com.usora.compliance.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.jsonwebtoken.Claims;
 import com.usora.compliance.client.GrpcClient;
 import com.usora.compliance.config.DroolsConfig;
 import com.usora.compliance.config.TenantConfig;
@@ -608,7 +607,7 @@ public class DomainService {
      */
     private String extractPrincipal(String token) {
         return jwtTokenProvider.parseVerifiedClaims(token)
-                .map(Claims::getSubject)
+                .map(Jwt::getSubject)
                 .filter(subject -> subject != null && !subject.isBlank())
                 .orElseThrow(() -> BusinessException.dualAuthorizationRequired());
     }
