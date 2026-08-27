@@ -271,10 +271,41 @@ impl Config {
             cfg.tls.key_path = v;
         }
         if let Ok(v) = std::env::var("TLS_MIN_VERSION") {
+            // SECURITY (F-008): previously any unrecognized value here
+            // (a typo like "TLSv1.3 " with trailing whitespace, "TLS1.3"
+            // missing the dot, "SSLv3") was accepted here and only
+            // discovered to be meaningless later in tls_min_version(),
+            // which silently mapped every unrecognized string to TLS 1.2 --
+            // quietly downgrading the floor below the intended TLS 1.3
+            // default with no error at any point. Reject anything that
+            // isn't one of the two versions this gateway actually supports,
+            // right where the value is read, rather than let it reach
+            // load_tls_config() having already been silently reinterpreted.
+            let normalized = v.trim().to_lowercase();
+            if normalized != "tlsv1.2" && normalized != "tlsv1.3" {
+                anyhow::bail!(
+                    "TLS_MIN_VERSION={v:?} is not a supported value (expected \"TLSv1.2\" or \
+                     \"TLSv1.3\"). Refusing to start rather than silently falling back to TLS 1.2 -- \
+                     see F-008."
+                );
+            }
             cfg.tls.min_version = v;
         }
         if let Ok(v) = std::env::var("TLS_REQUIRE_CLIENT_AUTH") {
-            cfg.tls.require_client_auth = v.parse().unwrap_or(false);
+            // SECURITY (F-008): `.parse().unwrap_or(false)` silently turned
+            // ANY unparseable value -- a typo like "ture", an empty string
+            // from a botched Helm template, "True" with capitalization
+            // Rust's bool parser doesn't accept, anything -- into `false`,
+            // i.e. mTLS silently OFF. A security-relevant boolean must
+            // reject invalid input outright rather than quietly picking the
+            // weaker of the two possible states.
+            cfg.tls.require_client_auth = v.trim().parse().map_err(|_| {
+                anyhow::anyhow!(
+                    "TLS_REQUIRE_CLIENT_AUTH={v:?} is not a valid boolean (expected \"true\" or \
+                     \"false\"). Refusing to start rather than silently treating an invalid value \
+                     as \"false\" (mTLS disabled) -- see F-008."
+                )
+            })?;
         }
         if let Ok(v) = std::env::var("TLS_CLIENT_CA_PATH") {
             cfg.tls.client_ca_path = Some(v);
@@ -403,9 +434,13 @@ impl Config {
 
     pub fn tls_min_version(&self) -> &'static rustls::SupportedProtocolVersion {
         match self.tls.min_version.to_lowercase().as_str() {
-            "tlsv1.2" => &rustls::version::TLS12,
-            "tlsv1.3" => &rustls::version::TLS13,
-            _ => &rustls::version::TLS12,
+            "tlsv1.2" => Ok(&rustls::version::TLS12),
+            "tlsv1.3" => Ok(&rustls::version::TLS13),
+            other => anyhow::bail!(
+                "tls.min_version={other:?} is not a supported TLS version (expected \"tlsv1.2\" or \
+                 \"tlsv1.3\"). This should have been rejected by Config::from_env() already -- refusing \
+                 to silently fall back to a weaker floor here."
+            ),
         }
     }
 
@@ -417,7 +452,7 @@ impl Config {
         let key = rustls_pemfile::private_key(&mut key_reader)?
             .ok_or_else(|| anyhow::anyhow!("no private key found"))?;
 
-        let builder = rustls::ServerConfig::builder_with_protocol_versions(&[self.tls_min_version()]);
+        let builder = rustls::ServerConfig::builder_with_protocol_versions(&[self.tls_min_version()?]);
 
         // SECURITY: this used to be with_no_client_auth() unconditionally --
         // crate::auth::mtls::MtlsValidator implemented a working client
