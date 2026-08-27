@@ -29,12 +29,12 @@ pub(crate) type AuthedChannel = InterceptedService<Channel, BearerAuth>;
 
 #[derive(Clone)]
 pub struct GrpcClients {
-    pub identity: proto::identity::identity_service_client::IdentityServiceClient<AuthedChannel>,
-    pub document: proto::document::document_analysis_service_client::DocumentAnalysisServiceClient<AuthedChannel>,
-    pub tenant: proto::tenant::tenant_service_client::TenantServiceClient<AuthedChannel>,
-    pub audit: proto::audit::audit_service_client::AuditServiceClient<AuthedChannel>,
-    pub compliance: proto::compliance::compliance_service_client::ComplianceServiceClient<AuthedChannel>,
-    pub notification: proto::notification::notification_service_client::NotificationServiceClient<AuthedChannel>,
+    pub(crate) identity: proto::identity::identity_service_client::IdentityServiceClient<AuthedChannel>,
+    pub(crate) document: proto::document::document_analysis_service_client::DocumentAnalysisServiceClient<AuthedChannel>,
+    pub(crate) tenant: proto::tenant::tenant_service_client::TenantServiceClient<AuthedChannel>,
+    pub(crate) audit: proto::audit::audit_service_client::AuditServiceClient<AuthedChannel>,
+    pub(crate) compliance: proto::compliance::compliance_service_client::ComplianceServiceClient<AuthedChannel>,
+    pub(crate) notification: proto::notification::notification_service_client::NotificationServiceClient<AuthedChannel>,
     orchestrator_authority: String,
     compute_authority: String,
 }
