@@ -79,9 +79,29 @@ public class DomainEventListener {
     }
 
     private void withTenantContext(Map<String, Object> event, Runnable action) {
+        if (event == null || event.isEmpty()) {
+            log.error("Dropping empty/null Kafka event -- nothing to process");
+            return;
+        }
         var tenantId = (String) event.get("tenantId");
         if (tenantId == null || tenantId.isBlank()) {
             log.error("Dropping event with no tenantId field — cannot process without a tenant: {}", event);
+            return;
+        }
+        // F-010 remediation item 4: reject malformed payloads before they
+        // reach domainService.sendNotification() rather than silently
+        // defaulting "to" to an empty string and "channel" to EMAIL --
+        // both of which previously let a malformed or unexpected message
+        // shape through as a notification request to nobody, on whatever
+        // channel happened to be the default, rather than failing visibly.
+        var to = (String) event.get("to");
+        var channel = (String) event.get("channel");
+        if (to == null || to.isBlank()) {
+            log.error("Dropping event with no \"to\" field for tenant {} -- cannot send a notification with no recipient", tenantId);
+            return;
+        }
+        if (channel == null || channel.isBlank()) {
+            log.error("Dropping event with no \"channel\" field for tenant {} -- refusing to guess a delivery channel", tenantId);
             return;
         }
         try {
