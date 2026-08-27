@@ -73,6 +73,18 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
+        <!-- F-011: needed for the JWKS-based oauth2ResourceServer contract
+             (NimbusJwtDecoder, JwtAuthenticationConverter) that replaced
+             this service's previous HMAC-only JwtTokenProvider -- see
+             SecurityConfig. Mirrors core-service/audit-service's pom. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-resource-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-jose</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>

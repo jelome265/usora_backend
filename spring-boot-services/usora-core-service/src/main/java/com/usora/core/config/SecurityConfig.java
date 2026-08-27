@@ -51,8 +51,20 @@ public class SecurityConfig implements WebMvcConfigurer {
     }
 
     @Bean
-    public JwtDecoder jwtDecoder() {
-        return NimbusJwtDecoder.withJwkSetUri("${usora.security.jwk-set-uri}").build();
+    public JwtDecoder jwtDecoder(
+            @org.springframework.beans.factory.annotation.Value("${usora.security.jwk-set-uri}") String jwkSetUri) {
+        // BUG FOUND WHILE FIXING F-011 (usora-notification-service): this
+        // previously called withJwkSetUri("${usora.security.jwk-set-uri}")
+        // with the literal, unresolved placeholder string baked directly
+        // into Java source -- not a @Value-injected argument, so Spring
+        // never substituted it. NimbusJwtDecoder.withJwkSetUri() would
+        // therefore have received the literal characters
+        // "${usora.security.jwk-set-uri}" as a URI at startup/first use,
+        // which cannot resolve to anything -- every JWT verification in
+        // this service would fail. Fixed by actually injecting the
+        // property via a @Value-annotated constructor parameter, the way
+        // every other @Value usage in this codebase already does it.
+        return NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
     }
 
     @Bean

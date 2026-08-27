@@ -142,8 +142,18 @@ grpc:
     port: 9095
 
 security:
-  jwt:
-    secret: ${JWT_SECRET:}
+  # F-011: replaced the HMAC-secret JWT verification (security.jwt.secret)
+  # with the central identity-service's RS256/JWKS contract, the same one
+  # core-service/audit-service/gateway trust -- see SecurityConfig for the
+  # JwtDecoder wired against this. A token issued by identity-service could
+  # not previously be validated here at all (wrong algorithm, wrong key
+  # material); this service's own JWT_SECRET was a parallel credential
+  # system with its own (nonexistent) rotation and no relationship to the
+  # platform's actual token issuer.
+  oauth2:
+    resourceserver:
+      jwt:
+        jwk-set-uri: ${JWK_SET_URI:http://identity.usora.svc.cluster.local:8080/oauth2/jwks}
   encryption:
     secret-key: ${ENCRYPTION_SECRET_KEY:}
 

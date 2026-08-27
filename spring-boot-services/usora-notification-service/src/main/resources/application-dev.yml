@@ -30,11 +30,17 @@ spring:
     password:
 
 security:
-  jwt:
-    # Local-development-only signing key. Never used in prod/staging — those
-    # profiles require the JWT_SECRET environment variable and fail startup
-    # without it (see C-02 remediation in JwtTokenProvider).
-    secret: dev-only-notification-jwt-secret-not-for-production-use-32chars
+  # F-011: dev now points at identity-service's real JWKS endpoint (see
+  # application.yml's default of http://identity.usora.svc.cluster.local,
+  # overridden here for a local, non-cluster dev setup) instead of a
+  # local HMAC secret -- consistent with core-service's application-dev.yml
+  # convention. This does mean local development needs identity-service
+  # actually running and reachable to get a usable token; that's already
+  # true for every other JWKS-based service in this repo.
+  oauth2:
+    resourceserver:
+      jwt:
+        jwk-set-uri: http://localhost:8081/oauth2/jwks
   encryption:
     # Local-development-only key, never used in prod/staging -- those
     # require ENCRYPTION_SECRET_KEY and fail startup without it.

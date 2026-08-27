@@ -24,7 +24,7 @@ public class DomainEventListener {
      * security for this service: DomainService.sendNotification() reads
      * TenantContext.getCurrentTenantId() to populate the notification's
      * NOT NULL tenant_id column — but TenantContext is only ever set
-     * during HTTP JWT authentication (see JwtTokenProvider.java). These
+     * during HTTP JWT authentication (see TenantInterceptor.java). These
      * three @KafkaListener methods run on Kafka's consumer threads, with
      * no HTTP request and no TenantContext at all — every Kafka-
      * triggered notification has been saving with tenant_id = null,
