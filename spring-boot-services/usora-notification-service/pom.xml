@@ -24,6 +24,12 @@
         <twilio-sdk.version>12.1.1</twilio-sdk.version>
         <resilience4j.version>2.4.0</resilience4j.version>
         <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
+        <!-- F-012/build-fix: grpc.version and protoc-jar-maven-plugin
+             version pinned to match usora-compliance-service's, the only
+             other Java service with a real gRPC server, for consistency
+             across services. -->
+        <grpc.version>1.83.1</grpc.version>
+        <protoc-jar-maven-plugin.version>3.11.4</protoc-jar-maven-plugin.version>
         <protobuf-java.version>3.25.5</protobuf-java.version>
         <micrometer.version>1.15.0</micrometer.version>
         <spring-kafka.version>3.4.0</spring-kafka.version>
@@ -133,6 +139,33 @@
             <groupId>net.devh</groupId>
             <artifactId>grpc-spring-boot-starter</artifactId>
             <version>${grpc-spring-boot.version}</version>
+        </dependency>
+        <!-- BUG found while implementing F-012 (NotificationGrpcService):
+             GrpcClient.java already referenced generated classes
+             TenantServiceProto/TenantServiceGrpc from
+             src/main/protobuf/tenant_service.proto, but this pom had no
+             protobuf/gRPC codegen plugin at all (see the plugins section
+             below) and no checked-in generated sources -- those classes
+             could not have existed anywhere in this module. This service
+             could not have compiled as checked in. grpc-protobuf/grpc-stub
+             (needed by generated gRPC service/stub code, in addition to
+             the plain protobuf-java message classes already depended on
+             below) were also missing. -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-protobuf</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>javax.annotation</groupId>
+            <artifactId>javax.annotation-api</artifactId>
+            <version>1.3.2</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.google.protobuf</groupId>
@@ -256,6 +289,46 @@
 
     <build>
         <plugins>
+            <!-- F-012/build-fix: generates TenantServiceProto/TenantServiceGrpc
+                 (client, from tenant_service.proto) and NotificationServiceGrpc
+                 (server, from notification.proto -- see grpc/NotificationGrpcService.java)
+                 -- previously entirely missing; see the grpc-protobuf/grpc-stub
+                 dependency comment above for what this was blocking. Mirrors
+                 usora-compliance-service's pom, the only other Java service
+                 with this wiring already correct, except inputDirectories
+                 points at src/main/protobuf (this module's existing proto
+                 directory name, already used for tenant_service.proto)
+                 instead of src/main/proto. -->
+            <plugin>
+                <groupId>com.github.os72</groupId>
+                <artifactId>protoc-jar-maven-plugin</artifactId>
+                <version>${protoc-jar-maven-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <protocVersion>${protobuf-java.version}</protocVersion>
+                            <inputDirectories>
+                                <include>src/main/protobuf</include>
+                            </inputDirectories>
+                            <outputTargets>
+                                <outputTarget>
+                                    <type>java</type>
+                                    <outputDirectory>${project.build.directory}/generated-sources/protobuf/java</outputDirectory>
+                                </outputTarget>
+                                <outputTarget>
+                                    <type>grpc-java</type>
+                                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:${grpc.version}</pluginArtifact>
+                                    <outputDirectory>${project.build.directory}/generated-sources/protobuf/grpc-java</outputDirectory>
+                                </outputTarget>
+                            </outputTargets>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

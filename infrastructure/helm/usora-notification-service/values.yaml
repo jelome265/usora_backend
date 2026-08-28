@@ -24,11 +24,20 @@ podAnnotations:
 service:
   type: ClusterIP
   ports:
-    # No gRPC server of its own — this service only calls OUT to
-    # usora-tenant-service via gRPC (see tenantService below).
+    # F-012: this service now has a real gRPC server
+    # (NotificationGrpcService) implementing NotificationService from
+    # notification.proto -- the API gateway already held a typed client
+    # for it before this port was ever exposed here. Previously this
+    # comment said "No gRPC server of its own", which was the actual bug:
+    # even once a server implementation existed, this port still needed
+    # to be exposed for the gateway to ever reach it.
     - name: http
       port: 8085
       targetPort: 8085
+      protocol: TCP
+    - name: grpc
+      port: 9095
+      targetPort: 9095
       protocol: TCP
 
 postgresql:
