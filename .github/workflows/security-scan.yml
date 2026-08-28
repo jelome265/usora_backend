@@ -77,29 +77,38 @@ jobs:
           sudo apt-get update && sudo apt-get install -y trivy
 
       - name: Trivy Filesystem Scan
+        # F-014: previously --exit-code 0 with continue-on-error: true,
+        # meaning a CRITICAL/HIGH finding could never fail this job --
+        # Trivy ran purely as an evidence collector. --exit-code 1 (the
+        # default meaning of "found a match at this severity") now
+        # actually fails this step; continue-on-error is removed from the
+        # scan itself. .trivyignore supports time-bounded, reviewed
+        # exceptions (remediation item 5) via Trivy's own native
+        # ignore-file mechanism rather than a hand-rolled one.
         run: |
           trivy filesystem \
             --severity HIGH,CRITICAL \
-            --exit-code 0 \
+            --exit-code 1 \
             --format sarif \
             --output trivy-fs-results.sarif \
             --ignore-unfixed \
+            --ignorefile .trivyignore \
             --timeout 10m \
             .
-        continue-on-error: true
 
       - name: Trivy Config Scan (IaC)
         run: |
           trivy config \
             --severity HIGH,CRITICAL \
-            --exit-code 0 \
+            --exit-code 1 \
             --format sarif \
             --output trivy-config-results.sarif \
+            --ignorefile .trivyignore \
             --timeout 5m \
             infrastructure/
-        continue-on-error: true
 
       - name: Upload Trivy SARIF Results
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-fs-results.sarif
@@ -107,6 +116,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Trivy Config SARIF
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-config-results.sarif
@@ -128,34 +138,56 @@ jobs:
           cache: maven
 
       - name: OWASP Dependency Check (Java)
+        # F-014: previously `|| true` + continue-on-error: true completely
+        # neutralized -DfailBuildOnCVSS=7, which was already correctly
+        # configured to fail the Maven build on a CVSS>=7 finding -- the
+        # scan was doing real policy evaluation and then having its
+        # verdict thrown away. Removed both; a CVSS>=7 dependency finding
+        # now actually fails this job.
         run: |
           mvn dependency-check:check \
             -DfailBuildOnCVSS=7 \
             -Dformat=JSON \
             -Dout=owasp-dependency-check.json \
             -q \
-            -f pom.xml || true
-        continue-on-error: true
+            -f pom.xml
 
       - name: Setup Rust
+        if: always()
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.97.1
 
       - name: Install Cargo Audit
+        if: always()
         run: cargo install cargo-audit --locked
 
       - name: Cargo Audit (Rust)
+        if: always()
+        # F-014: previously `2>/dev/null || true` on every iteration meant
+        # a real vulnerability (cargo audit exits nonzero when one is
+        # found) was silently discarded -- this ran purely as an evidence
+        # collector. Now tracks a combined exit code across all four
+        # services and fails the step if any of them found something,
+        # while still writing every service's JSON report first so the
+        # upload step below has something to attach regardless.
         run: |
           cd rust-services
+          overall=0
           for service in usora-api-gateway usora-document-processor usora-face-matching-engine usora-risk-scoring-engine; do
             echo "::group::Cargo Audit: $service"
-            (cd "$service" && cargo audit --json > ../../cargo-audit-$service.json 2>/dev/null || true)
+            (cd "$service" && cargo audit --json > "../../cargo-audit-$service.json")
+            status=$?
+            if [ $status -ne 0 ]; then
+              echo "::error::cargo audit found a vulnerability in $service (exit $status)"
+              overall=1
+            fi
             echo "::endgroup::"
           done
-        continue-on-error: true
+          exit $overall
 
       - name: Upload OWASP Results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: owasp-dependency-check
@@ -163,6 +195,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload Cargo Audit Results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cargo-audit-reports
@@ -179,6 +212,11 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Semgrep Scan
+        # F-014: previously `|| true` + continue-on-error: true
+        # neutralized --error, which already makes Semgrep exit nonzero
+        # when findings are present -- the scan was doing real policy
+        # evaluation and then having its verdict thrown away. Removed
+        # both; a real Semgrep finding now actually fails this job.
         run: |
           semgrep \
             --config=auto \
@@ -192,10 +230,10 @@ jobs:
             --error \
             --timeout=60 \
             --metrics=off \
-            rust-services/ spring-boot-services/ shared/ || true
-        continue-on-error: true
+            rust-services/ spring-boot-services/ shared/
 
       - name: Upload Semgrep SARIF
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep-results.sarif
@@ -203,6 +241,7 @@ jobs:
         continue-on-error: true
 
       - name: Generate Semgrep Summary
+        if: always()
         run: |
           if [ -f semgrep-results.sarif ]; then
             python3 -c "
@@ -236,16 +275,23 @@ jobs:
           fetch-depth: 0
 
       - name: Run Gitleaks
+        # F-014: previously continue-on-error: true meant a real secret
+        # leak (gitleaks-action exits nonzero on any leak found) could
+        # never fail this job -- it ran purely as an evidence collector.
         uses: gitleaks/gitleaks-action@v3
-        continue-on-error: true
 
       - name: Run TruffleHog
+        # Same fix: a verified secret found here now fails the job.
         uses: trufflesecurity/trufflehog@main
         with:
           extra_args: --only-verified --results=verified
-        continue-on-error: true
 
       - name: Custom Secret Scan with grep
+        if: always()
+        # F-014: previously continue-on-error: true and no exit code ever
+        # propagated even when PATTERNS matched -- this ran purely as an
+        # evidence collector regardless of what it found. Now tracks
+        # whether anything matched and fails the step if so.
         run: |
           echo "::group::Scanning for hardcoded secrets..."
           PATTERNS=(
@@ -259,15 +305,17 @@ jobs:
             'AIza[0-9A-Za-z-_]{35}'
             '-----BEGIN CERTIFICATE-----'
           )
+          found=0
           for pattern in "${PATTERNS[@]}"; do
             results=$(grep -rn "$pattern" --include="*.{rs,java,yml,yaml,toml,json,sh,sql,properties,xml}" . 2>/dev/null | grep -v ".git/" | grep -v "node_modules/" | grep -v "target/" || true)
             if [ -n "$results" ]; then
-              echo "WARNING: Potential secret found matching pattern: $pattern"
+              echo "::error::Potential secret found matching pattern: $pattern"
               echo "$results" | head -20
+              found=1
             fi
           done
           echo "::endgroup::"
-        continue-on-error: true
+          exit $found
 
       - name: Upload Secret Scan Results
         if: always()
@@ -318,18 +366,26 @@ jobs:
         continue-on-error: true
 
       - name: Check Prohibited Licenses
+        if: always()
+        # F-014: previously continue-on-error: true and no exit code ever
+        # propagated even when a prohibited license was found -- this was
+        # evidence collection, not a policy gate, despite the (correctly
+        # named) prohibited-license list existing. Now fails the step if
+        # any prohibited license is detected in any service's report.
         run: |
           PROHIBITED=("GPL-3.0" "GPL-2.0" "AGPL-3.0" "AGPL-1.0" "SSPL-1.0")
+          found=0
           for f in cargo-licenses-*.json; do
             if [ -f "$f" ]; then
               for lic in "${PROHIBITED[@]}"; do
                 if grep -q "$lic" "$f" 2>/dev/null; then
-                  echo "WARNING: $f contains $lic license"
+                  echo "::error::$f contains prohibited license $lic"
+                  found=1
                 fi
               done
             fi
           done
-        continue-on-error: true
+          exit $found
 
       - name: Upload License Reports
         uses: actions/upload-artifact@v4
@@ -363,7 +419,15 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Scan Base Images
+        # F-014: previously --exit-code 0 with continue-on-error: true --
+        # this ran purely as an evidence collector, same as the
+        # filesystem/config Trivy scans above. Now uses the same
+        # --exit-code 1 + .trivyignore pattern (upstream base-image CVEs
+        # are common and often unfixed for a while, so time-bounded
+        # exceptions matter here more than anywhere else in this file --
+        # see .trivyignore).
         run: |
+          overall=0
           IMAGES=(
             "rust:1.82-slim-bookworm"
             "eclipse-temurin:21-jdk-bookworm"
@@ -380,17 +444,24 @@ jobs:
             docker pull "$image" --quiet
             trivy image \
               --severity HIGH,CRITICAL \
-              --exit-code 0 \
+              --exit-code 1 \
               --format sarif \
               --output "trivy-image-$(echo $image | tr '/:' '--').sarif" \
               --ignore-unfixed \
+              --ignorefile .trivyignore \
               --timeout 5m \
               "$image"
+            status=$?
+            if [ $status -ne 0 ]; then
+              echo "::error::HIGH/CRITICAL finding in base image $image"
+              overall=1
+            fi
             echo "::endgroup::"
           done
-        continue-on-error: true
+          exit $overall
 
       - name: Upload Container Scan Results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: container-scan-results
@@ -522,3 +593,23 @@ jobs:
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
+
+      - name: Enforce Aggregate Security Gate
+        if: always()
+        # F-014: this is the actual fix for the finding's central point --
+        # "the aggregate report job uses if: always() and can complete
+        # successfully even when CodeQL fails." Every step above this one
+        # computes and reports a verdict, uploads artifacts, and notifies
+        # Slack, but NOTHING previously made the report JOB ITSELF fail
+        # when that verdict was "failure" -- the job (and therefore this
+        # workflow's overall status, which is what a branch-protection
+        # required-status-check actually looks at) could show green in
+        # GitHub's UI while the printed verdict said "FAILED". This step
+        # runs last (after notifications, so the team is still told either
+        # way) and turns "failure" into a real, non-bypassable job failure.
+        run: |
+          if [ "${{ steps.security-summary.outputs.verdict }}" = "failure" ]; then
+            echo "::error::One or more mandatory security controls failed -- see the Security Scan Summary artifact and the per-job results above. This gate does not pass until every mandatory control passes or has a documented, time-bounded exception (see .trivyignore)."
+            exit 1
+          fi
+          echo "All mandatory security controls passed."
