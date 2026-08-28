@@ -14,7 +14,7 @@ build/
 
 # Rust
 rust-services/*/target/
-rust-services/*/Cargo.lock
+
 
 # OS
 .DS_Store
