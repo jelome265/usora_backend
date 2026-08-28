@@ -1,0 +1,21 @@
+# F-014 remediation item 5: documented, time-bounded exceptions for
+# accepted Trivy findings (filesystem + IaC config scans). Referenced by
+# .github/workflows/security-scan.yml via --ignorefile .trivyignore.
+#
+# Format (see https://trivy.dev/latest/docs/configuration/filtering/#by-finding-ids):
+#   CVE-2024-XXXXX exp:2026-12-31
+#
+# Every entry MUST have:
+#   1. The CVE/advisory ID or Trivy check ID being suppressed.
+#   2. An `exp:YYYY-MM-DD` expiry date. Trivy stops honoring an entry once
+#      its expiry date passes, so an unreviewed exception fails the scan
+#      again automatically rather than suppressing a finding forever by
+#      accident.
+#   3. A comment on the line above explaining why it's accepted and who
+#      approved it -- "add an exception" must be an explicit, reviewed,
+#      time-bounded decision (remediation item 5), not a way to make this
+#      gate quietly stop mattering.
+#
+# No entries yet -- add one only with a real justification and expiry,
+# reviewed the same way any other change to this file would be (this file
+# is not exempt from normal code review).
