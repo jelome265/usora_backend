@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package usora.notification.v1;
+
+option go_package = "github.com/usora/notification/v1;usoranotificationv1";
+option java_package = "com.usora.notification.v1";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+enum NotificationChannel {
+  NOTIFICATION_CHANNEL_UNSPECIFIED = 0;
+  EMAIL = 1;
+  SMS = 2;
+  WEBHOOK = 3;
+  PUSH_IN_APP = 4;
+}
+
+enum NotificationStatus {
+  NOTIFICATION_STATUS_UNSPECIFIED = 0;
+  PENDING = 1;
+  SENT = 2;
+  DELIVERED = 3;
+  FAILED = 4;
+  ACKNOWLEDGED = 5;
+}
+
+enum NotificationPriority {
+  NOTIFICATION_PRIORITY_UNSPECIFIED = 0;
+  LOW = 1;
+  NORMAL = 2;
+  HIGH = 3;
+  URGENT = 4;
+}
+
+message Notification {
+  string notification_id = 1;
+  string tenant_id = 2;
+  string recipient = 3;
+  NotificationChannel channel = 4;
+  NotificationStatus status = 5;
+  NotificationPriority priority = 6;
+  string title = 7;
+  string body = 8;
+  map<string, string> template_params = 9;
+  string template_id = 10;
+  int32 retry_count = 11;
+  int32 max_retries = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp sent_at = 14;
+  google.protobuf.Timestamp delivered_at = 15;
+  google.protobuf.Timestamp acknowledged_at = 16;
+  string error_message = 17;
+  google.protobuf.Struct metadata = 18;
+}
+
+message SendNotificationRequest {
+  string tenant_id = 1;
+  string recipient = 2;
+  NotificationChannel channel = 3;
+  NotificationPriority priority = 4;
+  string title = 5;
+  string body = 6;
+  string template_id = 7;
+  map<string, string> template_params = 8;
+  string callback_url = 9;
+  google.protobuf.Struct metadata = 10;
+}
+
+message SendNotificationResponse {
+  string notification_id = 1;
+  NotificationStatus status = 2;
+  bool accepted = 3;
+}
+
+message GetNotificationStatusRequest {
+  string notification_id = 1;
+  string tenant_id = 2;
+}
+
+message GetNotificationStatusResponse {
+  Notification notification = 1;
+}
+
+message ListNotificationsRequest {
+  string tenant_id = 1;
+  string recipient = 2;
+  NotificationChannel channel = 3;
+  NotificationStatus status = 4;
+  NotificationPriority priority = 5;
+  int32 page_size = 6;
+  string page_token = 7;
+}
+
+message ListNotificationsResponse {
+  repeated Notification notifications = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message AcknowledgeNotificationRequest {
+  string notification_id = 1;
+  string tenant_id = 2;
+  string acknowledged_by = 3;
+}
+
+message AcknowledgeNotificationResponse {
+  Notification notification = 1;
+}
+
+service NotificationService {
+  rpc SendNotification(SendNotificationRequest) returns (SendNotificationResponse);
+  rpc GetNotificationStatus(GetNotificationStatusRequest) returns (GetNotificationStatusResponse);
+  rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse);
+  rpc AcknowledgeNotification(AcknowledgeNotificationRequest) returns (AcknowledgeNotificationResponse);
+}

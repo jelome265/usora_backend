@@ -60,6 +60,9 @@ spec:
             - name: http
               containerPort: 8085
               protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: {{ include "usora-notification-service.fullname" . }}-config
