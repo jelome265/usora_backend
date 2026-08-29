@@ -34,12 +34,12 @@ pub mod proto {
 
 pub mod gateway_service;
 
+use std::sync::Arc;
 use axum::extract::FromRef;
 pub use config::Config;
 use grpc::GrpcClients;
-use rdkafka::producer::FutureProducer;
 use redis::aio::ConnectionManager;
-use std::sync::Arc;
+use rdkafka::producer::FutureProducer;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -117,8 +117,7 @@ impl AppState {
         } else {
             Some(cfg.identity.audience.clone())
         };
-        let jwt_validator =
-            auth::jwt::JwtValidator::new(Some(cfg.identity.issuer.clone()), audience);
+        let jwt_validator = auth::jwt::JwtValidator::new(Some(cfg.identity.issuer.clone()), audience);
 
         let http_client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
@@ -141,10 +140,7 @@ impl AppState {
             Ok(keys) => {
                 let count = keys.len();
                 jwt_validator.update_jwks(keys).await;
-                tracing::info!(
-                    key_count = count,
-                    "loaded JWKS from identity-service at startup"
-                );
+                tracing::info!(key_count = count, "loaded JWKS from identity-service at startup");
             }
             Err(e) => {
                 tracing::error!(
@@ -164,13 +160,7 @@ impl AppState {
             cfg.identity.jwks_refresh_secs,
         );
 
-        Ok(Self {
-            config: cfg,
-            grpc_clients,
-            redis,
-            kafka,
-            jwt_validator,
-        })
+        Ok(Self { config: cfg, grpc_clients, redis, kafka, jwt_validator })
     }
 }
 
