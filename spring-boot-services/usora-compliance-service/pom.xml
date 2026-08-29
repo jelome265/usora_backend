@@ -61,7 +61,7 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
         <!-- F-011: SecurityConfig/JwtTokenProvider use NimbusJwtDecoder,
-             JwtAuthenticationConverter, JwtGrantedAuthoritiesConverter --
+             JwtAuthenticationConverter, JwtGrantedAuthoritiesConverter -
              none of which live in spring-boot-starter-security. Same
              missing-dependency bug found and fixed in core-service and
              audit-service while doing this migration; the oauth2ResourceServer

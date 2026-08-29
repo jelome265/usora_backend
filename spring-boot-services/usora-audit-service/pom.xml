@@ -51,7 +51,7 @@
         <!-- BUG found while migrating this service off HMAC onto JWKS for
              F-011: SecurityConfig already referenced NimbusJwtDecoder,
              JwtAuthenticationConverter, and JwtGrantedAuthoritiesConverter
-             BEFORE this change -- none of which live in
+             BEFORE this change - none of which live in
              spring-boot-starter-security. Those classes are provided by
              spring-security-oauth2-resource-server /
              spring-security-oauth2-jose, neither of which was declared
