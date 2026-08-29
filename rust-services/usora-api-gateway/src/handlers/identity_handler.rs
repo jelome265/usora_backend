@@ -1,13 +1,13 @@
-use std::sync::Arc;
 use axum::extract::{Path, Query, State};
-use axum::Json;
 use axum::http::StatusCode;
+use axum::Json;
 use serde::Deserialize;
+use std::sync::Arc;
 
-use crate::AppState;
 use crate::models::*;
 use crate::proto;
 use crate::utils;
+use crate::AppState;
 
 fn format_verification_status(status: i32) -> String {
     proto::identity::VerificationStatus::try_from(status)
