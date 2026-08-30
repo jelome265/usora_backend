@@ -281,6 +281,46 @@
 
     <build>
         <plugins>
+            <!-- F-016 remediation item 4: Maven Enforcer's
+                 dependencyConvergence rule flags any dependency pulled in
+                 transitively at more than one version across this
+                 module's dependency tree, exactly the class of problem
+                 this finding is about (JJWT api/impl/jackson version
+                 skew, a Jackson version property that silently diverged
+                 from Spring Boot's own BOM). banDuplicatePomDependencyVersions
+                 catches the same dependency declared twice in this POM
+                 with different explicit versions.
+                 fail=false: this sandbox has no Maven access to actually
+                 run this rule and see what it reports before merging;
+                 turning on a hard failing convergence gate with zero
+                 visibility into whether this specific module's current
+                 dependency tree already has unrelated convergence
+                 conflicts would risk breaking CI on this PR's own merge
+                 for a reason unrelated to what this PR actually changed.
+                 Report only for now; flip to fail=true (or delete this
+                 element entirely, since true is the plugin's own
+                 default) once a real enforcer run against this module
+                 has been reviewed clean. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>enforce-dependency-convergence</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <fail>false</fail>
+                            <rules>
+                                <dependencyConvergence/>
+                                <banDuplicatePomDependencyVersions/>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
