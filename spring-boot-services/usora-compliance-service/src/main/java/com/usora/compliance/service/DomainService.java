@@ -93,7 +93,17 @@ public class DomainService {
         log.info("Starting compliance validation for case: {} in tenant: {}", request.caseId(), tenantId);
 
         var violations = new ArrayList<ComplianceValidationResponse.RuleResult>();
-        var warnings = new ArrayList<ComplianceValidationResponse.RuleResult>();
+        // F-018: renamed from "warnings" to make clear this bucket still
+        // forces a non-APPROVED outcome (REVIEW_REQUIRED), it is not
+        // merely advisory. See the decision computation below.
+        var reviewRequired = new ArrayList<ComplianceValidationResponse.RuleResult>();
+        // F-018: NEW -- a screening call that could not be completed
+        // (timeout, dependency error) is distinct from both a confirmed
+        // violation and a soft flag: we don't know the answer, so the
+        // case cannot be treated as clean, but it also should not be
+        // reported identically to a confirmed hit/violation. See the
+        // decision computation below.
+        var indeterminate = new ArrayList<ComplianceValidationResponse.RuleResult>();
         var amlResults = new ArrayList<ComplianceValidationResponse.AmlScreeningResult>();
         var jurisdictionResults = new ArrayList<ComplianceValidationResponse.JurisdictionResult>();
 
@@ -106,12 +116,16 @@ public class DomainService {
                     if ("critical".equals(rule.getSeverity()) || "high".equals(rule.getSeverity())) {
                         violations.add(result);
                     } else {
-                        warnings.add(result);
+                        reviewRequired.add(result);
                     }
                 }
             } catch (Exception e) {
                 log.error("Rule execution failed for rule {}: {}", rule.getRuleId(), e.getMessage());
-                warnings.add(new ComplianceValidationResponse.RuleResult(
+                // F-018: a rule that couldn't even be evaluated is treated
+                // the same as an unresolved screening call -- we don't know
+                // whether this rule would have passed or failed, so the
+                // case cannot be reported as clean on this rule's account.
+                indeterminate.add(new ComplianceValidationResponse.RuleResult(
                         rule.getRuleId(), rule.getName(), rule.getSeverity(), false,
                         "Rule execution error: " + e.getMessage(), List.of()));
             }
@@ -122,8 +136,10 @@ public class DomainService {
         // SECURITY/COMPLIANCE: a sanctions/PEP/watchlist hit here MUST be
         // able to block approval on its own — it cannot be allowed to be
         // purely informational, and a screening failure/timeout MUST fail
-        // closed (recorded as a violation requiring manual review), never
-        // silently skipped as if screening had passed clean.
+        // closed (recorded as INDETERMINATE, requiring manual review),
+        // never silently skipped as if screening had passed clean, and
+        // never conflated with a confirmed hit (see F-018 -- those are
+        // now distinct decision states).
         for (var listType : request.watchlistTypes()) {
             try {
                 var amlResult = grpcClient.screenIndividual(
@@ -147,17 +163,25 @@ public class DomainService {
                     if ("critical".equals(ruleResult.severity()) || "high".equals(ruleResult.severity())) {
                         violations.add(ruleResult);
                     } else {
-                        warnings.add(ruleResult);
+                        reviewRequired.add(ruleResult);
                     }
                 }
             } catch (Exception e) {
-                log.error("AML screening failed for {}: {} — failing closed", listType, e.getMessage());
-                // Fail closed: a screening call we couldn't complete is a
-                // violation requiring manual review, not a pass-through.
-                violations.add(new ComplianceValidationResponse.RuleResult(
+                log.error("AML screening failed for {}: {} — failing closed as INDETERMINATE", listType, e.getMessage());
+                // F-018: previously added to `violations` (REJECTED) --
+                // fail-closed in the sense that a timeout could never
+                // become APPROVED, but it conflated "we know this is bad"
+                // with "we don't know." A screening call we couldn't
+                // complete is now its own INDETERMINATE state: the case
+                // cannot be approved, but it also isn't reported as a
+                // confirmed violation on the merits -- the screening
+                // infrastructure needs attention and the case needs
+                // re-screening, which is a different remediation than "a
+                // human reviews a confirmed sanctions hit."
+                indeterminate.add(new ComplianceValidationResponse.RuleResult(
                         "aml-screening:" + listType,
                         "AML/Watchlist screening unavailable: " + listType,
-                        "high",
+                        "indeterminate",
                         false,
                         "Screening could not be completed for " + listType
                                 + " — treated as unresolved and requires manual review: " + e.getMessage(),
@@ -175,10 +199,49 @@ public class DomainService {
             }
         }
 
-        // Determine overall decision
+        // Determine overall decision. Priority order matters: a confirmed
+        // violation (REJECTED) always wins outright even if an unrelated
+        // screening call also failed -- a known-bad result must never be
+        // masked by an unrelated unknown one. Only when nothing is
+        // confirmed bad does an unresolved screening call (INDETERMINATE)
+        // take precedence over a merely-soft flag (REVIEW_REQUIRED); only
+        // when nothing is bad OR unresolved is the case actually APPROVED.
+        //
+        // F-018: previously this was a 3-state REJECTED/FLAGGED/APPROVED
+        // decision where a screening service failure/timeout was folded
+        // into the SAME "violations" bucket as a genuine confirmed
+        // sanctions hit or rule violation, both driving the exact same
+        // REJECTED outcome. That was already correctly fail-closed in the
+        // sense that a timeout could never become APPROVED, but it
+        // conflated two operationally different outcomes: "we know this
+        // is bad" and "we don't know, and can't safely guess." A REJECTED
+        // case implies a human reviewer is looking at a confirmed problem;
+        // an INDETERMINATE case means the screening infrastructure itself
+        // needs attention, and the case needs re-screening, not necessarily
+        // rejection on the merits. Distinguishing them matches remediation
+        // item 3 ("treat service failure/timeouts as INDETERMINATE or
+        // REVIEW_REQUIRED, never 'no hit'") precisely, rather than the
+        // previous behavior which already satisfied "never no hit" but not
+        // the distinct-status half of that requirement.
         var totalViolations = violations.size();
-        var totalWarnings = warnings.size();
-        var decision = totalViolations > 0 ? "REJECTED" : totalWarnings > 0 ? "FLAGGED" : "APPROVED";
+        var totalReviewRequired = reviewRequired.size();
+        var totalIndeterminate = indeterminate.size();
+        var decision = totalViolations > 0 ? "REJECTED"
+                : totalIndeterminate > 0 ? "INDETERMINATE"
+                : totalReviewRequired > 0 ? "REVIEW_REQUIRED"
+                : "APPROVED";
+
+        // BUG found while implementing F-018: ruleResults in the response
+        // below previously only ever contained `violations` -- a caller
+        // receiving a "FLAGGED" (now REVIEW_REQUIRED) or fail-closed
+        // REJECTED-from-timeout decision had no way to see WHICH rule or
+        // screening result actually drove that decision from the response
+        // itself, only an opaque count (totalWarnings). Every result that
+        // contributed to the decision is now included.
+        var allResults = new ArrayList<ComplianceValidationResponse.RuleResult>();
+        allResults.addAll(violations);
+        allResults.addAll(indeterminate);
+        allResults.addAll(reviewRequired);
 
         // Persist result
         var result = new ComplianceCheckResult();
@@ -189,12 +252,13 @@ public class DomainService {
         result.setEntityType(request.entityType());
         result.setOverallDecision(decision);
         result.setTotalViolations(totalViolations);
-        result.setTotalWarnings(totalWarnings);
+        result.setTotalWarnings(totalReviewRequired + totalIndeterminate);
         result.setValidatedAt(Instant.now());
         result.setValidatedBy(TenantContext.getCurrentTenant());
         try {
             result.setValidationJson(objectMapper.writeValueAsString(Map.of(
-                    "violations", violations, "warnings", warnings,
+                    "violations", violations, "reviewRequired", reviewRequired,
+                    "indeterminate", indeterminate,
                     "amlResults", amlResults, "jurisdictionResults", jurisdictionResults)));
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize validation JSON");
@@ -210,8 +274,9 @@ public class DomainService {
 
         return new ComplianceValidationResponse(
                 result.getId(), request.caseId(), "completed", decision,
-                violations, amlResults, jurisdictionResults,
-                totalViolations, totalWarnings, result.getValidatedAt(), result.getValidatedBy());
+                allResults, amlResults, jurisdictionResults,
+                totalViolations, totalReviewRequired + totalIndeterminate,
+                result.getValidatedAt(), result.getValidatedBy());
     }
 
     @Cacheable(value = "rules", key = "#jurisdiction != null ? T(com.usora.compliance.security.TenantContext).getCurrentTenant() + ':' + #jurisdiction : T(com.usora.compliance.security.TenantContext).getCurrentTenant() + ':all'")

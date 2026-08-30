@@ -173,7 +173,7 @@ class DomainServiceTest {
     void amlSanctionsMatchFlipsDecisionToRejectedEvenWithNoOtherViolations() {
         when(ruleRepository.findActiveRulesForTenant(any(), any())).thenReturn(List.of());
 
-        var criticalHit = new GrpcClient.AmlScreeningResult(
+        var criticalHit = new ComplianceValidationResponse.AmlScreeningResult(
                 "aml_entity1", "SANCTIONS_LIST", "sanctions",
                 0.97, true, "Some Sanctioned Person", "SANCTIONS", "CRITICAL");
         when(grpcClient.screenIndividual(eq("entity1"), any(), eq("sanctions"), any()))
@@ -199,7 +199,7 @@ class DomainServiceTest {
     void amlNonMatchDoesNotAffectDecision() {
         when(ruleRepository.findActiveRulesForTenant(any(), any())).thenReturn(List.of());
 
-        var cleanResult = new GrpcClient.AmlScreeningResult(
+        var cleanResult = new ComplianceValidationResponse.AmlScreeningResult(
                 "aml_entity1", "SANCTIONS_LIST", "sanctions",
                 0.10, false, null, null, "LOW");
         when(grpcClient.screenIndividual(eq("entity1"), any(), eq("sanctions"), any()))
@@ -217,13 +217,24 @@ class DomainServiceTest {
 
     /**
      * SECURITY REGRESSION TEST for
-     * docs/architecture-security-review-2026-07-31.md §3.2 — a screening
-     * call that throws (timeout, downstream outage, etc.) must fail closed:
-     * recorded as a violation requiring manual review, not silently
-     * dropped as if screening had never been requested.
+     * docs/architecture-security-review-2026-07-31.md §3.2 and F-018 -- a
+     * screening call that throws (timeout, downstream outage, etc.) must
+     * fail closed: recorded as INDETERMINATE, requiring manual review, not
+     * silently dropped as if screening had never been requested, and never
+     * reported as APPROVED.
+     *
+     * F-018 UPDATE: previously this asserted "REJECTED" -- fail-closed in
+     * the sense that a timeout could never become APPROVED, but conflating
+     * "we know this is bad" (a confirmed violation) with "we don't know"
+     * (an unresolved screening call). Those are now distinct decision
+     * states; a screening failure produces INDETERMINATE, not REJECTED.
+     * The acceptance criterion this protects ("a screening timeout always
+     * prevents automatic approval") still holds -- INDETERMINATE is not
+     * APPROVED -- it is just precisely labeled now instead of overloading
+     * REJECTED's meaning.
      */
     @Test
-    void amlScreeningFailureFailsClosedAsAViolation() {
+    void amlScreeningFailureFailsClosedAsIndeterminate() {
         when(ruleRepository.findActiveRulesForTenant(any(), any())).thenReturn(List.of());
 
         when(grpcClient.screenIndividual(eq("entity1"), any(), eq("sanctions"), any()))
@@ -235,11 +246,72 @@ class DomainServiceTest {
 
         var response = domainService.validateCompliance(request);
 
-        assertEquals("REJECTED", response.overallDecision(),
-                "a failed/unavailable AML screening call must fail closed, not be silently skipped");
-        assertTrue(response.totalViolations() > 0);
+        assertEquals("INDETERMINATE", response.overallDecision(),
+                "a failed/unavailable AML screening call must fail closed as INDETERMINATE, never APPROVED, " +
+                "and never silently skipped");
+        assertNotEquals("APPROVED", response.overallDecision());
+        assertEquals(0, response.totalViolations(),
+                "a screening failure is not a confirmed violation -- it must not inflate totalViolations, " +
+                "which is reserved for confirmed hits/rule failures");
         assertTrue(response.amlResults().isEmpty(),
                 "no AML result was actually obtained, so none should be reported as if it succeeded");
+        assertTrue(response.ruleResults().stream().anyMatch(r -> "indeterminate".equals(r.severity())),
+                "the response must surface which specific check produced the indeterminate result, " +
+                "not just an opaque count");
+    }
+
+    /**
+     * F-018 regression: a confirmed violation must win outright over an
+     * unrelated indeterminate result from a different check -- a known-bad
+     * outcome must never be masked by an unrelated unknown one.
+     */
+    @Test
+    void confirmedViolationOutranksIndeterminateResult() {
+        when(ruleRepository.findActiveRulesForTenant(any(), any())).thenReturn(List.of());
+
+        var criticalHit = new ComplianceValidationResponse.AmlScreeningResult(
+                "aml_entity1", "SANCTIONS_LIST", "sanctions",
+                0.97, true, "Some Sanctioned Person", "SANCTIONS", "CRITICAL");
+        when(grpcClient.screenIndividual(eq("entity1"), any(), eq("sanctions"), any()))
+                .thenReturn(criticalHit);
+        when(grpcClient.screenIndividual(eq("entity1"), any(), eq("pep"), any()))
+                .thenThrow(new RuntimeException("PEP list service timeout"));
+
+        var request = new ComplianceValidationRequest("case1", "entity1", "individual",
+                Map.of("fullName", "Some Sanctioned Person"), List.of(), List.of("sanctions", "pep"),
+                false, false);
+
+        var response = domainService.validateCompliance(request);
+
+        assertEquals("REJECTED", response.overallDecision(),
+                "a confirmed sanctions hit must win outright over an unrelated indeterminate PEP check result");
+        assertTrue(response.totalViolations() > 0);
+    }
+
+    /**
+     * F-018 regression: a soft (medium/low risk) AML match must not be
+     * reported as APPROVED -- it must produce REVIEW_REQUIRED.
+     */
+    @Test
+    void amlSoftMatchProducesReviewRequiredNotApproved() {
+        when(ruleRepository.findActiveRulesForTenant(any(), any())).thenReturn(List.of());
+
+        var softHit = new ComplianceValidationResponse.AmlScreeningResult(
+                "aml_entity1", "WATCHLIST", "sanctions",
+                0.55, true, "Similar Name", "WATCHLIST", "MEDIUM");
+        when(grpcClient.screenIndividual(eq("entity1"), any(), eq("sanctions"), any()))
+                .thenReturn(softHit);
+
+        var request = new ComplianceValidationRequest("case1", "entity1", "individual",
+                Map.of("fullName", "Similar Name"), List.of(), List.of("sanctions"),
+                false, false);
+
+        var response = domainService.validateCompliance(request);
+
+        assertEquals("REVIEW_REQUIRED", response.overallDecision(),
+                "a medium-risk AML match must never resolve to APPROVED, but a hard REJECTED is not " +
+                "necessarily warranted either -- it requires human review");
+        assertNotEquals("APPROVED", response.overallDecision());
     }
 
     private ComplianceRule createMockRule(String ruleId, String tenantId, String jurisdiction) {
