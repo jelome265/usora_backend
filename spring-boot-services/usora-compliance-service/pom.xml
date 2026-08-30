@@ -18,13 +18,25 @@
 
     <properties>
         <java.version>21</java.version>
-        <spring-boot.version>4.1.0</spring-boot.version>
+        <!-- F-016: this was 4.1.0 while the parent element above (the
+             actual source of truth for this module's Spring Boot
+             version) is 4.1.1, a one patch version drift between the two
+             places this module's Boot version was expressed. Aligned to
+             match the parent exactly. -->
+        <spring-boot.version>4.1.1</spring-boot.version>
         <drools.version>10.2.0</drools.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
         <grpc.version>1.83.1</grpc.version>
         <protobuf.version>4.28.2</protobuf.version>
-        <jackson.version>2.17.2</jackson.version>
+        <!-- F-016: jackson.version (was 2.17.2) removed; it was never
+             actually referenced anywhere in this POM (no
+             dollar-brace jackson.version usage exists), so it was pure
+             dead configuration that could mislead a future engineer into
+             thinking Jackson was pinned here when it is, correctly,
+             entirely managed by the spring-boot-starter-parent BOM
+             above. Removing it has zero runtime effect since nothing
+             consumed it. -->
         <apache-poi.version>5.5.1</apache-poi.version>
         <jasperreports.version>7.0.8</jasperreports.version>
         <protobuf-maven-plugin.version>0.6.1</protobuf-maven-plugin.version>
@@ -61,7 +73,7 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
         <!-- F-011: SecurityConfig/JwtTokenProvider use NimbusJwtDecoder,
-             JwtAuthenticationConverter, JwtGrantedAuthoritiesConverter --
+             JwtAuthenticationConverter, JwtGrantedAuthoritiesConverter  - 
              none of which live in spring-boot-starter-security. Same
              missing-dependency bug found and fixed in core-service and
              audit-service while doing this migration; the oauth2ResourceServer
@@ -81,23 +93,38 @@
             dependency declared anywhere in this POM, so the module would not
             have compiled as checked in. Version pinned to match
             usora-tenant-service's jjwt version for consistency across services.
+
+            F-011 UPDATE: JwtTokenProvider was migrated off jjwt entirely onto
+            Spring's own JwtDecoder (JWKS-backed), see that class's javadoc.
+            jjwt now has exactly one remaining caller in this module,
+            DomainServiceTest, which signs test tokens with a real RSA keypair
+            to exercise genuine signature verification. Scope moved from
+            "runtime" to "test" accordingly: jjwt is no longer needed by this
+            service at actual application runtime, only to build test
+            fixtures.
+
+            F-016 UPDATE: jjwt-api was pinned to 0.13.0 while jjwt-impl and
+            jjwt-jackson stayed on 0.12.6, the same cross-module version
+            mismatch found in usora-tenant-service, aligned the same way
+            (down to 0.12.6, matching the two already-consistent artifacts).
         -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-api</artifactId>
-            <version>0.13.0</version>
+            <version>0.12.6</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-impl</artifactId>
             <version>0.12.6</version>
-            <scope>runtime</scope>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-jackson</artifactId>
             <version>0.12.6</version>
-            <scope>runtime</scope>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -287,6 +314,46 @@
         </extensions>
 
         <plugins>
+            <!-- F-016 remediation item 4: Maven Enforcer's
+                 dependencyConvergence rule flags any dependency pulled in
+                 transitively at more than one version across this
+                 module's dependency tree, exactly the class of problem
+                 this finding is about (JJWT api/impl/jackson version
+                 skew, a Jackson version property that silently diverged
+                 from Spring Boot's own BOM). banDuplicatePomDependencyVersions
+                 catches the same dependency declared twice in this POM
+                 with different explicit versions.
+                 fail=false: this sandbox has no Maven access to actually
+                 run this rule and see what it reports before merging;
+                 turning on a hard failing convergence gate with zero
+                 visibility into whether this specific module's current
+                 dependency tree already has unrelated convergence
+                 conflicts would risk breaking CI on this PR's own merge
+                 for a reason unrelated to what this PR actually changed.
+                 Report only for now; flip to fail=true (or delete this
+                 element entirely, since true is the plugin's own
+                 default) once a real enforcer run against this module
+                 has been reviewed clean. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>enforce-dependency-convergence</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <fail>false</fail>
+                            <rules>
+                                <dependencyConvergence/>
+                                <banDuplicatePomDependencyVersions/>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
