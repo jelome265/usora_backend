@@ -42,6 +42,14 @@ public final class RequestDto {
         private String displayName;
         private Set<String> roles;
         private Map<String, Object> attributes;
+        // F-017: required only when the caller has no tenant binding of
+        // their own (a platform-wide admin context, e.g. an
+        // identity-service client_credentials client) -- see
+        // DomainService.createUser. Ignored/not required for an ordinary
+        // tenant-scoped caller, since their action is already fully
+        // attributable to their own tenant without a separate
+        // justification.
+        private String platformAdminReason;
     }
 
     @Data
@@ -51,5 +59,7 @@ public final class RequestDto {
         private String userId;
         private Set<String> addRoles;
         private Set<String> removeRoles;
+        // F-017: same purpose as UserCreateRequest.platformAdminReason.
+        private String platformAdminReason;
     }
 }

@@ -22,6 +22,7 @@ import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
@@ -431,9 +432,31 @@ public class DomainService {
         // Reject a mismatch regardless of how admin scope actually works,
         // rather than relying on that being correctly configured elsewhere.
         var callerTenantId = TenantContext.getContext().getTenantId();
-        if (callerTenantId != null && !callerTenantId.equals(request.getTenantId())) {
-            throw BusinessException.forbidden(
-                    "Cannot create a user in a tenant other than the caller's own tenant");
+        if (callerTenantId != null) {
+            if (!callerTenantId.equals(request.getTenantId())) {
+                throw BusinessException.forbidden(
+                        "Cannot create a user in a tenant other than the caller's own tenant");
+            }
+        } else {
+            // F-017: the check above previously ran ONLY when
+            // callerTenantId was non-null -- a caller with no tenant
+            // context at all (e.g. this service's own "usora-api"
+            // client_credentials client, which is granted the "admin"
+            // scope but has no tid claim at token-mint time; see the
+            // RISK TO VERIFY note on PR #150) fell through with NO tenant
+            // check whatsoever. That is not a narrower case of the
+            // tenant-mismatch bug, it is a strictly worse one: unrestricted
+            // cross-tenant write access to any tenant named in the request
+            // body, gated by nothing but the same global "admin" scope
+            // every ordinary tenant admin also holds.
+            //
+            // A platform-wide admin action is legitimate (break-glass
+            // support operations, initial tenant setup, etc.) but must be
+            // explicit, not incidental to how a token happened to be
+            // minted. Require a distinct, elevated permission separate
+            // from "admin" itself, plus a mandatory justification that
+            // becomes part of the audit trail.
+            requirePlatformAdminAuthorization(request.getPlatformAdminReason());
         }
 
         if (userRepository.existsByUsernameAndTenantId(request.getUsername(), tenant.getId())) {
@@ -451,10 +474,57 @@ public class DomainService {
 
         var saved = userRepository.save(userEntity);
 
-        eventPublisher.publishTokenEvent("user.created", saved.getId().toString(), tenant.getId().toString(),
-                Map.of("username", saved.getUsername(), "email", saved.getEmail()));
+        // BUG found while implementing F-017: this called
+        // publishTokenEvent(String, String, String, String clientId), but
+        // passed a Map<String,String> as the fourth argument -- a type
+        // mismatch that could not have compiled as written. The
+        // semantically correct call for a user-creation event is
+        // publishUserEvent(type, userId, tenantId, changes), which both
+        // matches the intended event shape (a user event with change
+        // details, not a token event with a client id) and actually
+        // compiles.
+        var eventDetails = new java.util.HashMap<String, Object>();
+        eventDetails.put("username", saved.getUsername());
+        eventDetails.put("email", saved.getEmail());
+        if (callerTenantId == null) {
+            // F-017: mark platform-admin actions distinctly in the audit
+            // trail rather than recording them identically to an ordinary
+            // tenant-scoped user creation -- the acceptance criterion is
+            // "platform admin actions ... generate enhanced audit events".
+            eventDetails.put("platform_admin_action", true);
+            eventDetails.put("platform_admin_reason", request.getPlatformAdminReason());
+        }
+        eventPublisher.publishUserEvent("user.created", saved.getId().toString(), tenant.getId().toString(),
+                eventDetails);
 
         return entityMapper.toUserResponse(saved);
+    }
+
+    /**
+     * F-017: shared gate for any admin operation reached with no tenant
+     * context of its own (see createUser/updateUserRoles). Requires a
+     * distinct "platform:admin" authority -- separate from the "admin"
+     * scope that gates the endpoint itself -- plus a non-blank
+     * justification, so a platform-wide action is always an explicit,
+     * accountable decision rather than an incidental side effect of how a
+     * particular caller's token happened to be minted.
+     */
+    private void requirePlatformAdminAuthorization(String reason) {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        boolean hasPlatformAdminScope = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(a -> "SCOPE_platform:admin".equals(a.getAuthority()));
+
+        if (!hasPlatformAdminScope) {
+            throw BusinessException.forbidden(
+                    "This action targets a tenant outside the caller's own tenant context and requires the " +
+                    "platform:admin scope, which the caller does not have. A caller with only the general " +
+                    "'admin' scope and no tenant binding cannot perform cross-tenant actions.");
+        }
+
+        if (reason == null || reason.isBlank()) {
+            throw BusinessException.badRequest(
+                    "platformAdminReason is required for a platform-admin action with no tenant context");
+        }
     }
 
     @Transactional
@@ -467,9 +537,17 @@ public class DomainService {
         // the caller's own tenant, so a caller could reassign roles for a
         // user in a tenant they don't administer.
         var callerTenantId = TenantContext.getContext().getTenantId();
-        if (callerTenantId != null && !callerTenantId.equals(user.getTenant().getId().toString())) {
-            throw BusinessException.forbidden(
-                    "Cannot update roles for a user in a tenant other than the caller's own tenant");
+        if (callerTenantId != null) {
+            if (!callerTenantId.equals(user.getTenant().getId().toString())) {
+                throw BusinessException.forbidden(
+                        "Cannot update roles for a user in a tenant other than the caller's own tenant");
+            }
+        } else {
+            // F-017: same fail-open gap as createUser -- a caller with no
+            // tenant context at all previously bypassed this check
+            // entirely, rather than being subject to it. Same fix: an
+            // explicit elevated permission plus a mandatory reason.
+            requirePlatformAdminAuthorization(request.getPlatformAdminReason());
         }
 
         var roles = new HashSet<>(user.getRoles() != null ? user.getRoles() : Set.of());
@@ -483,8 +561,14 @@ public class DomainService {
         user.setRoles(roles);
         var saved = userRepository.save(user);
 
+        var rolesEventDetails = new java.util.HashMap<String, Object>();
+        rolesEventDetails.put("roles", roles);
+        if (callerTenantId == null) {
+            rolesEventDetails.put("platform_admin_action", true);
+            rolesEventDetails.put("platform_admin_reason", request.getPlatformAdminReason());
+        }
         eventPublisher.publishUserEvent("user.roles.updated", saved.getId().toString(),
-                saved.getTenant().getId().toString(), Map.of("roles", roles));
+                saved.getTenant().getId().toString(), rolesEventDetails);
 
         return entityMapper.toUserResponse(saved);
     }
