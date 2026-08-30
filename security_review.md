@@ -1,236 +1,197 @@
-# USORA KYC Platform — Consolidated Enterprise Security, Reliability & Infrastructure Review
+# USORA KYC Platform — Consolidated Enterprise Security Architecture & Infrastructure Review
 
 **Author:** Jules, Principal Security & Infrastructure Engineer
 **Date:** August 2026
 **Classification:** Confidentially Restricted — Internal Engineering Only
 **Target Architecture:** Rust Axum/Tokio API Gateway + 3 Rust Compute Engines + 7 Java Spring Boot Orchestration Services
+**Framework Standard:** C4 Architecture Model (Context, Containers, Components, Code/Data)
 
 ---
 
 ## 1. Executive Summary
 
-This document presents a comprehensive, multi-dimensional security, reliability, and infrastructure audit of the **USORA KYC Platform**. USORA is a high-performance, polyglot compliance and verification system designed for multi-tenant, regulated enterprise environments. At this scale, maintaining zero-trust architecture, strict tenant isolation, cryptographic assurances, robust network topologies, and clean container packaging is paramount to satisfy SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 compliance standards.
+This document presents a comprehensive, multi-dimensional security, reliability, and infrastructure audit of the **USORA KYC Platform** structured according to the **C4 Architecture Model**. USORA is a high-performance, polyglot compliance and verification platform designed for multi-tenant, regulated enterprise environments. At this scale, maintaining zero-trust architecture, strict tenant isolation, cryptographic assurances, robust network topologies, and clean container packaging is paramount to satisfy SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 compliance standards.
 
-Our static analysis, codebase reviews, and architectural deep-dives have revealed several critical and high-severity gaps across both the **application code** (e.g., total gateway auth outages, forgeable downstream JWTs, tenant-spoofing header trust, unimplemented gRPC control plane) and the **infrastructure-as-code / orchestration layers** (e.g., broken regional endpoint interpolations in Terraform, wide-open database egress policies in Kubernetes, un-compilable Kustomize overlays, and sequential, highly inefficient CI/CD workflows).
+Our static analysis, codebase reviews, and architectural deep-dives have revealed several critical and high-severity gaps across both the **application code** (e.g., total gateway auth outages, forgeable downstream JWTs, tenant-spoofing header trust, unimplemented gRPC control plane) and the **infrastructure-as-code / orchestration layers** (e.g., broken regional endpoint interpolations in Terraform, wide-open database egress policies in Kubernetes, un-compilable Kustomize overlays, and sequential CI/CD workflows).
 
 This consolidated review fuses findings from all prior security audits (`AUDIT-usora-security-2026-08-03.md`, `rust_review.md`, `docs/infrastructure-deep-review-2026-08-04.md`, and `docs/architecture-security-review-2026-07-31.md`) to establish a single, authoritative, and actionable remediation roadmap.
 
 ---
 
-## 2. Infrastructure & Orchestration Security (Terraform & Kubernetes)
+## 2. Level 1: System Context (C1)
 
-The USORA deployment infrastructure leverages Terraform for AWS resource provisioning (VPC, EKS, RDS, ElastiCache, MSK) and Kubernetes/Helm/Kustomize for container orchestration. Static analysis reveals multiple architectural vulnerabilities that break regional isolation, compromise data confidentiality, and threaten multi-environment separation.
+The System Context level defines the regulatory boundaries, actors, and high-level zero-trust perimeter of the USORA platform.
 
-### 2.1 Broken Regional String Interpolations (Terraform VPC Endpoint Failure)
-- **Vulnerability:** In `infrastructure/terraform/modules/vpc/main.tf` (lines 239–303), regional AWS service names for private VPC Gateway/Interface Endpoints are hardcoded with an empty regional segment.
-  - **Evidence:**
-    - Line 239: `service_name = "com.amazonaws..s3"`
-    - Line 256: `service_name = "com.amazonaws..dynamodb"`
-    - Line 273: `service_name = "com.amazonaws..ecr.api"`
-    - Line 288: `service_name = "com.amazonaws..ecr.dkr"`
-    - Line 303: `service_name = "com.amazonaws..eks"`
-- **Vulnerability Impact:** Because the current AWS region variable (`${data.aws_region.current.name}`) is omitted, Terraform fails to compile or apply due to invalid service names. If bypassed manually, traffic destined for S3, ECR, and DynamoDB is routed over the public internet instead of the secure AWS private backbone, violating Zero-Trust networking principles.
-- **Remediation:** Correctly interpolate the AWS region data source:
-  ```hcl
-  service_name = "com.amazonaws.${data.aws_region.current.name}.s3"
-  ```
+### 2.1 Regulatory Boundary & Compliance Baseline
+- **Context:** The platform processes sensitive personally identifiable information (PII), biometric templates, government issued documents, and financial compliance records. Regulatory targets include SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001.
+- **Defect:** Documentation overclaims (`main.md`, `compliance-mapping.md`) assert "SOC 2 Type II Certified" and 99.99% SLA metrics before full operational staging validation.
+- **Risk:** Regulatory compliance misrepresentation during external enterprise compliance audits.
 
-### 2.2 Broken IAM Policy ARN in RDS Module
-- **Vulnerability:** In `infrastructure/terraform/modules/rds/main.tf` (line 286), the IAM policy attachment for Enhanced Monitoring uses an invalid AWS partition/ARN format.
-  - **Evidence:**
-    ```hcl
-    policy_arn = "arn::iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
-    ```
-- **Vulnerability Impact:** The partition segment of the ARN is missing (`arn::iam` instead of `arn:aws:iam`). This invalid string will trigger a validation error during `terraform apply`, preventing database monitoring provisioning and leaving instances vulnerable to silent resource exhaustion under production loads.
-- **Remediation:** Parameterize the ARN with the correct partition reference:
-  ```hcl
-  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
-  ```
-
-### 2.3 Syntactic Defects in MSK Module
-- **Vulnerability:** In `infrastructure/terraform/modules/msk/main.tf` (lines 270 & 278), there are domain and logging formatting bugs.
-  - **Evidence:**
-    - Line 270: `domain_name = "msk..usora.internal"` (Broken empty subdomain zone)
-    - Line 278: `name = "/aws/msk//broker-logs"` (Double slash in CloudWatch log group)
-- **Vulnerability Impact:** Internal DNS resolution fails to register or resolve subdomains containing empty segments. Additionally, double slashes in CloudWatch log paths break standard log shipper forwarding regexes and telemetry filters.
-- **Remediation:** Parameterize subdomains and log paths cleanly using `${var.environment}` to guarantee well-formed paths.
-
-### 2.4 Missing Environment Prefixes & Resource Collisions
-- **Vulnerability:** Multiple modules provision resources using static, hardcoded naming suffixes (e.g. `Name = "-vpc"`, `identifier = "-db-primary"`, `replication_group_id = "-redis"`, `cluster_name = "-msk"`) omitting environment-specific variables.
-- **Vulnerability Impact:** If non-production environments (e.g., dev and staging) share the same AWS account and region, applying these manifests causes immediate resource collisions. Terraform will attempt to destroy or overwrite existing instances, risking severe data loss on shared databases/caches.
-- **Remediation:** Prefix all resource identifiers with `${var.environment}`:
-  ```hcl
-  identifier = "${var.environment}-db-primary"
-  ```
-
-### 2.5 Overly Permissive Kubernetes Network Policies (Kubernetes Egress Loophole)
-- **Vulnerability:** In `infrastructure/k8s/base/network-policies.yml`, inter-service and egress database rules are excessively open.
-  - **Evidence (Inter-Service Wildcard):**
-    ```yaml
-    spec:
-      podSelector:
-        matchLabels:
-          app.kubernetes.io/component: service
-      ingress:
-        - ports: [ {port: 8080}, {port: 9090} ]
-          from:
-            - podSelector:
-                matchLabels:
-                  app.kubernetes.io/component: service
-    ```
-    This matches *any* service pod and exposes all microservices to each other.
-  - **Evidence (Database Egress Wildcard):**
-    ```yaml
-    spec:
-      podSelector:
-        matchExpressions:
-          - key: app.kubernetes.io/component
-            operator: In
-            values: [service, compute]
-      egress:
-        - to:
-            - ipBlock:
-                cidr: 0.0.0.0/0   # <-- Wide-open internet egress
-          ports: [ {port: 5432} ]
-    ```
-- **Vulnerability Impact:** If any microservice is compromised (e.g. via RCE), an attacker can easily bypass network controls, pivot to other pods (e.g., accessing sensitive auditing services), and exfiltrate database contents directly to public, attacker-controlled servers over standard database ports (`5432`/`6379`).
-- **Remediation:** Restrict inter-service connection flows using exact microservice pod selectors instead of wildcard label matches, and constrain egress targets for database ports specifically to the internal VPC CIDR ranges (e.g. `10.2.0.0/16`).
-
-### 2.6 Broken and Empty Kustomize Dev Overlay
-- **Vulnerability:** The dev overlay `infrastructure/k8s/overlays/dev/kustomization.yml` references `../../base`, which only defines namespaces and network policies. It then attempts to apply strategic patches to `usora-gateway`, `usora-core`, and `usora-document-processor` deployments that are entirely missing from the base.
-- **Vulnerability Impact:** Any execution of `kustomize build` fails immediately, making local development orchestration and automated deployments non-functional.
-- **Remediation:** Move the baseline deployment templates into `infrastructure/k8s/base` to ensure overlays compile correctly, or fully consolidate deployment definitions into unified Helm charts.
+### 2.2 Multi-Tenant Data & Identity Isolation Model
+- **Context:** USORA mandates strict tenant separation at rest and in transit.
+- **Defect:** Header-trust fallback (`X-Tenant-ID`) in Spring microservices invalidates edge tenant isolation boundaries.
+- **Risk:** Cross-tenant access and attribution falsification if internal backend services are reached directly.
 
 ---
 
-## 3. Application Security & Cryptography
+## 3. Level 2: Container Architecture & Infrastructure (C2)
 
-### 3.1 Gateway Authentication Dead Code (Total Edge Auth Outage)
-- **Vulnerability:** In `rust-services/usora-api-gateway`, the `AuthLayer` constructs its `JwtValidator` via `JwtValidator::new(None, None)` (without providing an issuer or audience), and leaves the JWKS map completely empty. The `update_jwks()` function is defined in `auth/jwt.rs` but is never invoked.
-- **Vulnerability Impact:** Every incoming request containing an `Authorization: Bearer <token>` header is parsed, but signature verification fails because the internal JWKS key map is empty, resulting in a `401 Unauthorized` response. Consequently, 100% of valid bearer tokens are rejected, putting the entire authenticated KYC surface **100% offline**. If bypassed by operators by naively configuring JWKS without specifying the issuer and audience, the system will accept any token from *any* co-signed client, creating an authentication bypass vulnerability.
-- **Remediation:** Implement a background thread in Axum that queries the Identity Service JWKS endpoint (`https://identity/oauth2/jwks`) on startup and periodically updates the validator keys. Populate the validator with explicit, non-default `JWT_ISSUER` and `JWT_AUDIENCE` configurations.
+The Container level details the interactions between the Rust API Gateway, Java Spring Boot Orchestration microservices, Rust Compute engines, Terraform IaC, K8s manifests, and CI/CD pipelines.
 
-### 3.2 Forgeable notification JWT via Committed Default HMAC Secret
-- **Vulnerability:** In `usora-notification-service`, the `JwtTokenProvider` utilizes a symmetric HMAC-SHA key sourced from Spring properties (`security.jwt.secret`), which defaults to the hardcoded, committed string: `defaultSecretKeyMustBeOverriddenInProduction`. Furthermore, `validateToken()` only executes signature parsing without verifying expiration (`exp`), issuer (`iss`), or audience (`aud`).
-- **Vulnerability Impact:** Any actor with knowledge of this default key can mint arbitrary JWTs containing spoofed user roles and tenant IDs. They can bypass all authentication checks on the Notification service REST (8085) and gRPC (9095) endpoints to trigger malicious notifications or intercept sensitive communication.
-- **Remediation:** Enforce a fail-fast validator in `SecurityConfig.java` that terminates the Spring Boot process at startup if `security.jwt.secret` is unset, empty, or matches the default development key. Align authentication mechanics on RS256 token verification delegated from the Identity Service.
+### 3.1 Infrastructure-as-Code (Terraform Modules)
 
-### 3.3 Downstream Tenant Header Spoofing (Attribution Falsification)
-- **Vulnerability:** While the Gateway correctly extracts the tenant ID from token claims first, the downstream Spring Boot orchestration services re-introduce the header-trust vulnerability.
-  - **Evidence:** `TenantInterceptor.java` across the `audit`, `core`, `identity`, `notification`, `compliance`, and `integration` services extract the `X-Tenant-ID` header and unconditionally override the authenticated JWT principal context.
-- **Vulnerability Impact:** If an attacker can bypass the gateway edge (e.g. via direct pod access, sidecars, or unauthenticated internal load balancers), they can supply a falsified `X-Tenant-ID` header. In `usora-audit-service`, this allows a malicious actor to inject falsified compliance audits, overriding the logged `tenantId` and `actor`, which completely invalidates the integrity of the compliance ledger.
-- **Remediation:** Standardize all Spring `TenantInterceptor` classes to resolve the tenant ID strictly from verified JWT claims first. Disallow HTTP header overrides unless the request is associated with a trusted global super-admin principal, and log such occurrences as high-severity audit events.
+#### 3.1.1 Broken Regional String Interpolations (VPC Endpoint Failure)
+- **Vulnerability:** In `infrastructure/terraform/modules/vpc/main.tf` (lines 239–303), AWS service names for private VPC Gateway/Interface Endpoints miss regional interpolation:
+  - `service_name = "com.amazonaws..s3"`
+  - `service_name = "com.amazonaws..dynamodb"`
+  - `service_name = "com.amazonaws..ecr.api"`
+  - `service_name = "com.amazonaws..ecr.dkr"`
+  - `service_name = "com.amazonaws..eks"`
+- **Impact:** Terraform execution fails. If bypassed manually, traffic to S3/ECR/DynamoDB routes over the public internet instead of private VPC endpoints.
+- **Remediation:** Parameterize with region data source: `service_name = "com.amazonaws.${data.aws_region.current.name}.s3"`.
 
-### 3.4 Symmetric Key Fallback in Compliance Encryption
-- **Vulnerability:** The `EncryptionUtil` inside `usora-compliance-service` defaults to a zeroed-out 256-bit AES key (`new byte[32]`) if the environment variable `COMPLIANCE_ENCRYPTION_KEY` is not present.
-- **Vulnerability Impact:** KYC evidence uploaded during compliance processes is encrypted at rest using a publicly known, zeroed-out static key. This compromises the confidentiality of highly sensitive personal documents (e.g., passports, driver's licenses) stored within the system.
-- **Remediation:** Throw a runtime exception at application startup if `COMPLIANCE_ENCRYPTION_KEY` is undefined, empty, or lacks sufficient entropy.
+#### 3.1.2 Broken IAM Policy ARN in RDS Module
+- **Vulnerability:** In `infrastructure/terraform/modules/rds/main.tf` (line 286), IAM policy attachment uses invalid ARN format:
+  `policy_arn = "arn::iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"`
+- **Impact:** RDS enhanced monitoring provisioning fails during `terraform apply`.
+- **Remediation:** Fix partition reference: `policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"`.
 
-### 3.5 Identity User Administration Lacks Tenant Scoping (IDOR Hazard)
-- **Vulnerability:** In `usora-identity-service` (`ApiController.java`), endpoints for user creation (`POST /api/v1/users`) and role modification (`PUT /api/v1/users/{id}/roles`) accept tenant IDs directly from request payload bodies without verifying whether the target tenant matches the caller's authenticated tenant context.
-- **Vulnerability Impact:** An admin user granted scoped privileges in one tenant can manipulate user accounts or elevate permissions in another tenant by altering the JSON request body.
-- **Remediation:** Enforce tenant context checks in `DomainService.java` asserting that body-supplied tenant IDs match the caller's JWT `tid` claim.
+#### 3.1.3 Syntactic Defects in MSK Module
+- **Vulnerability:** In `infrastructure/terraform/modules/msk/main.tf` (lines 270 & 278):
+  - `domain_name = "msk..usora.internal"` (empty subdomain segment)
+  - `name = "/aws/msk//broker-logs"` (double slash in log group)
+- **Impact:** Internal DNS resolution failure and CloudWatch log ingestion regex breakage.
+- **Remediation:** Cleanly interpolate `${var.environment}` into DNS and CloudWatch log paths.
 
----
+#### 3.1.4 Resource Naming Collisions
+- **Vulnerability:** Modules provision resources using static suffixes (e.g., `-vpc`, `-db-primary`, `-redis`, `-msk`) omitting `${var.environment}` prefixes.
+- **Impact:** Resource name collisions across dev/staging/prod environments within the same AWS account.
+- **Remediation:** Prefix all Terraform resource names with `${var.environment}-`.
 
-## 4. gRPC Control Plane & Network Security
+### 3.2 Kubernetes & Network Security
 
-### 4.1 Unimplemented gRPC Services (Gateway Failure Loop)
-- **Vulnerability:** The gateway declares multiple gRPC clients (for `identity`, `document`, `tenant`, `audit`, `compliance`, and `notification` services) to handle critical tasks like real-time token validation and tenant resolution. However, a repository-wide inspection reveals that the Spring Boot services declare `grpc.server.port` but implement **zero** actual `@GrpcService` or generated `*ImplBase` handlers.
-- **Vulnerability Impact:** The gateway's gRPC calls fail with an `UNIMPLEMENTED` status code. This prevents the gateway from communicating with the orchestrators for tenant configurations or compliance lookups, leading to systematic cascading errors and total system unavailability.
-- **Remediation:** Implement the respective gRPC services extending generated protobuf stub base classes in each Spring Boot service, or safely fallback to highly-optimized, authenticated internal REST communications.
+#### 3.2.1 Permissive Network Policies (Egress Loophole)
+- **Vulnerability:** In `infrastructure/k8s/base/network-policies.yml`, egress database port rules (`5432`/`6379`) specify `cidr: 0.0.0.0/0`. Inter-service rules use wildcard component matching.
+- **Impact:** Compromised service pods can exfiltrate database contents directly to public internet IPs.
+- **Remediation:** Restrict inter-service connection flows using exact microservice pod selectors and constrain database egress specifically to internal VPC CIDRs (e.g. `10.2.0.0/16`).
 
-### 4.2 Plaintext gRPC Channels
-- **Vulnerability:** Gateway gRPC clients are configured with `https://orchestrator:9090` or `https://compute:9090` but build plaintext channels using `Channel::from_shared` with `connect_lazy()`, lacking `.tls_config()` and `.call_credentials()`.
-- **Vulnerability Impact:** Tonic defaults to plaintext channels if TLS configurations are missing. In the absence of TLS protection, all internal control plane traffic (including sensitive PII, compliance rule queries, and verification decisions) travels in plaintext across the network, making it vulnerable to sniffing and man-in-the-middle attacks.
-- **Remediation:** Secure Tonic client setups by supplying valid TLS trust anchors and loading client certificates for mutual TLS (mTLS):
-  ```rust
-  let connector = ClientTlsConfig::new()
-      .ca_certificate(ca_cert)
-      .identity(identity);
-  ```
+#### 3.2.2 Broken Kustomize Dev Overlay
+- **Vulnerability:** `infrastructure/k8s/overlays/dev/kustomization.yml` patches deployment resources absent from `../../base`.
+- **Impact:** `kustomize build` fails during deployment.
+- **Remediation:** Consolidate base deployment manifests or use unified Helm chart templates.
 
-### 4.3 Permissive CORS and Edge TLS Configurations
-- **Vulnerability:** In `rust-services/usora-api-gateway/src/routes/mod.rs`, the CORS configuration sets `allow_origin(Any).allow_methods(Any).allow_headers(Any)`. Additionally, `config/mod.rs` defaults minimum TLS version to `TLSv1.2` without enforcing client certificate authentication.
-- **Vulnerability Impact:** Broad CORS rules allow untrusted web domains to trigger cross-origin API interactions, exposing Bearer tokens and sensitive tenant headers to web browser contexts.
-- **Remediation:** Restrict CORS origins to trusted client domains, enumerate allowed headers (`Authorization`, `Content-Type`), and enforce `TLSv1.3` as default edge minimum TLS version.
+### 3.3 Software Packaging & CI/CD Pipelines
 
----
+#### 3.3.1 Rust Dockerfile Target Mismatch
+- **Vulnerability:** `infrastructure/docker/Dockerfile.rust` copies non-existent binary target `/app/target/release/usora-service`.
+- **Impact:** Cargo Docker builds fail.
+- **Remediation:** Scope Dockerfile to build specific workspace binaries (e.g., `usora-api-gateway`).
 
-## 5. Compute Layer Reliability & Code Integrity (Rust Engines)
+#### 3.3.2 Spring Boot Un-scoped Build Context
+- **Vulnerability:** `infrastructure/docker/Dockerfile.spring-boot` copies full root context without scoping to target microservices.
+- **Impact:** Bloated images and slow build cycles.
+- **Remediation:** Use Maven `-pl` flags to scope dependencies per microservice.
 
-### 5.1 FFI Failsafe & Process Crash Hazards
-- **Vulnerability:** In `usora-document-processor` and `usora-face-matching-engine`, heavy C/C++ libraries (such as **Leptonica**, **Tesseract**, **OpenCV**, and **FAISS**) are integrated via foreign-function interface (FFI) bindings.
-- **Vulnerability Impact:** FFI operations bypass Rust's standard safety guarantees. Any segmentation fault, memory corruption, or native `panic`/`abort` inside the C++ library will immediately terminate the entire Rust OS process. A single malformed image payload or corrupt FAISS index file can cause a segment violation (SIGSEGV) in the native FFI library, taking down the entire service replica.
-- **Remediation:** Isolate the raw FFI operations into a separate pool of worker processes (process-level isolation). Use standard IPC or lightweight RPCs to communicate between the core async Rust service and the FFI execution process. Implement robust image dimension and mime pre-validation *before* passing pointers to C/C++ FFI.
-
-### 5.2 Dynamic Code Execution Risks via Rhai Scripting (Risk Engine)
-- **Vulnerability:** In `usora-risk-scoring-engine/src/rules/dsl.rs`, dynamic rules are evaluated via the `Rhai` scripting engine. The engine is instantiated using `Engine::new()` and lacks strict memory allocation boundaries.
-- **Vulnerability Impact:** Attackers or malicious tenants could compile scripts containing infinite loops, deep array nesting, or memory-heavy calculations, leading to symmetric resource exhaustion and Out-Of-Memory (OOM) crashes.
-- **Remediation:** Use `Engine::new_raw()` to disable default file I/O and system access. Implement custom memory allocation limiters and progressive CPU limit checks on the engine. Ensure the `"sync"` feature flag is enabled in `Cargo.toml`.
-
-### 5.3 FAISS Index Lock Contention & Statefulness Barriers
-- **Vulnerability:** The `usora-face-matching-engine` protects FAISS indices via a global standard library mutex (`Mutex<HashMap<String, Box<dyn faiss::Index>>>`) and persists index files to local disk.
-- **Vulnerability Impact:** Multi-threaded concurrent matches face severe lock contention, degrading p99 throughput. Furthermore, persisting indices to local container storage prevents horizontal stateless scaling—scaling up replicas will result in inconsistent index states across pods.
-- **Remediation:** Migrate from local disk-based FAISS persistence to a managed, multi-tenant-native distributed vector database (e.g., Qdrant, Milvus, or pgvector).
-
-### 5.4 Forensic Check Name Misrepresentation
-- **Vulnerability:** In `usora-document-processor/src/validation/authenticity.rs`, checks named `detect_uv_fluorescence` and `detect_ir_absorption` are implemented using basic RGB color-variance and grayscale heuristics on visible-light captures.
-- **Vulnerability Impact:** This creates a substantial compliance and audit risk. The system implies true forensic verification capability (which requires specialized physical UV/IR lighting sources) to downstream API clients and auditors, potentially leading to a false sense of security regarding document liveness.
-- **Remediation:** Rename the functions to `heuristic_visible_*` and explicitly cap their maximum confidence weight (e.g. `0.3`) in the JSON output, clarifying that they are visible-light visual indicators, not true forensic physical signal checks.
+#### 3.3.3 Sequential CI/CD Execution
+- **Vulnerability:** `.github/workflows/ci-cd.yml` builds 11 container images sequentially in a loop and uses `continue-on-error: true` on Trivy scans.
+- **Impact:** Extremely long build pipelines (2-4 hours) and silent pass-through of critical container CVEs.
+- **Remediation:** Parallelize container builds with matrix strategy and enforce fail-fast security scanning gates.
 
 ---
 
-## 6. Software Packaging & CI/CD Pipelines
+## 4. Level 3: Component Architecture (C3)
 
-### 6.1 Rust Dockerfile Broken Target Path
-- **Vulnerability:** `infrastructure/docker/Dockerfile.rust` targets a hardcoded binary path `/app/target/release/usora-service` that does not exist in the cargo workspace.
-- **Vulnerability Impact:** The container build process fails completely.
-- **Remediation:** Parameterize the binary output path or create dedicated multi-stage builds mapping to specific cargo workspace members (e.g. `usora-api-gateway`).
+The Component level analyzes the inner mechanics of the API Gateway, Spring Boot security components, gRPC control plane, and compute execution engines.
 
-### 6.2 Spring Boot Un-scoped Build Context
-- **Vulnerability:** `infrastructure/docker/Dockerfile.spring-boot` copies all project files (`COPY pom.xml ./` and `COPY src ./src`) without scoping to individual services under `spring-boot-services/`.
-- **Vulnerability Impact:** Bloated build contexts, long compile times, and potential Maven compilation errors due to module layout mismatches.
-- **Remediation:** Scope the maven build specifically using `-pl` module target flags and copy only the respective target module dependencies.
+### 4.1 Gateway Authentication & Key Management (Dead Auth Layer)
+- **Vulnerability:** In `rust-services/usora-api-gateway`, `AuthLayer` initializes `JwtValidator::new(None, None)` with an empty JWKS map (`auth/jwt.rs`), and `update_jwks()` is never invoked.
+- **Impact:** 100% of bearer tokens fail key lookup (`MissingKey`), returning `401 Unauthorized` for all authenticated endpoints. Total edge service outage. If JWKS is populated without setting `issuer`/`audience`, authentication bypass occurs for tokens from unintended issuers.
+- **Remediation:** Fetch JWKS from Identity Service (`/oauth2/jwks`) on startup and periodic refresh; enforce explicit `JWT_ISSUER` and `JWT_AUDIENCE` validation.
 
-### 6.3 Sequential, Inefficient CI/CD Pipeline
-- **Vulnerability:** In `.github/workflows/ci-cd.yml`, 11 distinct service containers are built sequentially in a single job shell-loop, and security scan failures are ignored via `continue-on-error: true`.
-- **Vulnerability Impact:** Build times can easily range from 2 to 4 hours, creating a massive delivery bottleneck. Additionally, silent scan failures allow vulnerable containers containing critical CVEs to bypass security gates into production.
-- **Remediation:** Re-architect the build job into parallel task matrices utilizing Docker buildx with caching, and enforce strict, fail-fast thresholds on vulnerability scanners.
+### 4.2 Downstream JWT Forgery via Default HMAC Key
+- **Vulnerability:** `usora-notification-service` uses HMAC-SHA symmetric keys defaulting to committed string `defaultSecretKeyMustBeOverriddenInProduction` in `application.yml` and `JwtTokenProvider.java`. `validateToken()` ignores expiration and claim validation.
+- **Impact:** Attackers can forge JWTs with arbitrary tenant IDs and roles, bypassing REST/gRPC authentication.
+- **Remediation:** Remove default secret fallback, require environment key injection with startup fail-fast check, and align on RS256 token verification delegated from Identity Service.
+
+### 4.3 Downstream Tenant Header Overrides (`X-Tenant-ID` Trust)
+- **Vulnerability:** `TenantInterceptor.java` across Spring services (`audit`, `core`, `identity`, `notification`, `compliance`, `integration`) reads `X-Tenant-ID` HTTP header and overrides authenticated JWT context.
+- **Impact:** Attacker reaching Spring services directly can spoof tenant identity. In `usora-audit-service`, this corrupts immutable audit trail attribution.
+- **Remediation:** Enforce tenant context extraction strictly from validated JWT claims first. Disallow header overrides unless caller possesses explicit super-admin permissions.
+
+### 4.4 Unimplemented gRPC Control Plane
+- **Vulnerability:** Gateway defines gRPC clients for `identity`, `tenant`, `audit`, `compliance`, and `notification`. Spring Boot services configure gRPC ports but implement zero `@GrpcService` or generated protobuf `*ImplBase` handlers.
+- **Impact:** Gateway gRPC control plane calls fail with `UNIMPLEMENTED`, breaking backend orchestration workflows.
+- **Remediation:** Implement missing `@GrpcService` handlers in Spring Boot backends extending protobuf base classes, or route control traffic via authenticated internal REST endpoints.
+
+### 4.5 Plaintext gRPC & Edge TLS Settings
+- **Vulnerability:** Gateway gRPC clients connect to `https://orchestrator:9090` without configuring `.tls_config()`, defaulting to unencrypted plaintext channels. Gateway TLS defaults to TLS 1.2 with client auth disabled.
+- **Impact:** Lack of mTLS exposes internal gRPC control traffic to eavesdropping and tampering.
+- **Remediation:** Configure Tonic gRPC client TLS with CA certs and mutual TLS credentials. Enforce default TLS 1.3 on edge gateway.
+
+### 4.6 Dynamic Code Execution in Compute Engine (Rhai Scripting)
+- **Vulnerability:** `usora-risk-scoring-engine` initializes Rhai engine via `Engine::new()` without execution memory/instruction bounds.
+- **Impact:** Complex or malicious scripts can trigger CPU loops or OOM panics in compute pods.
+- **Remediation:** Initialize Rhai with `Engine::new_raw()`, enforce maximum string size, step limits, and ensure `"sync"` feature flag is enabled in `Cargo.toml`.
+
+### 4.7 Native FFI Failsafe Boundaries
+- **Vulnerability:** `usora-document-processor` and `usora-face-matching-engine` call native C/C++ libraries (Leptonica, Tesseract, OpenCV, FAISS) via direct FFI.
+- **Impact:** FFI segmentation faults or native memory crashes terminate the host Rust OS process.
+- **Remediation:** Isolate raw FFI operations into dedicated worker processes with IPC boundaries and validate image inputs prior to native FFI invocation.
 
 ---
 
-## 7. Status of Prior Audit Findings
+## 5. Level 4: Code & Data Architecture (C4)
+
+The Code & Data level evaluates cryptographic implementations, data isolation at rest, audit chain hashing, and IDOR protections.
+
+### 5.1 Symmetric Key Fallback in Compliance Encryption
+- **Vulnerability:** `EncryptionUtil.java` in `usora-compliance-service` falls back to an all-zero 256-bit AES key (`new byte[32]`) if `COMPLIANCE_ENCRYPTION_KEY` is not set.
+- **Impact:** Sensitive compliance evidence uploaded by applicants is encrypted at rest using a publicly known static zero key.
+- **Remediation:** Throw a runtime exception at application startup if `COMPLIANCE_ENCRYPTION_KEY` is missing or insufficient in entropy.
+
+### 5.2 Identity User Administration IDOR Hazard
+- **Vulnerability:** `ApiController.java` in `usora-identity-service` accepts `tenantId` in JSON payload bodies for user creation (`POST /api/v1/users`) and role modification (`PUT /api/v1/users/{id}/roles`) without verifying against caller's JWT tenant claim.
+- **Impact:** Tenant admin can manipulate users or escalate permissions across different tenants by altering payload `tenantId`.
+- **Remediation:** Validate body-supplied `tenantId` against caller's verified JWT `tid` claim in `DomainService.java`.
+
+### 5.3 Forensic Check Misrepresentation
+- **Vulnerability:** `authenticity.rs` in `usora-document-processor` contains functions `detect_uv_fluorescence` and `detect_ir_absorption` implemented using basic RGB color-variance heuristics.
+- **Impact:** Misleads auditors and API clients into assuming physical UV/IR hardware spectrum validation.
+- **Remediation:** Rename functions to `heuristic_visible_*` and cap maximum confidence output weight.
+
+---
+
+## 6. Status of Prior Audit Findings
 
 | Prior Finding | Original Severity | Current Status | Verification Context (Evidence) |
 |---|---|---|---|
-| **SSRF in Outbound REST Client** | P2 | **RESOLVED** | `integration/.../RestClient.java` calls `EgressUrlGuard.assertSafeDestination()` which checks against RFC1918, loopback, and link-local ranges at call time. |
-| **MRZ Checksum `<` Filler Bypass** | P1 | **RESOLVED** | `document-processor/.../mrz.rs` now properly implements the weighted ICAO 9303 checksum and catches `<` edge-cases. |
-| **JWT Cache Expiry Bypass** | P1 | **RESOLVED** | `api-gateway/.../jwt.rs` has been patched to validate `claims.exp > now` on every LRU cache hit, evicting expired entries. |
-| **Silent AML Screening Failures** | P0 | **RESOLVED** | `compliance/.../DomainService.java` collects screening matches inside violations and fails-closed on system/gRPC errors. |
-| **Unkeyed Dual-Auth Hash** | P1 | **RESOLVED** | `compliance/.../DomainService.java` uses `HashingUtil.hmacSha256` backed by a secure rule signing secret instead of a plain SHA-256 digest. |
-| **Documentation Overclaims** | P3 | **OPEN** | `main.md` and `compliance-mapping.md` claim SOC 2 Type II Certified and 99.99% SLA, which exceed present staging validation. |
+| **SSRF in Outbound REST Client** | P2 | **RESOLVED** | `integration/.../RestClient.java` calls `EgressUrlGuard.assertSafeDestination()` checking RFC1918, loopback, and link-local ranges. |
+| **MRZ Checksum `<` Filler Bypass** | P1 | **RESOLVED** | `document-processor/.../mrz.rs` implements weighted ICAO 9303 checksum and handles `<` edge cases. |
+| **JWT Cache Expiry Bypass** | P1 | **RESOLVED** | `api-gateway/.../jwt.rs` checks `claims.exp > now` on LRU cache hits, evicting expired entries. |
+| **Silent AML Screening Failures** | P0 | **RESOLVED** | `compliance/.../DomainService.java` collects screening matches in violations and fails-closed on system/gRPC errors. |
+| **Unkeyed Dual-Auth Hash** | P1 | **RESOLVED** | `compliance/.../DomainService.java` uses `HashingUtil.hmacSha256` backed by secure rule signing secret. |
+| **Documentation Overclaims** | P3 | **OPEN** | `main.md` and `compliance-mapping.md` claim SOC 2 Type II Certified and 99.99% SLA prior to operational audit verification. |
 
 ---
 
-## 8. Remediation Roadmap & Prioritization Backlog
+## 7. Remediation Roadmap & Prioritization Backlog
 
 | Phase | Priority | Security Domain | Target Module | Remediation Action |
 |---|---|---|---|---|
 | **Phase 1** | **P0 - Critical** | Identity & Access Control | `api-gateway` | Load JWKS at gateway boot; enforce strict RS256 issuer/audience validation. |
-| **Phase 1** | **P0 - Critical** | Data Isolation | Spring Services | Patch `TenantInterceptor` files to prioritize JWT claims. Remove `X-Tenant-ID` header override. |
-| **Phase 1** | **P0 - Critical** | Infrastructure | All TF Modules | Correct regional endpoint interpolation (`com.amazonaws..s3`) and prepend `${var.environment}` prefixes. |
-| **Phase 1** | **P0 - Critical** | Secrets Management | `notification-service` | Remove default HMAC secret key. Implement fail-fast on startup if `JWT_SECRET` is missing. |
+| **Phase 1** | **P0 - Critical** | Data Isolation | Spring Services | Patch `TenantInterceptor` files to prioritize JWT claims over `X-Tenant-ID` headers. |
+| **Phase 1** | **P0 - Critical** | Infrastructure | All TF Modules | Fix VPC endpoint interpolation (`com.amazonaws.${data.aws_region.current.name}.s3`) and prepend `${var.environment}` prefixes. |
+| **Phase 1** | **P0 - Critical** | Secrets Management | `notification-service` | Remove default HMAC secret key. Implement startup fail-fast check if `JWT_SECRET` is missing. |
 | **Phase 1** | **P0 - Critical** | Network Security | Kubernetes | Harden Network Policies to restrict database egress to private VPC CIDRs. |
 | **Phase 2** | **P1 - High** | Control Plane | Gateway & Spring | Implement missing `@GrpcService` backend servers; configure mutual TLS (mTLS) over gRPC channels. |
 | **Phase 2** | **P1 - High** | Cryptography | `compliance-service` | Remove zero-key fallback in `EncryptionUtil`. Correct invalid monitored IAM policy ARN in RDS. |
 | **Phase 2** | **P1 - High** | Packaging / CI | Docker & GitHub | Fix Rust binary target path, scope Spring Boot builds, parallelize container builds in CI/CD. |
 | **Phase 3** | **P2 - Medium** | Forensic Validation | `document-processor` | Re-classify and rename RGB heuristic "forensics" to visual heuristics. |
-| **Phase 3** | **P2 - Medium** | Compute Resilience | Compute Engines | Isolate FFI C-libraries into dedicated worker processes; use process-level isolation. |
+| **Phase 3** | **P2 - Medium** | Compute Resilience | Compute Engines | Isolate FFI C-libraries into dedicated worker processes; enforce Rhai sandbox bounds. |
 
 ---
 
-## 9. Conclusion
+## 8. Conclusion
 
 The USORA platform possesses a highly scalable, high-performance polyglot architecture. However, several critical gaps must be closed before the platform can be considered secure and compliant. Remediating the gateway authentication outage, removing downstream header-trust overlaps, correcting regional/naming defects in the Terraform blueprints, and hardening network egress paths are absolute prerequisites for production readiness.
 
