@@ -411,7 +411,7 @@
             <plugin>
                 <groupId>org.flywaydb</groupId>
                 <artifactId>flyway-maven-plugin</artifactId>
-                <version>13.3.0</version>
+                <version>13.4.0</version>
             </plugin>
         </plugins>
     </build>
