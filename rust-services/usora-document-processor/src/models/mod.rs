@@ -106,6 +106,22 @@ pub struct AuthenticityScore {
     pub uv_check_score: f32,
     pub digital_signature_score: f32,
     pub individual_checks: HashMap<String, f32>,
+    // F-019: explicit, structured list of which entries in
+    // `individual_checks` (by field name) are visible-light heuristics
+    // only, not genuine forensic UV/IR/hologram verification -- see
+    // validation/authenticity.rs's AuthenticityCheckEngine, which already
+    // suffixes these field names with "_heuristic" and caps their
+    // confidence, but that distinction previously never reached this
+    // struct at all: individual_checks was always populated as an empty
+    // HashMap, and hologram_verification_score/uv_check_score were always
+    // hardcoded to 0.0 regardless of what the heuristics actually found.
+    // A downstream consumer (risk-scoring-engine, gateway, frontend) can
+    // now check this list directly instead of needing to know or guess
+    // this service's internal field-naming convention -- this is the
+    // structured signal the acceptance criterion ("risk engines
+    // distinguish heuristic evidence from verified forensic evidence")
+    // asks for.
+    pub heuristic_only_checks: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

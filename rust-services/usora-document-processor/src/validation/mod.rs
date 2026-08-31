@@ -69,12 +69,65 @@ impl ValidationEngine {
             .iter()
             .any(|r| r.field.contains("tamper") || r.field.contains("forgery"));
 
+        // F-019: this previously computed overall_score as a plain
+        // fraction of checks that passed (passed_count / total_count),
+        // giving a heuristic-only check (hologram/UV/IR pixel-variance
+        // heuristics, capped by AuthenticityCheckEngine at confidence
+        // <= 0.4 specifically because they are not genuine forensic
+        // signals) the exact same full weight as a real, uncapped check
+        // like microprint or font analysis. That silently discarded the
+        // whole point of capping heuristic confidence -- the cap never
+        // reached this aggregate at all. Weighting by each result's own
+        // confidence instead means a low-confidence heuristic "pass"
+        // contributes proportionally little to overall_score, and a
+        // confident real-check pass contributes proportionally more --
+        // matching what "distinguish heuristic evidence from verified
+        // forensic evidence" requires numerically, not just in field
+        // names and human-readable text.
         let overall_score = if all_results.is_empty() {
             0.0
         } else {
-            let passed = all_results.iter().filter(|r| r.passed).count() as f32;
-            passed / all_results.len() as f32
+            let confidence_sum: f32 = all_results
+                .iter()
+                .map(|r| if r.passed { r.confidence } else { 0.0 })
+                .sum();
+            confidence_sum / all_results.len() as f32
         };
+
+        // F-019: previously individual_checks was always an empty
+        // HashMap and hologram_verification_score/uv_check_score were
+        // always hardcoded to 0.0, discarding every per-check result
+        // AuthenticityCheckEngine actually produced (including its
+        // careful heuristic-vs-real labeling and confidence capping) the
+        // moment it reached this aggregation layer. Now actually
+        // populated from all_results, and heuristic_only_checks lists
+        // which of those entries are visible-light heuristics only (by
+        // the "_heuristic" field-name suffix AuthenticityCheckEngine
+        // already establishes), so a downstream consumer has an explicit,
+        // structured way to tell them apart rather than needing to know
+        // this service's internal naming convention.
+        let individual_checks: std::collections::HashMap<String, f32> = all_results
+            .iter()
+            .map(|r| (r.field.clone(), r.confidence))
+            .collect();
+        let heuristic_only_checks: Vec<String> = all_results
+            .iter()
+            .filter(|r| r.field.ends_with("_heuristic"))
+            .map(|r| r.field.clone())
+            .collect();
+
+        let hologram_verification_score = individual_checks
+            .get("hologram_heuristic")
+            .copied()
+            .unwrap_or(0.0);
+        let uv_check_score = individual_checks
+            .get("uv_fluorescence_heuristic")
+            .copied()
+            .unwrap_or(0.0);
+        let font_analysis_score = individual_checks
+            .get("font_analysis")
+            .copied()
+            .unwrap_or(0.0);
 
         Ok(DocumentValidation {
             is_valid: overall_score >= 0.6,
@@ -82,11 +135,12 @@ impl ValidationEngine {
             authenticity: crate::models::AuthenticityScore {
                 overall_score,
                 tamper_detection_score: if is_tampered { 0.0 } else { avg_confidence },
-                hologram_verification_score: 0.0,
-                font_analysis_score: 0.0,
-                uv_check_score: 0.0,
+                hologram_verification_score,
+                font_analysis_score,
+                uv_check_score,
                 digital_signature_score: 0.0,
-                individual_checks: std::collections::HashMap::new(),
+                individual_checks,
+                heuristic_only_checks,
             },
             flags: failed_checks
                 .iter()
