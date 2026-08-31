@@ -21,7 +21,7 @@ serde_json = "1"
 jsonwebtoken = "10"
 rustls = "0.23"
 rustls-pemfile = "2"
-x509-parser = "0.16"
+x509-parser = "0.18"
 rcgen = "0.14"
 redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
 rdkafka = { version = "0.36", features = ["cmake-build"] }
