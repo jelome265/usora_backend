@@ -297,7 +297,7 @@ jobs:
 
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-rust-${{ matrix.service }}
           path: rust-services/${{ matrix.service }}/target/debug/*.xml
@@ -350,7 +350,7 @@ jobs:
 
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-java
           path: spring-boot-services/**/target/surefire-reports/
@@ -358,7 +358,7 @@ jobs:
 
       - name: Upload JaCoCo Coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-java
           path: spring-boot-services/**/target/site/jacoco/
@@ -407,7 +407,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Trivy Results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: trivy-results
           path: trivy-fs-results.sarif
@@ -430,7 +430,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Cargo Audit Results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cargo-audit-results
           path: cargo-audit-*.json
@@ -450,7 +450,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Semgrep Results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: semgrep-results
           path: semgrep-results.sarif
@@ -458,7 +458,7 @@ jobs:
 
       - name: Upload Security Scan Report Artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security-scan-results
           path: |
@@ -885,7 +885,7 @@ jobs:
 
       - name: Upload Integration Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: integration-test-results
           path: |

@@ -188,7 +188,7 @@ jobs:
 
       - name: Upload OWASP Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: owasp-dependency-check
           path: owasp-dependency-check.json
@@ -196,7 +196,7 @@ jobs:
 
       - name: Upload Cargo Audit Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cargo-audit-reports
           path: cargo-audit-*.json
@@ -348,7 +348,7 @@ jobs:
 
       - name: Upload Secret Scan Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: secret-scan-results
           path: |
@@ -417,7 +417,7 @@ jobs:
           exit $found
 
       - name: Upload License Reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: license-reports
           path: |
@@ -491,7 +491,7 @@ jobs:
 
       - name: Upload Container Scan Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: container-scan-results
           path: trivy-image-*.sarif
@@ -571,7 +571,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Upload Security Summary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security-summary
           path: security-summary.md
