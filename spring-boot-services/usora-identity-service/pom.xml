@@ -29,7 +29,7 @@
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
         <grpc.version>1.83.1</grpc.version>
         <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
-        <micrometer.version>1.14.3</micrometer.version>
+        <micrometer.version>1.17.1</micrometer.version>
         <protobuf-java.version>4.28.3</protobuf-java.version>
         <testcontainers.version>2.0.5</testcontainers.version>
     </properties>

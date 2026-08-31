@@ -31,7 +31,7 @@
         <grpc.version>1.83.1</grpc.version>
         <protoc-jar-maven-plugin.version>3.11.4</protoc-jar-maven-plugin.version>
         <protobuf-java.version>3.25.5</protobuf-java.version>
-        <micrometer.version>1.15.0</micrometer.version>
+        <micrometer.version>1.17.1</micrometer.version>
         <spring-kafka.version>3.4.0</spring-kafka.version>
         <spring-security.version>6.4.0</spring-security.version>
     </properties>
