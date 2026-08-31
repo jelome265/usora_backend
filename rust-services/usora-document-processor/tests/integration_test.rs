@@ -245,6 +245,54 @@ async fn test_validation_engine_aggregation() {
     assert!(validation.authenticity.overall_score <= 1.0, "Overall score should not exceed 1.0");
 }
 
+/// F-019 regression: the aggregation layer must actually surface which
+/// per-check results are visible-light heuristics only (not genuine
+/// forensic UV/IR/hologram evidence), and must not silently drop that
+/// distinction the way it previously did (individual_checks was always
+/// an empty map, hologram_verification_score/uv_check_score were always
+/// hardcoded to 0.0, regardless of what AuthenticityCheckEngine actually
+/// found).
+#[tokio::test]
+async fn test_heuristic_only_checks_are_surfaced() {
+    let data = create_test_image(400, 300, &[]);
+    let engine = ValidationEngine::new().with_validator(Box::new(AuthenticityCheckEngine));
+
+    let result = engine.validate_all(&data).await.unwrap();
+
+    assert!(
+        !result.authenticity.individual_checks.is_empty(),
+        "individual_checks must be populated from the real per-check results, not left empty"
+    );
+    assert!(
+        result.authenticity.heuristic_only_checks.contains(&"uv_fluorescence_heuristic".to_string()),
+        "uv_fluorescence_heuristic must be explicitly listed as heuristic-only"
+    );
+    assert!(
+        result.authenticity.heuristic_only_checks.contains(&"ir_absorption_heuristic".to_string()),
+        "ir_absorption_heuristic must be explicitly listed as heuristic-only"
+    );
+    assert!(
+        result.authenticity.heuristic_only_checks.contains(&"hologram_heuristic".to_string()),
+        "hologram_heuristic must be explicitly listed as heuristic-only"
+    );
+    assert!(
+        !result.authenticity.heuristic_only_checks.contains(&"microprint".to_string()),
+        "microprint is not a UV/IR/hologram heuristic and must not be listed as one"
+    );
+
+    // The acceptance criterion in spirit: no heuristic-only check's
+    // reported confidence can reach a level that would plausibly be
+    // mistaken for genuine forensic verification.
+    for field in &result.authenticity.heuristic_only_checks {
+        let confidence = result.authenticity.individual_checks.get(field).copied().unwrap_or(0.0);
+        assert!(
+            confidence <= 0.4,
+            "heuristic-only check '{field}' reported confidence {confidence}, above the 0.4 cap that keeps it \
+             from looking like genuine forensic evidence"
+        );
+    }
+}
+
 #[tokio::test]
 async fn test_extractor_aggregation() {
     let data = create_test_image(400, 200, &[]);

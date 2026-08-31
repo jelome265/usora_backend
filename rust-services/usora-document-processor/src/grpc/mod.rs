@@ -6,8 +6,7 @@ use crate::generated::usora::document::v1::{
     CrossReferenceRequest, CrossReferenceResponse,
     SecurityFeaturesRequest, SecurityFeaturesResponse,
     TemplateRequest, TemplateResponse,
-    ExtractedData, ForgeryResult, MetadataResult,
-    CrossReferenceResult, SecurityFeaturesResult,
+    ExtractedData,
     FieldConsistency, FeatureCheckResult, TemplateLayout, TemplateField, Position,
 };
 use crate::models;
@@ -31,6 +30,85 @@ impl DocumentAnalysisServiceImpl {
             .build();
         let processor = crate::DocumentProcessor::new(config.clone(), pipeline);
         Self { config, processor }
+    }
+
+    /// F-019: shared by analyze_document and check_security_features so
+    /// both RPCs report the same real, heuristic-labeled security-feature
+    /// data instead of each having its own hand-rolled (and, before this
+    /// fix, fabricated) construction. Builds every FeatureCheckResult from
+    /// AuthenticityCheckEngine's actual per-check results (via
+    /// ValidationEngine, already run as part of process_document), and
+    /// marks a result's `details` text distinctly when the underlying
+    /// check is a visible-light heuristic only (see
+    /// validation/authenticity.rs) rather than genuine forensic UV/IR/
+    /// hologram evidence -- this is what prevents the API from ever
+    /// implying uv_verified=true-equivalent confidence from an ordinary
+    /// RGB capture.
+    fn build_security_features_response(
+        document_id: String,
+        validation: &Option<models::DocumentValidation>,
+    ) -> SecurityFeaturesResponse {
+        let (individual_checks, heuristic_only_checks) = validation
+            .as_ref()
+            .map(|v| (v.authenticity.individual_checks.clone(), v.authenticity.heuristic_only_checks.clone()))
+            .unwrap_or_default();
+
+        let make_feature_check = |name: &str,
+                                   heuristic_field: &str,
+                                   heuristic_details: &str,
+                                   passed_threshold: f32| -> Option<FeatureCheckResult> {
+            individual_checks.get(heuristic_field).map(|&confidence| {
+                let is_heuristic = heuristic_only_checks.iter().any(|f| f == heuristic_field);
+                let details = if is_heuristic {
+                    format!(
+                        "{} (visible-light heuristic only, NOT a genuine forensic {} check -- see \
+                         validation/authenticity.rs)",
+                        heuristic_details, name
+                    )
+                } else {
+                    heuristic_details.to_string()
+                };
+                FeatureCheckResult {
+                    feature_name: name.to_string(),
+                    present: confidence >= passed_threshold,
+                    confidence: confidence as f64,
+                    details,
+                }
+            })
+        };
+
+        let uv_check = make_feature_check(
+            "uv_fluorescence", "uv_fluorescence_heuristic", "UV fluorescence heuristic result", 0.3);
+        let ir_check = make_feature_check(
+            "ir_absorption", "ir_absorption_heuristic", "IR absorption heuristic result", 0.3);
+        let hologram_check = make_feature_check(
+            "hologram", "hologram_heuristic", "Hologram pixel-variance heuristic result", 0.3);
+        let microprint_check = make_feature_check(
+            "microprint", "microprint", "Microprint detail analysis result", 0.5);
+        let watermark_check = make_feature_check(
+            "watermark", "watermark", "Watermark pattern analysis result", 0.5);
+
+        let all_features_present = [&uv_check, &ir_check, &hologram_check, &microprint_check, &watermark_check]
+            .iter()
+            .all(|c| c.as_ref().is_some_and(|c| c.present));
+        let overall_security_score = validation
+            .as_ref()
+            .map(|v| v.authenticity.overall_score as f64)
+            .unwrap_or(0.0);
+
+        SecurityFeaturesResponse {
+            document_id,
+            all_features_present,
+            overall_security_score,
+            uv_check,
+            ir_check,
+            hologram_check,
+            microprint_check,
+            watermark_check,
+            warnings: heuristic_only_checks.iter()
+                .map(|f| format!("{f} is a visible-light heuristic only, not genuine forensic evidence"))
+                .collect(),
+        }
     }
 }
 
@@ -64,14 +142,23 @@ impl DocumentAnalysisService for DocumentAnalysisServiceImpl {
             metadata: Some(Struct { fields: HashMap::new() }),
         };
 
-        let forgery = ForgeryResult {
+        let forgery = ForgeryDetectionResponse {
+            document_id: result.document_id.to_string(),
             is_forgery: false,
             forgery_confidence: 0.0,
             forgery_indicators: vec![],
             model_scores: HashMap::new(),
+            tamper_detection_score: 0.0,
+            manipulation_score: 0.0,
+            print_analysis_score: 0.0,
+            font_analysis_score: 0.0,
+            texture_analysis_score: 0.0,
+            warnings: vec![],
         };
 
-        let metadata_result = MetadataResult {
+        let metadata_result = MetadataExtractionResponse {
+            document_id: result.document_id.to_string(),
+            exif_data: HashMap::new(),
             file_format: String::new(),
             image_width: 0,
             image_height: 0,
@@ -81,23 +168,23 @@ impl DocumentAnalysisService for DocumentAnalysisServiceImpl {
             has_embedded_thumbnail: false,
             detected_software: vec![],
             creation_date: None,
+            warnings: vec![],
         };
 
-        let cross_ref = CrossReferenceResult {
+        let cross_ref = CrossReferenceResponse {
+            document_id: result.document_id.to_string(),
             all_fields_consistent: true,
             field_consistencies: vec![],
+            cross_reference_warnings: vec![],
             overall_consistency_score: 1.0,
         };
 
-        let security = SecurityFeaturesResult {
-            all_features_present: false,
-            overall_security_score: 0.0,
-            uv_check: None,
-            ir_check: None,
-            hologram_check: None,
-            microprint_check: None,
-            watermark_check: None,
-        };
+        // F-019: see build_security_features_response's own docs -- this
+        // replaces what used to be hardcoded None/0.0/false for every
+        // field here regardless of what AuthenticityCheckEngine actually
+        // found.
+        let security = Self::build_security_features_response(
+            result.document_id.to_string(), &result.validation);
 
         let resp = DocumentAnalysisResponse {
             document_id: result.document_id.to_string(),
@@ -221,26 +308,29 @@ impl DocumentAnalysisService for DocumentAnalysisServiceImpl {
     ) -> Result<Response<SecurityFeaturesResponse>, Status> {
         let inner = req.into_inner();
 
-        let make_check = |name: &str, present: bool| -> FeatureCheckResult {
-            FeatureCheckResult {
-                feature_name: name.to_string(),
-                present,
-                confidence: if present { 0.95 } else { 0.0 },
-                details: if present { format!("{} check passed", name) } else { format!("{} check skipped", name) },
-            }
-        };
+        // CRITICAL BUG found while implementing F-019: this previously
+        // never looked at inner.document_image at all. `present` was set
+        // directly from whether the CALLER'S REQUEST asked for a given
+        // check (inner.check_uv/check_ir/etc.), and confidence was a
+        // hardcoded 0.95 whenever present -- meaning a caller asking for
+        // check_uv=true received "uv_check: present=true, confidence=0.95,
+        // details='uv check passed'" regardless of what the submitted
+        // image actually contained. This was a complete fabrication with
+        // zero relationship to the input document, not merely a
+        // mislabeled heuristic -- worse than the analyze_document path's
+        // hardcoded-to-absent placeholders, since this one actively
+        // reported false positive "passed" results on request.
+        //
+        // Now actually runs the same AuthenticityCheckEngine/
+        // ValidationEngine pipeline analyze_document uses, and builds the
+        // response from real (if heuristic-only, honestly labeled as
+        // such) per-check results via the shared
+        // build_security_features_response helper.
+        let result = self.processor.process_document(&inner.document_image).await
+            .map_err(|e| Status::internal(format!("Processing failed: {}", e)))?;
 
-        Ok(Response::new(SecurityFeaturesResponse {
-            document_id: inner.document_id,
-            all_features_present: true,
-            overall_security_score: 0.92,
-            uv_check: Some(make_check("uv", inner.check_uv)),
-            ir_check: Some(make_check("ir", inner.check_ir)),
-            hologram_check: Some(make_check("hologram", inner.check_hologram)),
-            microprint_check: Some(make_check("microprint", inner.check_microprint)),
-            watermark_check: Some(make_check("watermark", inner.check_watermark)),
-            warnings: vec![],
-        }))
+        Ok(Response::new(Self::build_security_features_response(
+            inner.document_id, &result.validation)))
     }
 
     async fn get_document_template(
