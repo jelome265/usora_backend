@@ -19,7 +19,7 @@ base64 = "0.23"
 serde_yaml = "0.9"
 tract-onnx = "0.23"
 ndarray = "0.16"
-ndarray-stats = "0.6"
+ndarray-stats = "0.7"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }
