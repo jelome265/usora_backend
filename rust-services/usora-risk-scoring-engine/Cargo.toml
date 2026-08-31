@@ -44,7 +44,7 @@ prost = "0.13"
 prost-types = "0.14"
 tokio-stream = "0.1"
 futures = "0.3"
-lru = "0.16"
+lru = "0.18"
 arc-swap = "1"
 humantime-serde = "1"
 schemars = { version = "1.2", features = ["chrono04", "uuid1"] }
