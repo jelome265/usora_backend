@@ -1,178 +1,248 @@
+// F-020: this file previously described a COMPLETELY DIFFERENT, orphaned
+// contract (ScreenEntity/CheckSanctions/RunPEPCheck/CheckAML) that no
+// longer matches usora-compliance-service's real implementation at all
+// -- that service's actual gRPC surface (ValidateCompliance,
+// GetRegulatoryRules, CheckJurisdictionCompliance, etc.) lived only in
+// spring-boot-services/usora-compliance-service/src/main/proto/compliance.proto,
+// a separate, locally-compiled copy. Confirmed via inspection that the
+// old ScreenEntity-shaped client the API gateway generated from this
+// file (rust-services/usora-api-gateway) is constructed but never
+// actually called anywhere in that service's code -- so this rename was
+// safe: nothing depended on the old shape actually working, it was pure
+// dead/misleading documentation of a contract that no longer exists.
+//
+// This file's content now matches the real, currently-implemented
+// contract exactly (only the package name differs: usora.compliance.v1
+// here vs. usora.compliance in the service's own copy, to keep the
+// existing tonic::include_proto!("usora.compliance.v1") call in the
+// gateway's lib.rs working unchanged -- java_package/java_outer_classname
+// below are unchanged from the service's own copy, so this rename does
+// NOT affect the Java-generated package/class names
+// usora-compliance-service's own code imports).
+//
+// See docs/F-012-grpc-service-matrix.md ("Proto source divergence") and
+// docs/F-020-proto-contract-drift-check.md for the durable check that
+// now fails CI if these two copies ever diverge again, since compiling
+// usora-compliance-service directly from this file (removing its local
+// copy entirely) was not attempted here -- see that doc for why.
 syntax = "proto3";
 
 package usora.compliance.v1;
 
-option go_package = "github.com/usora/compliance/v1;usoracompliancev1";
-option java_package = "com.usora.compliance.v1";
 option java_multiple_files = true;
-
-import "google/protobuf/timestamp.proto";
-import "google/protobuf/struct.proto";
-
-enum RiskLevel {
-  RISK_LEVEL_UNSPECIFIED = 0;
-  LOW = 1;
-  MEDIUM = 2;
-  HIGH = 3;
-  CRITICAL = 4;
-}
-
-enum ScreeningStatus {
-  SCREENING_STATUS_UNSPECIFIED = 0;
-  CLEAR = 1;
-  PENDING_REVIEW = 2;
-  FLAGGED = 3;
-  ESCALATED = 4;
-}
-
-message SanctionsMatch {
-  string match_id = 1;
-  string list_name = 2;
-  string entity_name = 3;
-  string match_type = 4;
-  float match_score = 5;
-  string country = 6;
-  string program = 7;
-  google.protobuf.Timestamp listed_date = 8;
-  google.protobuf.Struct additional_info = 9;
-}
-
-message PEPRecord {
-  string record_id = 1;
-  string full_name = 2;
-  string position = 3;
-  string country = 4;
-  string organization = 5;
-  string relationship = 6;
-  google.protobuf.Timestamp start_date = 7;
-  google.protobuf.Timestamp end_date = 8;
-  bool is_immediate_family = 9;
-  bool is_close_associate = 10;
-}
-
-message AMLSummary {
-  RiskLevel overall_risk = 1;
-  float risk_score = 2;
-  repeated SanctionsMatch sanctions_matches = 3;
-  repeated PEPRecord pep_records = 4;
-  int32 total_alerts = 5;
-  int32 high_priority_alerts = 6;
-  string summary_text = 7;
-}
-
-message ScreeningResult {
-  string screening_id = 1;
-  string entity_id = 2;
-  string entity_type = 3;
-  ScreeningStatus status = 4;
-  RiskLevel risk_level = 5;
-  AMLSummary aml_summary = 6;
-  repeated SanctionsMatch sanctions_matches = 7;
-  repeated PEPRecord pep_records = 8;
-  string reviewed_by = 9;
-  google.protobuf.Timestamp created_at = 10;
-  google.protobuf.Timestamp updated_at = 11;
-  google.protobuf.Timestamp reviewed_at = 12;
-}
-
-message ScreenEntityRequest {
-  string tenant_id = 1;
-  string entity_id = 2;
-  string entity_type = 3;
-  string full_name = 4;
-  string date_of_birth = 5;
-  string nationality = 6;
-  string country_of_residence = 7;
-  repeated string keywords = 8;
-  bool include_pep = 9;
-  bool include_sanctions = 10;
-  bool include_adverse_media = 11;
-  google.protobuf.Struct metadata = 12;
-}
-
-message ScreenEntityResponse {
-  ScreeningResult result = 1;
-}
-
-message CheckSanctionsRequest {
-  string tenant_id = 1;
-  string entity_id = 2;
-  string full_name = 3;
-  string date_of_birth = 4;
-  string nationality = 5;
-  repeated string sanctions_lists = 6;
-  float match_threshold = 7;
-}
-
-message CheckSanctionsResponse {
-  string screening_id = 1;
-  ScreeningStatus status = 2;
-  repeated SanctionsMatch matches = 3;
-  int32 total_lists_checked = 4;
-}
-
-message RunPEPCheckRequest {
-  string tenant_id = 1;
-  string entity_id = 2;
-  string full_name = 3;
-  string country = 4;
-  bool include_family = 5;
-  bool include_associates = 6;
-}
-
-message RunPEPCheckResponse {
-  string screening_id = 1;
-  ScreeningStatus status = 2;
-  repeated PEPRecord records = 3;
-  RiskLevel risk_level = 4;
-}
-
-message GenerateComplianceReportRequest {
-  string tenant_id = 1;
-  string report_id = 2;
-  string entity_id = 3;
-  string date_from = 4;
-  string date_to = 5;
-  string report_type = 6;
-  google.protobuf.Struct options = 7;
-}
-
-message GenerateComplianceReportResponse {
-  string report_id = 1;
-  string report_url = 2;
-  string report_format = 3;
-  int32 page_count = 4;
-  google.protobuf.Timestamp generated_at = 5;
-  bytes report_data = 6;
-}
-
-message CheckAMLRequest {
-  string tenant_id = 1;
-  string entity_id = 2;
-  string full_name = 3;
-  string date_of_birth = 4;
-  string nationality = 5;
-  string country_of_residence = 6;
-  string address = 7;
-  string occupation = 8;
-  string source_of_funds = 9;
-  float transaction_amount = 10;
-  string transaction_currency = 11;
-  string transaction_country = 12;
-  google.protobuf.Struct metadata = 13;
-}
-
-message CheckAMLResponse {
-  string screening_id = 1;
-  AMLSummary summary = 2;
-  ScreeningStatus status = 3;
-  RiskLevel risk_level = 4;
-}
+option java_package = "com.usora.compliance.grpc";
+option java_outer_classname = "ComplianceProto";
 
 service ComplianceService {
-  rpc ScreenEntity(ScreenEntityRequest) returns (ScreenEntityResponse);
-  rpc CheckSanctions(CheckSanctionsRequest) returns (CheckSanctionsResponse);
-  rpc RunPEPCheck(RunPEPCheckRequest) returns (RunPEPCheckResponse);
-  rpc GenerateComplianceReport(GenerateComplianceReportRequest) returns (GenerateComplianceReportResponse);
-  rpc CheckAML(CheckAMLRequest) returns (CheckAMLResponse);
+  rpc ValidateCompliance(ComplianceValidationRequest) returns (ComplianceValidationResponse);
+  rpc GetRegulatoryRules(RegulatoryRulesRequest) returns (RegulatoryRulesResponse);
+  rpc UpdateRegulatoryRules(RegulatoryRulesUpdateRequest) returns (RegulatoryRulesUpdateResponse);
+  rpc GenerateReport(ReportGenerationRequest) returns (ReportGenerationResponse);
+  rpc GetAuditTrail(AuditTrailRequest) returns (AuditTrailResponse);
+  rpc CheckJurisdictionCompliance(JurisdictionCheckRequest) returns (JurisdictionCheckResponse);
+  rpc SubmitEvidence(EvidenceSubmissionRequest) returns (EvidenceSubmissionResponse);
+}
+
+message ComplianceValidationRequest {
+  string case_id = 1;
+  string entity_id = 2;
+  string entity_type = 3;
+  map<string, string> entity_data = 4;
+  repeated string jurisdictions = 5;
+  repeated string watchlist_types = 6;
+  bool include_adverse_media = 7;
+  bool include_transaction_screening = 8;
+}
+
+message ComplianceValidationResponse {
+  string validation_id = 1;
+  string case_id = 2;
+  string status = 3;
+  string overall_decision = 4;
+  repeated RuleResult rule_results = 5;
+  repeated AmlScreeningResult aml_results = 6;
+  repeated JurisdictionResult jurisdiction_results = 7;
+  int32 total_violations = 8;
+  int32 total_warnings = 9;
+  string validated_at = 10;
+  string validated_by = 11;
+}
+
+message RuleResult {
+  string rule_id = 1;
+  string rule_name = 2;
+  string severity = 3;
+  bool passed = 4;
+  string message = 5;
+  repeated string triggered_conditions = 6;
+}
+
+message AmlScreeningResult {
+  string screening_id = 1;
+  string list_name = 2;
+  string list_type = 3;
+  double match_score = 4;
+  bool is_match = 5;
+  string matched_name = 6;
+  string category = 7;
+  string risk_level = 8;
+}
+
+message JurisdictionResult {
+  string jurisdiction = 1;
+  bool compliant = 2;
+  repeated string requirements_met = 3;
+  repeated string requirements_failed = 4;
+  string message = 5;
+}
+
+message RegulatoryRulesRequest {
+  string jurisdiction = 1;
+}
+
+message RegulatoryRulesResponse {
+  repeated RuleDefinition rules = 1;
+  int32 total_rules = 2;
+  string last_updated = 3;
+  string version = 4;
+}
+
+message RuleDefinition {
+  string rule_id = 1;
+  string name = 2;
+  string description = 3;
+  string jurisdiction = 4;
+  string category = 5;
+  string severity = 6;
+  string drl_content = 7;
+  bool active = 8;
+  int32 version = 9;
+  string signed_by = 10;
+  string effective_from = 11;
+  string expires_at = 12;
+}
+
+message RegulatoryRulesUpdateRequest {
+  string rule_id = 1;
+  string name = 2;
+  string description = 3;
+  string jurisdiction = 4;
+  string category = 5;
+  string severity = 6;
+  string drl_content = 7;
+  bool active = 8;
+  string effective_from = 9;
+  string expires_at = 10;
+  repeated string replace_rule_ids = 11;
+  string officer_token = 12;
+  string legal_token = 13;
+}
+
+message RegulatoryRulesUpdateResponse {
+  string rule_id = 1;
+  int32 new_version = 2;
+  string status = 3;
+  string signature_hash = 4;
+  string updated_at = 5;
+  string updated_by = 6;
+  string message = 7;
+}
+
+message ReportGenerationRequest {
+  string report_type = 1;
+  string format = 2;
+  string case_id = 3;
+  string jurisdiction = 4;
+  string start_date = 5;
+  string end_date = 6;
+  repeated string include_sections = 7;
+  map<string, string> filters = 8;
+  bool include_evidence = 9;
+  bool include_audit_trail = 10;
+}
+
+message ReportGenerationResponse {
+  string report_id = 1;
+  string status = 2;
+  string format = 3;
+  string download_url = 4;
+  string requested_at = 5;
+  string completed_at = 6;
+  string message = 7;
+}
+
+message AuditTrailRequest {
+  string case_id = 1;
+}
+
+message AuditTrailResponse {
+  string case_id = 1;
+  string tenant_id = 2;
+  repeated AuditEntry entries = 3;
+  int32 total_entries = 4;
+  string hash_chain_root = 5;
+  bool integrity_verified = 6;
+}
+
+message AuditEntry {
+  string entry_id = 1;
+  string event_type = 2;
+  string action = 3;
+  string actor = 4;
+  string tenant_id = 5;
+  string description = 6;
+  map<string, string> details = 7;
+  string previous_hash = 8;
+  string current_hash = 9;
+  string timestamp = 10;
+}
+
+message JurisdictionCheckRequest {
+  string case_id = 1;
+  string entity_id = 2;
+  string jurisdiction = 3;
+  map<string, string> entity_attributes = 4;
+  repeated string applicable_regulations = 5;
+}
+
+message JurisdictionCheckResponse {
+  string check_id = 1;
+  string jurisdiction = 2;
+  bool overall_compliant = 3;
+  repeated RegulationResult regulation_results = 4;
+  repeated string required_actions = 5;
+  repeated string recommendations = 6;
+  string checked_at = 7;
+  string checked_by = 8;
+}
+
+message RegulationResult {
+  string regulation = 1;
+  string status = 2;
+  bool compliant = 3;
+  repeated string requirements_met = 4;
+  repeated string requirements_failed = 5;
+  string description = 6;
+}
+
+message EvidenceSubmissionRequest {
+  string case_id = 1;
+  string evidence_type = 2;
+  string content_hash = 3;
+  bytes content = 4;
+  string mime_type = 5;
+  map<string, string> metadata = 6;
+  repeated string tags = 7;
+  bool require_notarization = 8;
+}
+
+message EvidenceSubmissionResponse {
+  string evidence_id = 1;
+  string case_id = 2;
+  string status = 3;
+  string storage_path = 4;
+  string verification_hash = 5;
+  string blockchain_transaction_id = 6;
+  string submitted_at = 7;
+  string message = 8;
 }

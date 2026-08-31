@@ -34,6 +34,12 @@ runs, or a shared parent/BOM module that owns proto compilation once for
 every consumer. Flagging so it's a deliberate choice, not an accident, the
 next time these files drift.
 
+**F-020 UPDATE**: this drift was not hypothetical -- `shared/proto/compliance.proto`
+had already diverged into a completely different, incompatible contract
+from the service's own real implementation. See
+`docs/F-020-proto-contract-drift-check.md` for the full story and the CI
+check now in place to catch a recurrence.
+
 ## Separate bug found and fixed alongside this matrix
 
 `usora-notification-service`'s own gRPC **client** code

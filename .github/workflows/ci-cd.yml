@@ -37,6 +37,39 @@ permissions:
   attestations: write
 
 jobs:
+  proto-contract-drift-check:
+    # F-020: usora-compliance-service and usora-notification-service each
+    # compile from their own local copy of a proto file, not directly
+    # from shared/proto/ (see docs/F-012-grpc-service-matrix.md, "Proto
+    # source divergence"). That local copy already drifted into a
+    # completely different, incompatible contract once for
+    # compliance.proto before this check existed (fixed in the F-020
+    # commit that added this job) -- confirmed to have gone unnoticed
+    # because nothing verified the two copies stayed in sync. This job
+    # fails the build the moment they diverge again, rather than relying
+    # on someone noticing during review.
+    name: Proto Contract Drift Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: compliance.proto must match shared/proto/compliance.proto (except package name)
+        run: |
+          normalize() {
+            grep -v '^\s*//' "$1" | grep -v '^\s*package ' | sed '/^\s*$/d'
+          }
+          diff \
+            <(normalize spring-boot-services/usora-compliance-service/src/main/proto/compliance.proto) \
+            <(normalize shared/proto/compliance.proto) \
+            || (echo "::error::spring-boot-services/usora-compliance-service/src/main/proto/compliance.proto has diverged from the canonical shared/proto/compliance.proto (aside from the package name and comments, which intentionally differ -- see the header comment in shared/proto/compliance.proto). Update both together." && exit 1)
+
+      - name: notification.proto must exactly match shared/proto/notification.proto
+        run: |
+          diff \
+            spring-boot-services/usora-notification-service/src/main/protobuf/notification.proto \
+            shared/proto/notification.proto \
+            || (echo "::error::spring-boot-services/usora-notification-service/src/main/protobuf/notification.proto has diverged from the canonical shared/proto/notification.proto. Update both together (this one should be byte-identical, no intentional differences)." && exit 1)
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
