@@ -49,7 +49,7 @@ axum = "0.8"
 # Helm chart: the REST router in routes/mod.rs took `tenant_id` directly
 # from the request body with no authentication at all, on endpoints that
 # perform document/biometric forensic analysis. See auth.rs.
-jsonwebtoken = "10"
+jsonwebtoken = "11"
 
 [build-dependencies]
 tonic-build = "0.12"
