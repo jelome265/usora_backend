@@ -1,21 +1,18 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use image::{DynamicImage, GenericImageView, Pixel};
-use ndarray::{s, Array, Array3, Axis};
+use ndarray::{Array, Array3, Axis, s};
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::detection::{DetectedFace, FaceDetector};
-use crate::utils::{self, non_maximum_suppression, BBox};
+use crate::utils::{self, BBox, non_maximum_suppression};
 
 pub struct OnnxFaceDetector {
     model: tract_onnx::prelude::SimplePlan<
         tract_onnx::prelude::TypedFact,
         Box<dyn tract_onnx::prelude::TypedOp>,
-        tract_onnx::prelude::Graph<
-            tract_onnx::prelude::TypedFact,
-            Box<dyn tract_onnx::prelude::TypedOp>,
-        >,
+        tract_onnx::prelude::Graph<tract_onnx::prelude::TypedFact, Box<dyn tract_onnx::prelude::TypedOp>>,
     >,
     input_width: u32,
     input_height: u32,
@@ -71,7 +68,11 @@ impl OnnxFaceDetector {
     fn generate_anchors(image_width: u32, image_height: u32) -> Vec<Anchor> {
         let mut anchors = Vec::new();
         let strides = [8, 16, 32];
-        let min_sizes = [vec![16.0, 32.0], vec![64.0, 128.0], vec![256.0, 512.0]];
+        let min_sizes = [
+            vec![16.0, 32.0],
+            vec![64.0, 128.0],
+            vec![256.0, 512.0],
+        ];
 
         for (stride_idx, &stride) in strides.iter().enumerate() {
             let feature_w = (image_width as f32 / stride as f32).ceil() as u32;
@@ -89,12 +90,7 @@ impl OnnxFaceDetector {
 
                         let w2 = min_size * 2.0_f32.sqrt();
                         let h2 = min_size / 2.0_f32.sqrt();
-                        anchors.push(Anchor {
-                            cx,
-                            cy,
-                            w: w2,
-                            h: h2,
-                        });
+                        anchors.push(Anchor { cx, cy, w: w2, h: h2 });
                     }
                 }
             }
@@ -103,11 +99,7 @@ impl OnnxFaceDetector {
         anchors
     }
 
-    fn preprocess(
-        image: &DynamicImage,
-        width: u32,
-        height: u32,
-    ) -> Result<(Array3<f32>, f32, f32)> {
+    fn preprocess(image: &DynamicImage, width: u32, height: u32) -> Result<(Array3<f32>, f32, f32)> {
         let (orig_w, orig_h) = image.dimensions();
         let scale = (width as f32 / orig_w as f32).min(height as f32 / orig_h as f32);
         let new_w = (orig_w as f32 * scale) as u32;
@@ -127,7 +119,8 @@ impl OnnxFaceDetector {
             for x in 0..width {
                 let pixel = rgb.get_pixel(x, y).to_rgb();
                 for c in 0..3 {
-                    tensor[[c, y as usize, x as usize]] = (pixel[c] as f32 / 255.0 - 0.5) / 0.5;
+                    tensor[[c, y as usize, x as usize]] =
+                        (pixel[c] as f32 / 255.0 - 0.5) / 0.5;
                 }
             }
         }
@@ -160,18 +153,10 @@ impl OnnxFaceDetector {
             let x2 = data[[0, 4, i]] as f64;
             let y2 = data[[0, 5, i]] as f64;
 
-            let img_x1 = ((x1 - offset.0 as f64) / scale as f64)
-                .max(0.0)
-                .min(orig_width as f64);
-            let img_y1 = ((y1 - offset.1 as f64) / scale as f64)
-                .max(0.0)
-                .min(orig_height as f64);
-            let img_x2 = ((x2 - offset.0 as f64) / scale as f64)
-                .max(0.0)
-                .min(orig_width as f64);
-            let img_y2 = ((y2 - offset.1 as f64) / scale as f64)
-                .max(0.0)
-                .min(orig_height as f64);
+            let img_x1 = ((x1 - offset.0 as f64) / scale as f64).max(0.0).min(orig_width as f64);
+            let img_y1 = ((y1 - offset.1 as f64) / scale as f64).max(0.0).min(orig_height as f64);
+            let img_x2 = ((x2 - offset.0 as f64) / scale as f64).max(0.0).min(orig_width as f64);
+            let img_y2 = ((y2 - offset.1 as f64) / scale as f64).max(0.0).min(orig_height as f64);
 
             let bbox = BBox {
                 x1: img_x1,
@@ -180,8 +165,7 @@ impl OnnxFaceDetector {
                 y2: img_y2,
             };
 
-            if bbox.width() < self.min_face_size as f64 || bbox.height() < self.min_face_size as f64
-            {
+            if bbox.width() < self.min_face_size as f64 || bbox.height() < self.min_face_size as f64 {
                 continue;
             }
 
@@ -208,7 +192,11 @@ impl OnnxFaceDetector {
         non_maximum_suppression(&mut detections, 0.5, self.confidence_threshold)
     }
 
-    fn extract_landmarks(&self, data: &ndarray::ArrayViewD<'_, f32>, idx: usize) -> Vec<[f64; 2]> {
+    fn extract_landmarks(
+        &self,
+        data: &ndarray::ArrayViewD<'_, f32>,
+        idx: usize,
+    ) -> Vec<[f64; 2]> {
         let mut landmarks = Vec::new();
         for lm_idx in 0..5 {
             let lx = data[[0, 6 + lm_idx * 2, idx]] as f64;
@@ -218,7 +206,10 @@ impl OnnxFaceDetector {
         landmarks
     }
 
-    fn estimate_rotation_angle(image: &DynamicImage, face: &DetectedFace) -> f64 {
+    fn estimate_rotation_angle(
+        image: &DynamicImage,
+        face: &DetectedFace,
+    ) -> f64 {
         if face.landmarks.len() < 2 {
             return 0.0;
         }
@@ -236,7 +227,8 @@ impl OnnxFaceDetector {
 impl FaceDetector for OnnxFaceDetector {
     async fn detect_faces(&self, image: &DynamicImage) -> Result<Vec<DetectedFace>> {
         let (orig_w, orig_h) = image.dimensions();
-        let (tensor, scale, offset) = Self::preprocess(image, self.input_width, self.input_height)?;
+        let (tensor, scale, offset) =
+            Self::preprocess(image, self.input_width, self.input_height)?;
 
         let input = tract_onnx::prelude::tensor4(
             &tensor.as_slice().unwrap(),
@@ -257,11 +249,13 @@ impl FaceDetector for OnnxFaceDetector {
 
     async fn detect_single_face(&self, image: &DynamicImage) -> Result<Option<DetectedFace>> {
         let faces = self.detect_faces(image).await?;
-        let best = faces.into_iter().max_by(|a, b| {
-            a.confidence
-                .partial_cmp(&b.confidence)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        let best = faces
+            .into_iter()
+            .max_by(|a, b| {
+                a.confidence
+                    .partial_cmp(&b.confidence)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         Ok(best)
     }
 
@@ -345,18 +339,8 @@ mod tests {
 
     #[test]
     fn test_iou_computation() {
-        let a = BBox {
-            x1: 0.0,
-            y1: 0.0,
-            x2: 10.0,
-            y2: 10.0,
-        };
-        let b = BBox {
-            x1: 5.0,
-            y1: 5.0,
-            x2: 15.0,
-            y2: 15.0,
-        };
+        let a = BBox { x1: 0.0, y1: 0.0, x2: 10.0, y2: 10.0 };
+        let b = BBox { x1: 5.0, y1: 5.0, x2: 15.0, y2: 15.0 };
         let iou = utils::compute_iou(&a, &b);
         assert!((iou - 25.0 / 175.0).abs() < 1e-6);
     }
@@ -365,12 +349,7 @@ mod tests {
     fn test_nms() {
         let mut detections = vec![
             DetectedFace {
-                bbox: BBox {
-                    x1: 0.0,
-                    y1: 0.0,
-                    x2: 10.0,
-                    y2: 10.0,
-                },
+                bbox: BBox { x1: 0.0, y1: 0.0, x2: 10.0, y2: 10.0 },
                 landmarks: vec![],
                 confidence: 0.9,
                 quality_score: None,
@@ -378,12 +357,7 @@ mod tests {
                 rotation_angle: 0.0,
             },
             DetectedFace {
-                bbox: BBox {
-                    x1: 1.0,
-                    y1: 1.0,
-                    x2: 9.0,
-                    y2: 9.0,
-                },
+                bbox: BBox { x1: 1.0, y1: 1.0, x2: 9.0, y2: 9.0 },
                 landmarks: vec![],
                 confidence: 0.8,
                 quality_score: None,

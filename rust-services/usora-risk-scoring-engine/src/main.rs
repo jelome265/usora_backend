@@ -1,5 +1,4 @@
 use anyhow::Context;
-use base64::Engine;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::message::Message;
 use rdkafka::producer::{FutureProducer, FutureRecord};
@@ -13,6 +12,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 use uuid::Uuid;
+use base64::Engine;
 
 use usora_risk_scoring_engine::config::ServiceConfig;
 use usora_risk_scoring_engine::engine::cache::MultiLevelCache;
@@ -127,10 +127,10 @@ async fn main() -> Result<(), anyhow::Error> {
         config.clone(),
     ));
 
-    let kafka_consumer =
-        init_kafka_consumer(&config.kafka).context("Failed to initialize Kafka consumer")?;
-    let kafka_producer =
-        init_kafka_producer(&config.kafka).context("Failed to initialize Kafka producer")?;
+    let kafka_consumer = init_kafka_consumer(&config.kafka)
+        .context("Failed to initialize Kafka consumer")?;
+    let kafka_producer = init_kafka_producer(&config.kafka)
+        .context("Failed to initialize Kafka producer")?;
 
     let consumer_handle = tokio::spawn(run_kafka_consumer(
         kafka_consumer,
@@ -190,17 +190,16 @@ fn init_telemetry(config: &ServiceConfig) -> Result<(), anyhow::Error> {
         if let Some(ref endpoint) = config.telemetry.tracing_endpoint {
             let otlp_layer = opentelemetry_otlp::new_pipeline()
                 .tracing()
-                .with_exporter(
-                    opentelemetry_otlp::new_exporter()
-                        .tonic()
-                        .with_endpoint(endpoint),
+                .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(endpoint))
+                .with_trace_config(
+                    opentelemetry_sdk::trace::config()
+                        .with_resource(opentelemetry_sdk::Resource::new(vec![
+                            opentelemetry::KeyValue::new(
+                                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                                config.telemetry.service_name.clone(),
+                            ),
+                        ])),
                 )
-                .with_trace_config(opentelemetry_sdk::trace::config().with_resource(
-                    opentelemetry_sdk::Resource::new(vec![opentelemetry::KeyValue::new(
-                        opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                        config.telemetry.service_name.clone(),
-                    )]),
-                ))
                 .install_batch(opentelemetry_sdk::runtime::Tokio)
                 .context("Failed to install OTLP tracer")?;
 
@@ -221,10 +220,7 @@ fn init_kafka_consumer(
         .set("bootstrap.servers", &kafka_config.brokers)
         .set("group.id", &kafka_config.group_id)
         .set("auto.offset.reset", &kafka_config.auto_offset_reset)
-        .set(
-            "enable.auto.commit",
-            &kafka_config.enable_auto_commit.to_string(),
-        )
+        .set("enable.auto.commit", &kafka_config.enable_auto_commit.to_string())
         // RELIABILITY FIX: see KafkaConfig::dead_letter_topic's doc
         // comment. Disabling automatic offset storage means an offset is
         // only marked ready-to-commit once this service has explicitly
@@ -232,14 +228,8 @@ fn init_kafka_consumer(
         // is either processed successfully or durably routed to the
         // dead-letter topic (see run_kafka_consumer/process_kafka_message).
         .set("enable.auto.offset.store", "false")
-        .set(
-            "session.timeout.ms",
-            &kafka_config.session_timeout_ms.to_string(),
-        )
-        .set(
-            "max.poll.interval.ms",
-            &kafka_config.max_poll_interval_ms.to_string(),
-        )
+        .set("session.timeout.ms", &kafka_config.session_timeout_ms.to_string())
+        .set("max.poll.interval.ms", &kafka_config.max_poll_interval_ms.to_string())
         .create()
         .context("Kafka consumer creation failed")?;
 
@@ -271,10 +261,7 @@ async fn run_kafka_consumer(
     let semaphore = Arc::new(Semaphore::new(config.performance.max_concurrent_per_tenant));
     let consumer = Arc::new(consumer);
 
-    tracing::info!(
-        "Kafka consumer started, listening on topic: {}",
-        config.kafka.risk_tasks_topic
-    );
+    tracing::info!("Kafka consumer started, listening on topic: {}", config.kafka.risk_tasks_topic);
 
     let mut stream = consumer.stream();
     while let Some(result) = stream.next().await {
@@ -290,9 +277,7 @@ async fn run_kafka_consumer(
                 // means backpressure slows consumption instead of
                 // silently dropping tasks.
                 let Ok(permit) = semaphore.clone().acquire_owned().await else {
-                    tracing::error!(
-                        "Concurrency semaphore closed unexpectedly — stopping consumer"
-                    );
+                    tracing::error!("Concurrency semaphore closed unexpectedly — stopping consumer");
                     break;
                 };
 
@@ -312,20 +297,12 @@ async fn run_kafka_consumer(
                             let _permit = permit;
 
                             let retry_count = config.kafka.retry_count;
-                            let retry_backoff =
-                                std::time::Duration::from_millis(config.kafka.retry_backoff_ms);
+                            let retry_backoff = std::time::Duration::from_millis(config.kafka.retry_backoff_ms);
                             let mut attempt = 0u32;
                             let mut last_err: Option<anyhow::Error> = None;
 
                             let outcome = loop {
-                                match process_kafka_message(
-                                    &payload,
-                                    orchestrator.clone(),
-                                    &producer,
-                                    &config,
-                                )
-                                .await
-                                {
+                                match process_kafka_message(&payload, orchestrator.clone(), &producer, &config).await {
                                     Ok(()) => break true,
                                     Err(e) => {
                                         last_err = Some(e);
@@ -333,19 +310,14 @@ async fn run_kafka_consumer(
                                             break false;
                                         }
                                         attempt += 1;
-                                        tracing::warn!(
-                                            attempt,
-                                            max_attempts = retry_count,
-                                            "risk scoring failed, retrying after backoff"
-                                        );
+                                        tracing::warn!(attempt, max_attempts = retry_count, "risk scoring failed, retrying after backoff");
                                         tokio::time::sleep(retry_backoff * attempt).await;
                                     }
                                 }
                             };
 
                             if !outcome {
-                                let e =
-                                    last_err.expect("outcome is false only when last_err was set");
+                                let e = last_err.expect("outcome is false only when last_err was set");
                                 tracing::error!(
                                     error = %e,
                                     attempts = attempt + 1,
@@ -366,10 +338,7 @@ async fn run_kafka_consumer(
                                     .key(&Uuid::new_v4().to_string())
                                     .payload(&dlq_json);
 
-                                if let Err((send_err, _)) = producer
-                                    .send(record, tokio::time::Duration::from_secs(5))
-                                    .await
-                                {
+                                if let Err((send_err, _)) = producer.send(record, tokio::time::Duration::from_secs(5)).await {
                                     // Could not even durably record the
                                     // failure — leave the offset
                                     // unstored so this message is
@@ -379,17 +348,14 @@ async fn run_kafka_consumer(
                                 }
                             }
 
-                            if let Err(e) =
-                                consumer.store_offset(&msg_topic, msg_partition, msg_offset)
-                            {
+                            if let Err(e) = consumer.store_offset(&msg_topic, msg_partition, msg_offset) {
                                 tracing::error!(error = %e, topic = %msg_topic, partition = msg_partition, offset = msg_offset, "failed to store Kafka offset");
                             }
                         });
                     }
                     None => {
                         tracing::warn!("Received Kafka message with empty payload");
-                        if let Err(e) = consumer.store_offset(&msg_topic, msg_partition, msg_offset)
-                        {
+                        if let Err(e) = consumer.store_offset(&msg_topic, msg_partition, msg_offset) {
                             tracing::error!(error = %e, "failed to store offset for empty-payload message");
                         }
                     }
@@ -431,8 +397,8 @@ async fn process_kafka_message(
         timestamp: response.computed_at,
     };
 
-    let result_json =
-        serde_json::to_string(&score_message).context("Failed to serialize scoring result")?;
+    let result_json = serde_json::to_string(&score_message)
+        .context("Failed to serialize scoring result")?;
 
     let record = FutureRecord::to(&config.kafka.risk_results_topic)
         .key(&score_message.score_id.to_string())

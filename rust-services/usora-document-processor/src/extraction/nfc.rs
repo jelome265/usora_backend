@@ -1,7 +1,7 @@
 use crate::extraction::ExtractionEngine;
 use crate::models::{DocumentImage, ExtractedField, ExtractionMethod};
 use async_trait::async_trait;
-use sha2::{Digest, Sha256};
+use sha2::{Sha256, Digest};
 
 pub struct NfcEngine;
 
@@ -285,11 +285,7 @@ impl NfcEngine {
 
         fields.push(ExtractedField {
             name: "nfc_data_groups_found".to_string(),
-            value: groups
-                .iter()
-                .map(|g| g.number.to_string())
-                .collect::<Vec<_>>()
-                .join(","),
+            value: groups.iter().map(|g| g.number.to_string()).collect::<Vec<_>>().join(","),
             confidence: 1.0,
             method: ExtractionMethod::Nfc,
             raw_text: None,
@@ -334,25 +330,10 @@ impl NfcEngine {
         ];
 
         let mock_groups = vec![
-            DataGroup {
-                number: 1,
-                data: format!("P<UTOSTEVENSON<<HENRY<<<<<<<<<<<<<<<<<<<<<<<<").into_bytes(),
-            },
-            DataGroup {
-                number: 2,
-                data: vec![
-                    0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01,
-                    0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
-                ],
-            },
-            DataGroup {
-                number: 11,
-                data: b"PLACE OF BIRTH: LONDON\nISSUING AUTHORITY: UKPA\nRESIDENCE: UK".to_vec(),
-            },
-            DataGroup {
-                number: 14,
-                data: vec![0x30, 0x82, 0x01, 0x0A, 0x02, 0x01, 0x01],
-            },
+            DataGroup { number: 1, data: format!("P<UTOSTEVENSON<<HENRY<<<<<<<<<<<<<<<<<<<<<<<<").into_bytes() },
+            DataGroup { number: 2, data: vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9] },
+            DataGroup { number: 11, data: b"PLACE OF BIRTH: LONDON\nISSUING AUTHORITY: UKPA\nRESIDENCE: UK".to_vec() },
+            DataGroup { number: 14, data: vec![0x30, 0x82, 0x01, 0x0A, 0x02, 0x01, 0x01] },
         ];
 
         fields.extend(Self::parse_data_groups(&mock_groups));

@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use image::GenericImageView;
 use imageproc::edges::canny;
 
+
 pub struct TamperDetectionEngine;
 
 impl TamperDetectionEngine {
@@ -31,9 +32,7 @@ impl TamperDetectionEngine {
         for y_offset in 0..check_height {
             for x in 0..w {
                 let y = face_region_y + border_y + y_offset;
-                if y >= h {
-                    break;
-                }
+                if y >= h { break; }
                 let px = gray.get_pixel(x, y)[0];
                 if px < 50 || px > 200 {
                     boundary_edges += 1;
@@ -86,17 +85,9 @@ impl TamperDetectionEngine {
         let edge_threshold = imageproc::edges::canny(gray, 30.0, 80.0);
         let global_edge_pixels = edge_threshold.pixels().filter(|p| p[0] > 0).count() as f32;
         let global_total = w as f32 * h as f32;
-        let global_density = if global_total > 0.0 {
-            global_edge_pixels / global_total
-        } else {
-            0.05
-        };
+        let global_density = if global_total > 0.0 { global_edge_pixels / global_total } else { 0.05 };
 
-        let ratio_vs_global = if global_density > 0.0 {
-            edge_density / global_density
-        } else {
-            1.0
-        };
+        let ratio_vs_global = if global_density > 0.0 { edge_density / global_density } else { 1.0 };
 
         let tampered = (ratio_vs_global > 2.5 || ratio_vs_global < 0.3) && edge_density > 0.01;
         let confidence = if tampered {
@@ -116,13 +107,7 @@ impl TamperDetectionEngine {
 
         let mut quality = image::DynamicImage::ImageRgb8(rgb.clone());
         let mut jpeg_buf = Vec::new();
-        if quality
-            .write_to(
-                &mut std::io::Cursor::new(&mut jpeg_buf),
-                image::ImageFormat::Jpeg,
-            )
-            .is_err()
-        {
+        if quality.write_to(&mut std::io::Cursor::new(&mut jpeg_buf), image::ImageFormat::Jpeg).is_err() {
             return (false, 0.5);
         }
 
@@ -270,12 +255,7 @@ impl TamperDetectionEngine {
         let std_dev = variance.sqrt();
 
         let mut quadrant_means = Vec::new();
-        let regions = [
-            (0, 0, w / 2, h / 2),
-            (w / 2, 0, w, h / 2),
-            (0, h / 2, w / 2, h),
-            (w / 2, h / 2, w, h),
-        ];
+        let regions = [(0, 0, w / 2, h / 2), (w / 2, 0, w, h / 2), (0, h / 2, w / 2, h), (w / 2, h / 2, w, h)];
         for &(x1, y1, x2, y2) in &regions {
             let mut q_mean = 0.0f64;
             let mut q_count = 0u64;
@@ -343,8 +323,7 @@ impl TamperDetectionEngine {
         }
 
         let mean = grid_noise.iter().sum::<f64>() / grid_noise.len() as f64;
-        let variance =
-            grid_noise.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / grid_noise.len() as f64;
+        let variance = grid_noise.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / grid_noise.len() as f64;
         let std_dev = variance.sqrt();
 
         let inconsistent = std_dev > 25.0;

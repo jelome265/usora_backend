@@ -53,7 +53,9 @@ pub struct ProcessingPipeline {
 
 impl ProcessingPipeline {
     pub fn new() -> Self {
-        Self { stages: Vec::new() }
+        Self {
+            stages: Vec::new(),
+        }
     }
 
     pub fn add_stage(mut self, stage: Box<dyn PipelineStage>) -> Self {
@@ -67,11 +69,7 @@ impl ProcessingPipeline {
             tracing::info!("Running pipeline stage: {}", stage_name);
             match stage.process(&mut ctx).await {
                 Ok(()) => {
-                    ctx.add_result(
-                        stage_name,
-                        true,
-                        format!("Stage '{}' completed", stage_name),
-                    );
+                    ctx.add_result(stage_name, true, format!("Stage '{}' completed", stage_name));
                     tracing::info!("Pipeline stage '{}' succeeded", stage_name);
                 }
                 Err(e) => {
@@ -98,12 +96,13 @@ pub struct PipelineBuilder {
 
 impl PipelineBuilder {
     pub fn new() -> Self {
-        Self { stages: Vec::new() }
+        Self {
+            stages: Vec::new(),
+        }
     }
 
     pub fn with_preprocessing(mut self) -> Self {
-        self.stages
-            .push(Box::new(preprocessing::PreprocessingStage));
+        self.stages.push(Box::new(preprocessing::PreprocessingStage));
         self
     }
 
@@ -113,8 +112,7 @@ impl PipelineBuilder {
     }
 
     pub fn with_postprocessing(mut self) -> Self {
-        self.stages
-            .push(Box::new(postprocessing::PostprocessingStage));
+        self.stages.push(Box::new(postprocessing::PostprocessingStage));
         self
     }
 

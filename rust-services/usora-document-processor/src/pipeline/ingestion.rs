@@ -64,8 +64,14 @@ impl IngestionStage {
 
     fn extract_metadata(img: &image::DynamicImage) -> std::collections::HashMap<String, String> {
         let mut metadata = std::collections::HashMap::new();
-        metadata.insert("width".to_string(), img.width().to_string());
-        metadata.insert("height".to_string(), img.height().to_string());
+        metadata.insert(
+            "width".to_string(),
+            img.width().to_string(),
+        );
+        metadata.insert(
+            "height".to_string(),
+            img.height().to_string(),
+        );
         metadata
     }
 }
