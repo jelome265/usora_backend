@@ -30,7 +30,7 @@ opentelemetry-otlp = { version = "0.32", features = ["trace", "metrics", "grpc-t
 tracing = "0.1"
 tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-prometheus = { version = "0.13", features = ["process"] }
+prometheus = { version = "0.14", features = ["process"] }
 thiserror = "2"
 anyhow = "1"
 futures = "0.3"
