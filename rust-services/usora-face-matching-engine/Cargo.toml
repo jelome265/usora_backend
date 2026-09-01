@@ -22,7 +22,7 @@ opencv = "0.100"
 faiss = "0.12"
 uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
+sqlx = { version = "0.9", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
 rdkafka = { version = "0.39", features = ["cmake-build"] }
 redis = { version = "1.6", features = ["tokio-comp"] }
 opentelemetry = { version = "0.25", features = ["trace", "metrics"] }
