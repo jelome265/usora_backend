@@ -92,6 +92,26 @@ where
 
         let validator = self.validator.clone();
 
+        // F-021: builds the response with an explicit request_id rather
+        // than calling crate::utils::json_error (which generates its own
+        // fresh, unrelated UUID internally) -- the whole point of a
+        // correlation ID is that the ID in the response body and the ID
+        // in the server-side log line for the same request must match,
+        // so an operator (or the caller reporting a problem) can find the
+        // detailed log entry from what the client actually received.
+        fn auth_error_response(status: StatusCode, message: &str, request_id: String) -> Response {
+            let body = crate::models::ApiResponse::<()>::error(message, request_id);
+            (status, axum::Json(body)).into_response()
+        }
+
+        fn resolve_request_id(headers: &axum::http::HeaderMap) -> String {
+            headers
+                .get("X-Request-ID")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+                .unwrap_or_else(crate::utils::uuid_v7)
+        }
+
         Box::pin(async move {
             let (mut parts, body) = req.into_parts();
 
@@ -104,8 +124,9 @@ where
             let token = match auth_header {
                 Some(ref v) if v.starts_with("Bearer ") => v[7..].to_string(),
                 _ => {
-                    let resp = (StatusCode::UNAUTHORIZED, "Missing or invalid Authorization header").into_response();
-                    return Ok(resp);
+                    let request_id = resolve_request_id(&parts.headers);
+                    tracing::warn!(request_id = %request_id, "Request rejected: missing or malformed Authorization header");
+                    return Ok(auth_error_response(StatusCode::UNAUTHORIZED, "Authentication required", request_id));
                 }
             };
 
@@ -123,9 +144,33 @@ where
                     inner.call(req).await
                 }
                 Err(e) => {
-                    tracing::warn!(error = %e, "JWT validation failed");
-                    let resp = (StatusCode::UNAUTHORIZED, format!("Invalid token: {e}")).into_response();
-                    Ok(resp)
+                    // F-021: previously returned format!("Invalid token:
+                    // {e}") directly as the HTTP response body -- jwt::Error's
+                    // Display impl for the Validation variant forwards
+                    // jsonwebtoken's own internal error text verbatim
+                    // (e.g. specific claim-validation failure reasons,
+                    // signature/key details), which is exactly the
+                    // "cryptographic/internal parser detail" the
+                    // acceptance criterion says a client response must
+                    // never contain. The full error is still logged
+                    // server-side (unchanged) for actual debugging; the
+                    // client now gets one of a small number of generic,
+                    // stable messages that convey only what a legitimate
+                    // caller needs to act on (token missing/invalid vs.
+                    // expired vs. revoked), never why in cryptographic
+                    // detail.
+                    let request_id = resolve_request_id(&parts.headers);
+                    let (client_message, error_code) = match &e {
+                        crate::auth::jwt::jwt::Error::Expired => {
+                            ("Authentication token has expired", "AUTH_TOKEN_EXPIRED")
+                        }
+                        crate::auth::jwt::jwt::Error::Revoked => {
+                            ("Authentication token has been revoked", "AUTH_TOKEN_REVOKED")
+                        }
+                        _ => ("Authentication token is invalid", "AUTH_TOKEN_INVALID"),
+                    };
+                    tracing::warn!(error = %e, error_code, request_id = %request_id, "JWT validation failed");
+                    Ok(auth_error_response(StatusCode::UNAUTHORIZED, client_message, request_id))
                 }
             }
         })

@@ -138,7 +138,17 @@ management:
 
 logging:
   level:
-    com.usora: DEBUG
+    # F-021: this was DEBUG in the BASE config -- identity-service is the
+    # OAuth2/OIDC token issuer for the whole platform, and DEBUG-level
+    # logging here is exactly where token-introspection/generation
+    # failures and other sensitive detail (see this finding's own
+    # evidence) is most likely to be logged. Same fix as
+    # notification-service: application-prod.yml already correctly sets
+    # WARN, application-dev.yml already correctly sets DEBUG for local
+    # development; the base default (what actually applies if a
+    # profile-specific override is ever accidentally removed) should
+    # match the safe choice, not the convenient-for-development one.
+    com.usora: INFO
     org.springframework.security: INFO
     org.springframework.web: INFO
 
