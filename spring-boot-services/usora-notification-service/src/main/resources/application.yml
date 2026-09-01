@@ -176,6 +176,19 @@ management:
 
 logging:
   level:
-    com.usora: DEBUG
+    # F-021: this was DEBUG in the BASE (application.yml) config, meaning
+    # every profile that doesn't explicitly override it -- including
+    # "prod" if that override were ever accidentally removed, and any
+    # future profile added without its own logging block -- inherits
+    # DEBUG-level application logging by default. application-dev.yml
+    # already correctly sets DEBUG for local development; the base
+    # default is what actually reaches production if nothing else
+    # intervenes, and should default to the safe/non-verbose choice, not
+    # the convenient-for-development one. See application-prod.yml, which
+    # already correctly sets INFO explicitly (per F-009's own review of
+    # this exact file) -- this change makes the BASE default match that
+    # intent, so removing or forgetting the prod-specific override no
+    # longer silently reverts production to DEBUG.
+    com.usora: INFO
     org.springframework: INFO
     org.hibernate.SQL: WARN
