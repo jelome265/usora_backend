@@ -64,7 +64,7 @@ tokio-test = "0.4"
 http-body-util = "0.1"
 
 [build-dependencies]
-tonic-build = "0.12"
+tonic-build = "0.14"
 prost-build = "0.14"
 
 [[bench]]
