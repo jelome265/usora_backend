@@ -4516,7 +4516,7 @@ dependencies = [
  "image",
  "imageproc",
  "lazy_static",
- "ndarray 0.16.1",
+ "ndarray 0.17.2",
  "ndarray-stats",
  "opencv",
  "opentelemetry 0.25.0",
