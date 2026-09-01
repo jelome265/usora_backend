@@ -46,7 +46,7 @@ lru = "0.16"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
-tonic-health = "0.12"
+tonic-health = "0.14"
 base64 = "0.22"
 rand = "0.8"
 sha2 = "0.10"

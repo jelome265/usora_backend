@@ -2009,7 +2009,7 @@ dependencies = [
  "prost 0.13.5",
  "thiserror 1.0.69",
  "tokio",
- "tonic",
+ "tonic 0.12.3",
  "tracing",
 ]
 
@@ -2022,7 +2022,7 @@ dependencies = [
  "opentelemetry 0.27.1",
  "opentelemetry_sdk 0.27.1",
  "prost 0.13.5",
- "tonic",
+ "tonic 0.12.3",
 ]
 
 [[package]]
@@ -3691,6 +3691,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -3781,6 +3782,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic"
+version = "0.14.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac2a5518c70fa84342385732db33fb3f44bc4cc748936eb5833d2df34d6445ef"
+dependencies = [
+ "async-trait",
+ "base64",
+ "bytes",
+ "http",
+ "http-body",
+ "http-body-util",
+ "percent-encoding",
+ "pin-project",
+ "sync_wrapper",
+ "tokio-stream",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
 name = "tonic-build"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3796,15 +3818,26 @@ dependencies = [
 
 [[package]]
 name = "tonic-health"
-version = "0.12.3"
+version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1eaf34ddb812120f5c601162d5429933c9b527d901ab0e7f930d3147e33a09b2"
+checksum = "fcfab99db777fba2802f0dfa861d1628d1ae916fb199d29819941f139ae85082"
 dependencies = [
- "async-stream",
- "prost 0.13.5",
+ "prost 0.14.4",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.14.6",
+ "tonic-prost",
+]
+
+[[package]]
+name = "tonic-prost"
+version = "0.14.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50849f68853be452acf590cde0b146665b8d507b3b8af17261df47e02c209ea0"
+dependencies = [
+ "bytes",
+ "prost 0.14.4",
+ "tonic 0.14.6",
 ]
 
 [[package]]
@@ -3817,7 +3850,7 @@ dependencies = [
  "prost-types 0.13.5",
  "tokio",
  "tokio-stream",
- "tonic",
+ "tonic 0.12.3",
 ]
 
 [[package]]
@@ -4113,7 +4146,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-test",
  "tokio-util",
- "tonic",
+ "tonic 0.12.3",
  "tonic-build",
  "tonic-health",
  "tonic-reflection",
