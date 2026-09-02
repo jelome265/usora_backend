@@ -110,9 +110,16 @@
         </dependency>
 
         <!-- Spring WebFlux (for WebClient) -->
+        <!-- BUG found while implementing F-022: spring-boot-starter-webclient
+             is not a real Maven artifact -- it does not exist in Maven
+             Central under any group. WebClient/ReactorClientHttpConnector/
+             reactor.netty.http.client.HttpClient (all used in
+             WebClientConfig.java) are provided by spring-boot-starter-webflux.
+             This module's dependencies could not have resolved at all as
+             checked in. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webclient</artifactId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
 
         <!-- Spring Kafka -->

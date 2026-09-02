@@ -17,15 +17,40 @@ import java.net.UnknownHostException;
  * SECURITY: without this check, a tenant-supplied webhook URL (or any other
  * caller-influenced URL reaching {@code RestClient}) can be pointed at
  * internal infrastructure — the cloud metadata endpoint, loopback, or
- * private RFC1918 ranges — which is a classic SSRF vector. This guard
- * re-resolves the hostname at call time (not just at config-save time) so
- * a DNS-rebinding attack (A record valid at save time, repointed to an
- * internal address at request time) is also caught.
+ * private RFC1918 ranges — which is a classic SSRF vector.
  *
- * This is a defense-in-depth measure, not a replacement for routing
- * tenant-destined egress through an isolated proxy with no route to
- * internal infrastructure — that network-level control should still be
- * added per the architecture review (see docs/architecture-security-review-2026-07-31.md, §3.7).
+ * F-022 CORRECTION: this class's own comment previously claimed this
+ * check alone defends against DNS rebinding ("re-resolves the hostname at
+ * call time ... so a DNS-rebinding attack ... is also caught"). That
+ * claim was not actually true as implemented: this method performs one
+ * DNS resolution to validate, and {@code RestClient} then makes a
+ * SEPARATE, independent call to {@code webClient.post().uri(url)...},
+ * which triggers Netty's own, later, second DNS resolution when it
+ * actually opens the connection. An attacker who controls the DNS record
+ * for their webhook's hostname (a very short TTL is all that's needed)
+ * can have it resolve to a safe public address for THIS check, then
+ * repoint it to an internal address before Netty's own resolution moments
+ * later — the classic check-then-connect TOCTOU gap that "DNS rebinding"
+ * specifically describes. This method is still valuable as an early,
+ * fast, clear-error-message validation (rejecting obviously-bad URLs
+ * before even attempting a connection, and covering scheme/host format
+ * validation this class also does), but it cannot be the sole,
+ * authoritative enforcement point.
+ *
+ * The actual, race-condition-free enforcement now lives in
+ * {@link SsrfSafeAddressResolverGroup}, which performs this exact same
+ * check (see {@link #isDisallowedAddress}) at the point Netty resolves an
+ * address to actually connect to — meaning there is no gap between "the
+ * address that was validated" and "the address that was connected to",
+ * because they are the same resolution. See WebClientConfig for how that
+ * resolver is wired into the WebClient every outbound call in this
+ * service uses.
+ *
+ * Both layers together are still defense-in-depth, not a replacement for
+ * routing tenant-destined egress through an isolated network proxy with
+ * no route to internal infrastructure at all (remediation item 1) --
+ * that network-level control is infrastructure work outside what this
+ * service's own code can provide, and is not implemented here.
  */
 public final class EgressUrlGuard {
 
@@ -65,7 +90,13 @@ public final class EgressUrlGuard {
         }
     }
 
-    private static boolean isDisallowedAddress(InetAddress addr) {
+    /**
+     * F-022: exposed (was private) so {@link SsrfSafeAddressResolverGroup}
+     * can reuse the exact same blocklist logic at actual connection time,
+     * not just at this early validation step. See that class's javadoc
+     * for why this method alone is necessary but not sufficient.
+     */
+    public static boolean isDisallowedAddress(InetAddress addr) {
         if (addr.isLoopbackAddress()
                 || addr.isLinkLocalAddress()
                 || addr.isSiteLocalAddress()
