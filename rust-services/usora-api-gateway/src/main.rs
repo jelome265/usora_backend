@@ -1,18 +1,17 @@
+use axum_server::tls_rustls::RustlsConfig;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use axum_server::tls_rustls::RustlsConfig;
 use tracing_subscriber::EnvFilter;
 
-use usora_api_gateway::AppState;
 use usora_api_gateway::config::Config;
 use usora_api_gateway::routes;
+use usora_api_gateway::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .json()
         .init();
@@ -134,9 +133,10 @@ async fn serve_grpc(state: Arc<AppState>, address: &str) -> anyhow::Result<()> {
         }
     });
 
-    let gateway_service = usora_api_gateway::proto::gateway::gateway_service_server::GatewayServiceServer::new(
-        usora_api_gateway::gateway_service::GatewayServiceImpl::new(state),
-    );
+    let gateway_service =
+        usora_api_gateway::proto::gateway::gateway_service_server::GatewayServiceServer::new(
+            usora_api_gateway::gateway_service::GatewayServiceImpl::new(state),
+        );
 
     tracing::info!("internal gRPC server starting on {address}");
 

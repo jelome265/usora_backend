@@ -2,10 +2,11 @@ use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use chrono::Utc;
 use image::{
-    imageops::FilterType, io::Reader as ImageReader, DynamicImage, GenericImageView,
-    ImageBuffer, Rgb,
+    imageops::FilterType, io::Reader as ImageReader, DynamicImage, GenericImageView, ImageBuffer,
+    Rgb,
 };
 use ndarray::{Array, Array3, Axis, Dim};
+use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use uuid::Uuid;
 
@@ -55,10 +56,7 @@ pub fn resize_face(image: &DynamicImage, width: u32, height: u32) -> DynamicImag
     image.resize_exact(width, height, FilterType::Lanczos3)
 }
 
-pub fn align_face(
-    image: &DynamicImage,
-    landmarks: &[[f64; 2]],
-) -> Result<DynamicImage> {
+pub fn align_face(image: &DynamicImage, landmarks: &[[f64; 2]]) -> Result<DynamicImage> {
     if landmarks.len() < 5 {
         anyhow::bail!("Need at least 5 landmarks for alignment");
     }
@@ -83,9 +81,17 @@ pub fn align_face(
     let dy = right_eye[1] - left_eye[1];
     let angle = dy.atan2(dx).to_degrees();
 
-    let rotated = image.rotate(angle);
-    let scale_x = 112.0 / rotated.width() as f64;
-    let scale_y = 112.0 / rotated.height() as f64;
+    let radians = (angle as f32).to_radians();
+    let rotated_buffer = imageproc::geometric_transformations::rotate_about_center(
+        &image.to_rgba8(),
+        radians,
+        imageproc::geometric_transformations::Interpolation::Bilinear,
+        image::Rgba([0, 0, 0, 0]),
+    );
+    let rotated = DynamicImage::ImageRgba8(rotated_buffer);
+
+    let scale_x: f64 = 112.0 / rotated.width() as f64;
+    let scale_y: f64 = 112.0 / rotated.height() as f64;
     let scale = scale_x.max(scale_y) as f32;
 
     let scaled_width = (rotated.width() as f32 * scale) as u32;
@@ -115,8 +121,7 @@ pub fn preprocess_for_embedding(image: &DynamicImage) -> Result<Array3<f32>> {
         for x in 0..112 {
             let pixel = rgb.get_pixel(x, y);
             for c in 0..3 {
-                tensor[[c, y as usize, x as usize]] =
-                    (pixel[c] as f32 / 255.0 - mean[c]) / std[c];
+                tensor[[c, y as usize, x as usize]] = (pixel[c] as f32 / 255.0 - mean[c]) / std[c];
             }
         }
     }
@@ -162,12 +167,12 @@ pub fn compute_laplacian_variance(image: &DynamicImage) -> f64 {
 
     for y in 1..(height - 1) {
         for x in 1..(width - 1) {
-            let center = gray.get_pixel(x, y)[0] as f64;
+            let pixel_center = gray.get_pixel(x, y)[0] as f64;
             let top = gray.get_pixel(x, y - 1)[0] as f64;
             let bottom = gray.get_pixel(x, y + 1)[0] as f64;
             let left = gray.get_pixel(x - 1, y)[0] as f64;
             let right = gray.get_pixel(x + 1, y)[0] as f64;
-            let laplacian = (4.0 * center - top - bottom - left - right).abs();
+            let laplacian = (4.0 * pixel_center - top - bottom - left - right).abs();
             sum += laplacian;
             count += 1;
         }
@@ -188,7 +193,8 @@ pub fn compute_brightness(image: &DynamicImage) -> f64 {
 
 pub fn compute_contrast(image: &DynamicImage) -> f64 {
     let gray = image.to_luma8();
-    let mean: f64 = gray.as_raw().iter().map(|&p| p as f64).sum::<f64>() / gray.as_raw().len() as f64;
+    let mean: f64 =
+        gray.as_raw().iter().map(|&p| p as f64).sum::<f64>() / gray.as_raw().len() as f64;
     let variance: f64 = gray
         .as_raw()
         .iter()
@@ -212,7 +218,7 @@ pub fn estimate_eye_openness(image: &DynamicImage, landmarks: &[[f64; 2]]) -> f6
 
     let left_eye_top = landmarks[4];
     let left_eye_bottom = landmarks[5];
-    let left_eye_height = (left_eye_top[1] - left_eye_bottom[1]).abs();
+    let _left_eye_height = (left_eye_top[1] - left_eye_bottom[1]).abs();
 
     let gray = image.to_luma8();
     let (w, h) = gray.dimensions();
@@ -263,12 +269,16 @@ pub fn compute_iou(a: &BBox, b: &BBox) -> f64 {
 }
 
 pub fn non_maximum_suppression(
-    detections: &mut [DetectedFace],
+    detections: &mut Vec<DetectedFace>,
     iou_threshold: f64,
     score_threshold: f32,
 ) -> Vec<DetectedFace> {
     detections.retain(|d| d.confidence >= score_threshold);
-    detections.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    detections.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut keep = Vec::new();
     let mut suppressed = vec![false; detections.len()];
@@ -290,7 +300,7 @@ pub fn non_maximum_suppression(
     keep
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BBox {
     pub x1: f64,
     pub y1: f64,

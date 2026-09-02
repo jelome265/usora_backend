@@ -96,7 +96,12 @@ pub struct RateLimitingConfig {
 
 impl Default for RateLimitingConfig {
     fn default() -> Self {
-        Self { default_rps: 100, burst_size: 200, window_ms: 1000, local_fallback_divisor: 3 }
+        Self {
+            default_rps: 100,
+            burst_size: 200,
+            window_ms: 1000,
+            local_fallback_divisor: 3,
+        }
     }
 }
 
@@ -110,12 +115,15 @@ pub struct CorsConfig {
     pub allowed_origins: Vec<String>,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for CorsConfig {
     fn default() -> Self {
         // Intentionally empty by default: a fresh/misconfigured environment
         // must fail closed (no cross-origin access) rather than fail open
         // (any origin). Set CORS_ALLOWED_ORIGINS explicitly per environment.
-        Self { allowed_origins: Vec::new() }
+        Self {
+            allowed_origins: Vec::new(),
+        }
     }
 }
 
@@ -445,7 +453,10 @@ impl Config {
         for (name, value) in [
             ("IDENTITY_JWKS_URL", self.identity.jwks_url.as_str()),
             ("JWT_ISSUER", self.identity.issuer.as_str()),
-            ("UPSTREAM_ORCHESTRATOR_URL", self.upstream.orchestrator_url.as_str()),
+            (
+                "UPSTREAM_ORCHESTRATOR_URL",
+                self.upstream.orchestrator_url.as_str(),
+            ),
             ("UPSTREAM_COMPUTE_URL", self.upstream.compute_url.as_str()),
         ] {
             if is_loopback_url(value) {
@@ -467,18 +478,18 @@ impl Config {
         }
     }
 
-	pub fn log_effective_security_summary(&self, redis_connected: bool) {
-    tracing::info!(
-        tls_min_version = %self.tls.min_version,
-        mtls_require_client_auth = self.tls.require_client_auth,
-        upstream_tls_configured = self.upstream.tls_ca_path.is_some(),
-        upstream_service_token_configured = self.upstream.internal_service_token.is_some(),
-        jwt_audience_enforced = !self.identity.audience.is_empty(),
-        jwt_issuer = %self.identity.issuer,
-        rate_limit_backend = if redis_connected { "redis" } else { "local-only" },
-        "effective security configuration at startup (F-008)"
-    );
-		}
+    pub fn log_effective_security_summary(&self, redis_connected: bool) {
+        tracing::info!(
+            tls_min_version = %self.tls.min_version,
+            mtls_require_client_auth = self.tls.require_client_auth,
+            upstream_tls_configured = self.upstream.tls_ca_path.is_some(),
+            upstream_service_token_configured = self.upstream.internal_service_token.is_some(),
+            jwt_audience_enforced = !self.identity.audience.is_empty(),
+            jwt_issuer = %self.identity.issuer,
+            rate_limit_backend = if redis_connected { "redis" } else { "local-only" },
+            "effective security configuration at startup (F-008)"
+        );
+    }
 
     pub fn tls_min_version(&self) -> anyhow::Result<&'static rustls::SupportedProtocolVersion> {
         match self.tls.min_version.to_lowercase().as_str() {
@@ -494,13 +505,13 @@ impl Config {
 
     pub fn load_tls_config(&self) -> anyhow::Result<rustls::ServerConfig> {
         let mut cert_reader = std::io::BufReader::new(std::fs::File::open(&self.tls.cert_path)?);
-        let certs = rustls_pemfile::certs(&mut cert_reader)
-            .collect::<Result<Vec<_>, _>>()?;
+        let certs = rustls_pemfile::certs(&mut cert_reader).collect::<Result<Vec<_>, _>>()?;
         let mut key_reader = std::io::BufReader::new(std::fs::File::open(&self.tls.key_path)?);
         let key = rustls_pemfile::private_key(&mut key_reader)?
             .ok_or_else(|| anyhow::anyhow!("no private key found"))?;
 
-        let builder = rustls::ServerConfig::builder_with_protocol_versions(&[self.tls_min_version()?]);
+        let builder =
+            rustls::ServerConfig::builder_with_protocol_versions(&[self.tls_min_version()?]);
 
         // SECURITY: this used to be with_no_client_auth() unconditionally --
         // crate::auth::mtls::MtlsValidator implemented a working client

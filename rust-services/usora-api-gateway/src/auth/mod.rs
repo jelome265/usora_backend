@@ -1,10 +1,10 @@
-pub mod jwt;
 pub mod jwks_client;
+pub mod jwt;
 pub mod mtls;
 pub mod oauth;
 
-use std::fmt;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthenticatedUser {
@@ -15,18 +15,13 @@ pub struct AuthenticatedUser {
     pub auth_method: AuthMethod,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum AuthMethod {
     Jwt,
     Mtls,
     OAuth,
+    #[default]
     None,
-}
-
-impl Default for AuthMethod {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl fmt::Display for AuthMethod {

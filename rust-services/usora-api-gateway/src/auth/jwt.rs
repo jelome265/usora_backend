@@ -1,12 +1,12 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use arc_swap::ArcSwap;
 use dashmap::DashSet;
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm};
+use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use lru::LruCache;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::AuthenticatedUser;
@@ -139,7 +139,10 @@ impl JwtValidator {
 
                 let still_current_key_set = entry.jwks_epoch == current_epoch;
                 let not_expired = entry.claims.exp > now;
-                let not_revoked = entry.claims.jti.as_deref()
+                let not_revoked = entry
+                    .claims
+                    .jti
+                    .as_deref()
                     .map(|jti| !self.revoked_jtis.contains(jti))
                     .unwrap_or(true);
 
@@ -169,10 +172,13 @@ impl JwtValidator {
 
         {
             let mut cache = self.cache.lock().await;
-            cache.put(key, CachedValidation {
-                claims: claims.clone(),
-                jwks_epoch: current_epoch,
-            });
+            cache.put(
+                key,
+                CachedValidation {
+                    claims: claims.clone(),
+                    jwks_epoch: current_epoch,
+                },
+            );
         }
 
         Ok(claims)
@@ -189,7 +195,9 @@ impl JwtValidator {
     }
 
     pub fn check_permissions(claims: &JwtClaims, required: &[&str]) -> bool {
-        required.iter().all(|r| claims.permissions.iter().any(|p| p == r) || claims.roles.iter().any(|p| p == r))
+        required.iter().all(|r| {
+            claims.permissions.iter().any(|p| p == r) || claims.roles.iter().any(|p| p == r)
+        })
     }
 
     pub async fn update_jwks(&self, jwks_map: HashMap<String, DecodingKey>) {
@@ -233,6 +241,7 @@ impl JwtValidator {
     }
 }
 
+#[allow(clippy::module_inception)]
 pub mod jwt {
     use thiserror::Error;
 
@@ -297,7 +306,10 @@ mod tests {
         seed_cache(&validator, token, claims, 0).await;
 
         let result = validator.validate_token(token).await;
-        assert!(result.is_ok(), "expected a cache hit for a non-expired entry");
+        assert!(
+            result.is_ok(),
+            "expected a cache hit for a non-expired entry"
+        );
         assert_eq!(result.unwrap().sub, "user-1");
     }
 
@@ -397,6 +409,10 @@ mod tests {
             token.as_bytes(),
             "the cache key must not equal the raw token bytes"
         );
-        assert_eq!(fp, fingerprint(token), "fingerprinting must be deterministic");
+        assert_eq!(
+            fp,
+            fingerprint(token),
+            "fingerprinting must be deterministic"
+        );
     }
 }

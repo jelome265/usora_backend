@@ -11,10 +11,7 @@ pub type FeatureMap = HashMap<String, f64>;
 #[async_trait]
 pub trait ModelEnsemble: Send + Sync {
     async fn predict(&self, features: &FeatureMap) -> Result<EnsembleResult, ModelError>;
-    async fn predict_batch(
-        &self,
-        batch: &[FeatureMap],
-    ) -> Result<Vec<EnsembleResult>, ModelError>;
+    async fn predict_batch(&self, batch: &[FeatureMap]) -> Result<Vec<EnsembleResult>, ModelError>;
     async fn explain(
         &self,
         features: &FeatureMap,

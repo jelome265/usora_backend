@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use image::{DynamicImage, GenericImageView};
 use std::path::Path;
+use tract_onnx::prelude::Framework;
 use tracing::{info, warn};
 
 use crate::detection::DetectedFace;
@@ -15,11 +16,16 @@ pub struct PassiveLivenessDetector {
 }
 
 enum PassiveLivenessModel {
-    Onnx(tract_onnx::prelude::SimplePlan<
-        tract_onnx::prelude::TypedFact,
-        Box<dyn tract_onnx::prelude::TypedOp>,
-        tract_onnx::prelude::Graph<tract_onnx::prelude::TypedFact, Box<dyn tract_onnx::prelude::TypedOp>>,
-    >),
+    Onnx(
+        tract_onnx::prelude::SimplePlan<
+            tract_onnx::prelude::TypedFact,
+            Box<dyn tract_onnx::prelude::TypedOp>,
+            tract_onnx::prelude::Graph<
+                tract_onnx::prelude::TypedFact,
+                Box<dyn tract_onnx::prelude::TypedOp>,
+            >,
+        >,
+    ),
     TextureBased,
 }
 
@@ -58,7 +64,11 @@ impl PassiveLivenessDetector {
         })
     }
 
-    fn analyze_texture(&self, image: &DynamicImage, face: &DetectedFace) -> Result<TextureAnalysis> {
+    fn analyze_texture(
+        &self,
+        image: &DynamicImage,
+        face: &DetectedFace,
+    ) -> Result<TextureAnalysis> {
         let cropped = utils::crop_face(image, face)?;
         let gray = cropped.to_luma8();
         let (w, h) = gray.dimensions();
@@ -74,14 +84,12 @@ impl PassiveLivenessDetector {
         let gradient_consistency = self.compute_gradient_consistency(&gray);
         let texture_variance = self.compute_texture_variance(&gray);
 
-        let overall_texture_score = (
-            lbp_uniformity * 0.20 +
-            frequency_analysis * 0.20 +
-            color_distribution * 0.20 +
-            (1.0 - specular_reflection) * 0.15 +
-            gradient_consistency * 0.15 +
-            texture_variance * 0.10
-        );
+        let overall_texture_score = (lbp_uniformity * 0.20
+            + frequency_analysis * 0.20
+            + color_distribution * 0.20
+            + (1.0 - specular_reflection) * 0.15
+            + gradient_consistency * 0.15
+            + texture_variance * 0.10);
 
         Ok(TextureAnalysis {
             lbp_uniformity,
@@ -101,18 +109,23 @@ impl PassiveLivenessDetector {
 
         for y in 1..(h - 1) {
             for x in 1..(w - 1) {
-                let center = gray.get_pixel(x, y)[0];
+                let center_val = gray.get_pixel(x, y)[0];
                 let mut lbp = 0u8;
                 let neighbors = [
-                    (-1i32, -1i32), (0, -1), (1, -1),
-                    (1, 0), (1, 1), (0, 1),
-                    (-1, 1), (-1, 0),
+                    (-1i32, -1i32),
+                    (0, -1),
+                    (1, -1),
+                    (1, 0),
+                    (1, 1),
+                    (0, 1),
+                    (-1, 1),
+                    (-1, 0),
                 ];
 
                 for (i, (dx, dy)) in neighbors.iter().enumerate() {
                     let nx = (x as i32 + dx) as u32;
                     let ny = (y as i32 + dy) as u32;
-                    if gray.get_pixel(nx, ny)[0] >= center {
+                    if gray.get_pixel(nx, ny)[0] >= center_val {
                         lbp |= 1 << i;
                     }
                 }
@@ -218,7 +231,8 @@ impl PassiveLivenessDetector {
         g_var = (g_var / total).sqrt();
         b_var = (b_var / total).sqrt();
 
-        let naturalness = 1.0 - ((r_var - g_var).abs() + (g_var - b_var).abs() + (r_var - b_var).abs()) / 1530.0;
+        let naturalness =
+            1.0 - ((r_var - g_var).abs() + (g_var - b_var).abs() + (r_var - b_var).abs()) / 1530.0;
         naturalness.max(0.0).min(1.0)
     }
 
@@ -277,9 +291,11 @@ impl PassiveLivenessDetector {
         }
 
         let mean_orientation: f64 = orientations.iter().sum::<f64>() / orientations.len() as f64;
-        let variance: f64 = orientations.iter()
+        let variance: f64 = orientations
+            .iter()
             .map(|&o| (o - mean_orientation).powi(2))
-            .sum::<f64>() / orientations.len() as f64;
+            .sum::<f64>()
+            / orientations.len() as f64;
 
         let consistency = 1.0 - (variance / std::f64::consts::PI).min(1.0);
         consistency
@@ -304,9 +320,11 @@ impl PassiveLivenessDetector {
                 }
 
                 let mean: f64 = block_pixels.iter().sum::<f64>() / block_pixels.len() as f64;
-                let var: f64 = block_pixels.iter()
+                let var: f64 = block_pixels
+                    .iter()
                     .map(|&p| (p - mean).powi(2))
-                    .sum::<f64>() / block_pixels.len() as f64;
+                    .sum::<f64>()
+                    / block_pixels.len() as f64;
                 block_variances.push(var);
             }
         }
@@ -316,9 +334,11 @@ impl PassiveLivenessDetector {
         }
 
         let mean_var: f64 = block_variances.iter().sum::<f64>() / block_variances.len() as f64;
-        let var_of_var: f64 = block_variances.iter()
+        let var_of_var: f64 = block_variances
+            .iter()
             .map(|&v| (v - mean_var).powi(2))
-            .sum::<f64>() / block_variances.len() as f64;
+            .sum::<f64>()
+            / block_variances.len() as f64;
 
         let score = (var_of_var / 5000.0).min(1.0);
         score
@@ -329,7 +349,10 @@ impl PassiveLivenessDetector {
         model: &tract_onnx::prelude::SimplePlan<
             tract_onnx::prelude::TypedFact,
             Box<dyn tract_onnx::prelude::TypedOp>,
-            tract_onnx::prelude::Graph<tract_onnx::prelude::TypedFact, Box<dyn tract_onnx::prelude::TypedOp>>,
+            tract_onnx::prelude::Graph<
+                tract_onnx::prelude::TypedFact,
+                Box<dyn tract_onnx::prelude::TypedOp>,
+            >,
         >,
         image: &DynamicImage,
         face: &DetectedFace,
@@ -348,10 +371,8 @@ impl PassiveLivenessDetector {
             }
         }
 
-        let input = tract_onnx::prelude::tensor4(
-            tensor.as_slice().unwrap(),
-            &[1, 3, 112, 112],
-        )?;
+        let input = tract_onnx::prelude::Tensor::from_slice(tensor.as_slice().unwrap())?
+            .into_shape(&[1, 3, 112, 112])?;
 
         let result = model.run(tvec!(input))?;
         let output = result[0].to_array_view::<f32>()?;

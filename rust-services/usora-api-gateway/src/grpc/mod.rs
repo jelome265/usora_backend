@@ -29,12 +29,22 @@ pub(crate) type AuthedChannel = InterceptedService<Channel, BearerAuth>;
 
 #[derive(Clone)]
 pub struct GrpcClients {
-    pub(crate) identity: proto::identity::identity_service_client::IdentityServiceClient<AuthedChannel>,
-    pub(crate) document: proto::document::document_analysis_service_client::DocumentAnalysisServiceClient<AuthedChannel>,
+    pub(crate) identity:
+        proto::identity::identity_service_client::IdentityServiceClient<AuthedChannel>,
+    #[allow(dead_code)]
+    pub(crate) document:
+        proto::document::document_analysis_service_client::DocumentAnalysisServiceClient<
+            AuthedChannel,
+        >,
     pub(crate) tenant: proto::tenant::tenant_service_client::TenantServiceClient<AuthedChannel>,
+    #[allow(dead_code)]
     pub(crate) audit: proto::audit::audit_service_client::AuditServiceClient<AuthedChannel>,
-    pub(crate) compliance: proto::compliance::compliance_service_client::ComplianceServiceClient<AuthedChannel>,
-    pub(crate) notification: proto::notification::notification_service_client::NotificationServiceClient<AuthedChannel>,
+    #[allow(dead_code)]
+    pub(crate) compliance:
+        proto::compliance::compliance_service_client::ComplianceServiceClient<AuthedChannel>,
+    #[allow(dead_code)]
+    pub(crate) notification:
+        proto::notification::notification_service_client::NotificationServiceClient<AuthedChannel>,
     orchestrator_authority: String,
     compute_authority: String,
 }
@@ -53,8 +63,14 @@ impl GrpcClients {
         // used for the gateway's own inbound TLS -- see
         // infrastructure/helm/usora-gateway's tls.caCert). If it's not
         // configured, behavior is unchanged from before this fix.
-        let orch_endpoint = Self::build_endpoint(&config.upstream.orchestrator_url, config.upstream.tls_ca_path.as_deref())?;
-        let comp_endpoint = Self::build_endpoint(&config.upstream.compute_url, config.upstream.tls_ca_path.as_deref())?;
+        let orch_endpoint = Self::build_endpoint(
+            &config.upstream.orchestrator_url,
+            config.upstream.tls_ca_path.as_deref(),
+        )?;
+        let comp_endpoint = Self::build_endpoint(
+            &config.upstream.compute_url,
+            config.upstream.tls_ca_path.as_deref(),
+        )?;
 
         let orch_channel = orch_endpoint.connect_lazy();
         let comp_channel = comp_endpoint.connect_lazy();
@@ -62,13 +78,33 @@ impl GrpcClients {
         let orchestrator_authority = Self::authority_of(&config.upstream.orchestrator_url)?;
         let compute_authority = Self::authority_of(&config.upstream.compute_url)?;
 
-        let bearer = BearerAuth(config.upstream.internal_service_token.as_ref().map(|t| t.as_str().into()));
+        let bearer = BearerAuth(
+            config
+                .upstream
+                .internal_service_token
+                .as_ref()
+                .map(|t| t.as_str().into()),
+        );
 
-        let identity = proto::identity::identity_service_client::IdentityServiceClient::with_interceptor(orch_channel.clone(), bearer.clone());
+        let identity =
+            proto::identity::identity_service_client::IdentityServiceClient::with_interceptor(
+                orch_channel.clone(),
+                bearer.clone(),
+            );
         let document = proto::document::document_analysis_service_client::DocumentAnalysisServiceClient::with_interceptor(comp_channel.clone(), bearer.clone());
-        let tenant = proto::tenant::tenant_service_client::TenantServiceClient::with_interceptor(orch_channel.clone(), bearer.clone());
-        let audit = proto::audit::audit_service_client::AuditServiceClient::with_interceptor(orch_channel.clone(), bearer.clone());
-        let compliance = proto::compliance::compliance_service_client::ComplianceServiceClient::with_interceptor(comp_channel.clone(), bearer.clone());
+        let tenant = proto::tenant::tenant_service_client::TenantServiceClient::with_interceptor(
+            orch_channel.clone(),
+            bearer.clone(),
+        );
+        let audit = proto::audit::audit_service_client::AuditServiceClient::with_interceptor(
+            orch_channel.clone(),
+            bearer.clone(),
+        );
+        let compliance =
+            proto::compliance::compliance_service_client::ComplianceServiceClient::with_interceptor(
+                comp_channel.clone(),
+                bearer.clone(),
+            );
         let notification = proto::notification::notification_service_client::NotificationServiceClient::with_interceptor(comp_channel.clone(), bearer);
 
         Ok(Self {
@@ -90,12 +126,16 @@ impl GrpcClients {
     /// unconfigured behavior was for anyone not yet using
     /// UPSTREAM_TLS_CA_PATH, rather than silently changing behavior for an
     /// environment I can't confirm is ready for it.
-    fn build_endpoint(url: &str, ca_path: Option<&str>) -> anyhow::Result<tonic::transport::Endpoint> {
+    fn build_endpoint(
+        url: &str,
+        ca_path: Option<&str>,
+    ) -> anyhow::Result<tonic::transport::Endpoint> {
         let endpoint = Channel::from_shared(url.to_string())?;
         match ca_path {
             Some(path) => {
-                let ca_pem = std::fs::read(path)
-                    .map_err(|e| anyhow::anyhow!("failed to read UPSTREAM_TLS_CA_PATH ({path}): {e}"))?;
+                let ca_pem = std::fs::read(path).map_err(|e| {
+                    anyhow::anyhow!("failed to read UPSTREAM_TLS_CA_PATH ({path}): {e}")
+                })?;
                 let tls = ClientTlsConfig::new().ca_certificate(Certificate::from_pem(ca_pem));
                 Ok(endpoint.tls_config(tls)?)
             }
@@ -112,7 +152,11 @@ impl GrpcClients {
             .ok_or_else(|| anyhow::anyhow!("URL has no host: {url}"))?;
         let port = uri
             .port_u16()
-            .unwrap_or(if uri.scheme_str() == Some("https") { 443 } else { 80 });
+            .unwrap_or(if uri.scheme_str() == Some("https") {
+                443
+            } else {
+                80
+            });
         Ok(format!("{host}:{port}"))
     }
 
