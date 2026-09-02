@@ -8,7 +8,7 @@ tonic = "0.12"
 # Added to close an undocumented gap found while writing this service's
 # Helm chart: no gRPC health service was registered anywhere.
 tonic-health = "0.14"
-prost = "0.13"
+prost = "0.14"
 tokio = { version = "1.38", features = ["full"] }
 tokio-util = "0.7"
 serde = { version = "1", features = ["derive"] }
