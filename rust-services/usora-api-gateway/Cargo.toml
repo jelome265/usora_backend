@@ -42,7 +42,7 @@ futures = "0.3"
 dashmap = "6"
 arc-swap = "1"
 regex = "1"
-lru = "0.16"
+lru = "0.18"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
