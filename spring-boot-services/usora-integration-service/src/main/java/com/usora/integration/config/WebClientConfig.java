@@ -18,6 +18,14 @@ public class WebClientConfig {
     public WebClient webClient() {
         HttpClient httpClient = HttpClient.create()
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
+                // F-022: pins DNS resolution to the same SSRF-blocklist
+                // check EgressUrlGuard performs, at the point Netty
+                // actually opens the connection -- see
+                // SsrfSafeAddressResolverGroup's javadoc for why this is
+                // required to actually close the DNS-rebinding gap, not
+                // just EgressUrlGuard.assertSafeDestination's earlier,
+                // separate check.
+                .resolver(com.usora.integration.util.SsrfSafeAddressResolverGroup.INSTANCE)
                 .doOnConnected(conn -> conn
                         .addHandlerLast(new ReadTimeoutHandler(30, TimeUnit.SECONDS))
                         .addHandlerLast(new WriteTimeoutHandler(30, TimeUnit.SECONDS)))
@@ -33,6 +41,23 @@ public class WebClientConfig {
 
     @Bean
     public WebClient.Builder webClientBuilder() {
-        return WebClient.builder();
+        // F-022: previously returned a completely unconfigured builder
+        // with no connector at all -- unused anywhere in this codebase
+        // today, but a future caller autowiring WebClient.Builder to
+        // build their own client would silently get NEITHER the
+        // SSRF-safe resolver NOR any timeout configuration, with no
+        // obvious signal that either was missing. Configured to match
+        // the primary webClient() bean so any future consumer of this
+        // builder is protected by default rather than needing to
+        // remember to add it.
+        HttpClient httpClient = HttpClient.create()
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
+                .resolver(com.usora.integration.util.SsrfSafeAddressResolverGroup.INSTANCE)
+                .doOnConnected(conn -> conn
+                        .addHandlerLast(new ReadTimeoutHandler(30, TimeUnit.SECONDS))
+                        .addHandlerLast(new WriteTimeoutHandler(30, TimeUnit.SECONDS)))
+                .wiretap(false);
+        return WebClient.builder()
+                .clientConnector(new ReactorClientHttpConnector(httpClient));
     }
 }
