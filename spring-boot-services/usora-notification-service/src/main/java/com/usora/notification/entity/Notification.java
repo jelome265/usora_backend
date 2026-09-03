@@ -81,6 +81,15 @@ public class Notification extends BaseEntity {
     @Builder.Default
     private int retryCount = 0;
 
+    // F-023: nullable, optional idempotency key for the send request that
+    // created this notification. When present, enforced unique per
+    // tenant at the DB level (see V4__idempotency_key.sql) -- a retried
+    // request with the same key hits that constraint on insert, and
+    // DomainService.sendNotification catches it to return this existing
+    // row instead of creating a duplicate.
+    @Column(name = "idempotency_key")
+    private String idempotencyKey;
+
     @Column(name = "acknowledged_at")
     private LocalDateTime acknowledgedAt;
 

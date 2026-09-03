@@ -11,6 +11,7 @@ import com.usora.notification.repository.NotificationRepository;
 import com.usora.notification.repository.TenantRepository;
 import com.usora.notification.security.TenantContext;
 import com.usora.notification.service.DomainService;
+import com.usora.notification.service.NotificationIdempotencyStore;
 import com.usora.notification.service.TenantAwareService;
 import com.usora.notification.util.EncryptionUtil;
 import com.usora.notification.util.HashingUtil;
@@ -60,7 +61,15 @@ class ServiceUnitTest {
         hashingUtil = new HashingUtil();
         entityMapper = new EntityMapperImpl();
         tenantAwareService = new TenantAwareService(tenantRepository, encryptionUtil);
-        domainService = new DomainService(notificationRepository, entityMapper,
+        // F-023: NotificationIdempotencyStore is a plain constructor-injected
+        // collaborator (no Spring context in this unit test, so its
+        // @Transactional(REQUIRES_NEW) annotation is inert here -- fine for
+        // this test's purposes, since the insert-then-catch-constraint-
+        // violation logic itself is exercised as plain Java against the
+        // same mocked notificationRepository every other test in this class
+        // already uses).
+        var notificationIdempotencyStore = new NotificationIdempotencyStore(notificationRepository);
+        domainService = new DomainService(notificationRepository, notificationIdempotencyStore, entityMapper,
                 eventPublisher, tenantAwareService, validationUtil, hashingUtil);
 
         TenantContext.setCurrentTenantId("tenant-1");
