@@ -28,6 +28,14 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 
     Page<Notification> findByTenantIdAndCreatedAtBetween(String tenantId, LocalDateTime from, LocalDateTime to, Pageable pageable);
 
+    // F-023: used by DomainService.sendNotification's idempotent-insert
+    // path. Looked up by (tenantId, idempotencyKey) after a unique
+    // constraint violation on insert, to return the ALREADY-existing
+    // notification from the original call rather than creating a
+    // duplicate -- see V4__idempotency_key.sql for the constraint this
+    // relies on.
+    java.util.Optional<Notification> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
+
     List<Notification> findByStatusAndRetryCountLessThan(NotificationStatus status, int maxRetries);
 
     @Modifying

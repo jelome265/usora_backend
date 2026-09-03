@@ -36,6 +36,15 @@ public final class RequestDto {
 
         @Builder.Default
         private String priority = "NORMAL";
+
+        // F-023: optional. When supplied, a repeat call with the same
+        // key (from the same tenant) returns the original notification
+        // instead of creating a duplicate send -- see
+        // DomainService.sendNotification. Callers without a natural
+        // retry-safe identifier for their request can omit this; the
+        // send proceeds exactly as before (non-idempotent, one row per
+        // call).
+        private String idempotencyKey;
     }
 
     @Data

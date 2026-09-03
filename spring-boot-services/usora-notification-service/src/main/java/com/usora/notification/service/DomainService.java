@@ -55,6 +55,7 @@ import java.util.UUID;
 public class DomainService {
 
     private final NotificationRepository notificationRepository;
+    private final NotificationIdempotencyStore notificationIdempotencyStore;
     private final EntityMapper entityMapper;
     private final DomainEventPublisher eventPublisher;
     private final TenantAwareService tenantAwareService;
@@ -86,9 +87,28 @@ public class DomainService {
                 .attachments(request.getAttachments())
                 .status(NotificationStatus.PENDING)
                 .priority(priority)
+                .idempotencyKey(request.getIdempotencyKey())
                 .build();
 
-        notification = notificationRepository.save(notification);
+        // F-023: replaces a plain, unconditional
+        // notificationRepository.save(notification) call. When the
+        // caller supplies an idempotencyKey and this exact
+        // (tenant, key) pair was already used for a prior call -- e.g.
+        // this is a client retry after a timeout whose response the
+        // client never actually saw, not a genuinely new request -- this
+        // returns the ORIGINAL notification instead of creating (and
+        // then sending) a duplicate.
+        var insertResult = notificationIdempotencyStore.insertIfAbsent(
+                notification, tenantId, request.getIdempotencyKey());
+        notification = insertResult.notification();
+
+        if (insertResult.wasDuplicate()) {
+            log.info("Notification send with idempotency key {} for tenant {} already existed as {} -- " +
+                            "returning the original notification, not re-sending",
+                    request.getIdempotencyKey(), tenantId, notification.getId());
+            return entityMapper.toResponse(notification);
+        }
+
         log.info("Notification {} saved with status PENDING", notification.getId());
 
         deliverAsync(notification.getId(), tenantConfig);
