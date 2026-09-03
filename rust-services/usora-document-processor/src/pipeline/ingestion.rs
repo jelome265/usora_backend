@@ -8,6 +8,18 @@ use uuid::Uuid;
 
 const MAX_FILE_SIZE: u64 = 20 * 1024 * 1024;
 const MIN_FILE_SIZE: u64 = 1024;
+// F-024: the 20MB check above bounds the COMPRESSED file size, not what
+// it decodes to -- a small, highly-compressible image (e.g. a mostly
+// solid-color PNG) can decode into a bitmap many times larger than its
+// file size, a classic decompression-bomb pattern. Nothing previously
+// checked the DECODED width/height/pixel count at all before handing the
+// image to every subsequent pipeline stage (preprocessing, OCR,
+// authenticity checks), each of which allocates buffers proportional to
+// image dimensions. These limits are generous for any real ID document
+// scan (even a very high-DPI passport photo page is nowhere near this)
+// while still bounding worst-case memory/CPU from a single decoded image.
+const MAX_IMAGE_DIMENSION: u32 = 10_000;
+const MAX_IMAGE_PIXELS: u64 = 40_000_000; // ~40 megapixels
 const ALLOWED_FORMATS: &[&str] = &[
     "image/png",
     "image/jpeg",
@@ -41,6 +53,29 @@ impl IngestionStage {
                 "File too large: {} bytes, maximum is {} bytes",
                 len,
                 MAX_FILE_SIZE
+            );
+        }
+        Ok(())
+    }
+
+    /// F-024: rejects a decoded image whose dimensions or total pixel
+    /// count exceed the limits above -- must be called immediately after
+    /// decode and BEFORE any further pipeline stage touches the image,
+    /// since every subsequent stage allocates memory/CPU proportional to
+    /// these dimensions.
+    fn validate_dimensions(width: u32, height: u32) -> anyhow::Result<()> {
+        if width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION {
+            anyhow::bail!(
+                "Image dimensions {}x{} exceed the maximum allowed dimension of {} pixels",
+                width, height, MAX_IMAGE_DIMENSION
+            );
+        }
+        let pixel_count = width as u64 * height as u64;
+        if pixel_count > MAX_IMAGE_PIXELS {
+            anyhow::bail!(
+                "Image has {} total pixels ({}x{}), exceeding the maximum allowed {} pixels -- \
+                 this file's compressed size does not reflect its decoded memory footprint",
+                pixel_count, width, height, MAX_IMAGE_PIXELS
             );
         }
         Ok(())
@@ -93,6 +128,7 @@ impl PipelineStage for IngestionStage {
 
         let img = image::load_from_memory(data)?;
         let (w, h) = img.dimensions();
+        Self::validate_dimensions(w, h)?;
 
         let temp_dir = std::env::temp_dir().join("usora-document-processor");
         let _temp_path = Self::save_temp(data, &temp_dir)?;
@@ -114,3 +150,46 @@ impl PipelineStage for IngestionStage {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// F-024 regression: a small/moderate file with reasonable decoded
+    /// dimensions must pass.
+    #[test]
+    fn validate_dimensions_accepts_reasonable_document_scan() {
+        assert!(IngestionStage::validate_dimensions(2481, 3508).is_ok(), // A4 at 300dpi
+            "a typical A4-at-300dpi document scan must not be rejected");
+    }
+
+    /// F-024 regression: the actual decompression-bomb scenario this
+    /// finding is about -- a decoded image whose dimensions vastly
+    /// exceed anything a real document scan would ever need must be
+    /// rejected, independent of how small the original compressed file
+    /// was.
+    #[test]
+    fn validate_dimensions_rejects_oversized_width_or_height() {
+        assert!(IngestionStage::validate_dimensions(50_000, 100).is_err(),
+            "a single oversized dimension must be rejected even if total pixel count is otherwise small");
+        assert!(IngestionStage::validate_dimensions(100, 50_000).is_err());
+    }
+
+    #[test]
+    fn validate_dimensions_rejects_excessive_total_pixel_count() {
+        // Neither dimension alone exceeds MAX_IMAGE_DIMENSION, but their
+        // product does -- this is the case a naive "check width < X AND
+        // height < X" implementation would miss.
+        assert!(IngestionStage::validate_dimensions(9_000, 9_000).is_err(),
+            "9000x9000 (81 megapixels) must be rejected even though neither dimension alone exceeds the cap");
+    }
+
+    #[test]
+    fn validate_dimensions_boundary_is_inclusive() {
+        assert!(IngestionStage::validate_dimensions(MAX_IMAGE_DIMENSION, 1).is_ok(),
+            "exactly at the dimension limit should still be accepted");
+        assert!(IngestionStage::validate_dimensions(MAX_IMAGE_DIMENSION + 1, 1).is_err(),
+            "one pixel over the dimension limit must be rejected");
+    }
+}
+

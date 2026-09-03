@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use base64::Engine;
 use tokio::signal;
+use tokio::sync::Semaphore;
 use tonic::transport::Server;
 use tracing::{error, info};
 
@@ -161,6 +162,21 @@ async fn run_kafka_consumer(config: Arc<usora_document_processor::config::Config
     ));
 
     let mut stream = consumer.stream();
+    // F-024: config.max_concurrent_jobs (MAX_CONCURRENT_JOBS) was already
+    // parsed and validated (see config/mod.rs) but never actually used
+    // anywhere -- every Kafka message spawned an unbounded detached task
+    // regardless of this setting, unlike usora-face-matching-engine and
+    // usora-risk-scoring-engine, which both correctly gate concurrent
+    // spawns on a semaphore built from their own equivalent config value.
+    // This service is the most CPU-heavy of the three (OCR/Tesseract/
+    // OpenCV), and was the one with NO bound at all: a noisy tenant
+    // queuing many messages could spawn effectively unlimited concurrent
+    // CPU-bound jobs, exactly the "unbounded worker pool" failure mode
+    // this finding describes. Acquiring a permit BEFORE spawning (not
+    // inside the spawned task) means an already-saturated worker pool
+    // applies backpressure by not polling/acquiring further until a slot
+    // frees up, rather than accepting unbounded queued work in memory.
+    let semaphore = Arc::new(Semaphore::new(config.max_concurrent_jobs));
     while let Some(msg) = stream.next().await {
         match msg {
             Ok(m) => {
@@ -185,7 +201,21 @@ async fn run_kafka_consumer(config: Arc<usora_document_processor::config::Config
                     let retry_count = config.kafka_retry_count;
                     let retry_backoff = std::time::Duration::from_millis(config.kafka_retry_backoff_ms);
 
+                    // F-024: acquired here, in the poll loop, before
+                    // spawning -- NOT inside the spawned task. Acquiring
+                    // inside the task would still let every message spawn
+                    // a task immediately (just have it wait once running),
+                    // which bounds concurrent CPU WORK but not the number
+                    // of pending tasks/memory held for messages already
+                    // pulled off Kafka; acquiring here means the consumer
+                    // itself stops pulling further messages once the pool
+                    // is saturated, which is the actual backpressure this
+                    // finding's remediation item 4 asks for.
+                    let permit = semaphore.clone().acquire_owned().await
+                        .expect("semaphore should never be closed for the lifetime of this consumer");
+
                     tokio::spawn(async move {
+                        let _permit = permit;
                         let started = std::time::Instant::now();
                         let mut last_err: Option<anyhow::Error> = None;
 
