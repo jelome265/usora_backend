@@ -458,9 +458,32 @@ public class DomainService {
                 Instant.now(), tenantId);
     }
 
+    // F-025: reinforces the gRPC transport-layer limit (grpc.netty-server.
+    // max-inbound-message-size in application.yml) at the application
+    // layer too -- per this finding's own design rule ("correct the
+    // control at the lowest trustworthy boundary available, then
+    // reinforce it at every higher boundary"). The transport limit alone
+    // is not sufficient defense in depth: it's a shared, generic gRPC
+    // server setting that could be raised for an unrelated reason (a
+    // different RPC on this same service needing a larger limit) without
+    // anyone realizing it also loosens this specific field's effective
+    // bound. This is evidence content specifically -- documents/photos --
+    // not an arbitrary large payload, so a deliberate, evidence-specific
+    // limit belongs here regardless of what the transport allows.
+    private static final int MAX_EVIDENCE_CONTENT_BYTES = 20 * 1024 * 1024; // 20MB, matches document-processor's own limit
+
     public EvidenceSubmissionResponse submitEvidence(EvidenceSubmissionRequest request) {
         var tenantId = TenantContext.getCurrentTenant();
         if (tenantId == null) throw BusinessException.validationFailed("Tenant context is required");
+
+        if (request.content() == null || request.content().length == 0) {
+            throw BusinessException.validationFailed("Evidence content must not be empty");
+        }
+        if (request.content().length > MAX_EVIDENCE_CONTENT_BYTES) {
+            throw BusinessException.validationFailed(
+                    "Evidence content is " + request.content().length + " bytes, exceeding the maximum allowed "
+                            + MAX_EVIDENCE_CONTENT_BYTES + " bytes");
+        }
 
         // Verify content hash
         var computedHash = HashingUtil.sha256(request.content());

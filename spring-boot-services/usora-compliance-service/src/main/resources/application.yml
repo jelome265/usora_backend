@@ -126,6 +126,19 @@ compliance:
 grpc:
   server:
     port: 9091
+  # F-025: previously relied entirely on grpc-java's implicit default
+  # inbound message size (4MiB) with no explicit configuration anywhere --
+  # meaning the actual limit in effect wasn't a deliberate, documented
+  # decision, and could silently change if a future dependency upgrade
+  # changed that library default. submitEvidence's request.getContent()
+  # is exactly the field this matters for (see DomainService.submitEvidence's
+  # own new explicit content-size check below, which reinforces this same
+  # limit at the application layer, not just the transport layer -- per
+  # this finding's own design rule: "correct the control at the lowest
+  # trustworthy boundary available, then reinforce it at every higher
+  # boundary").
+  netty-server:
+    max-inbound-message-size: 20MB
   client:
     aml-screening:
       address: static://${compliance.aml-screening.host}:${compliance.aml-screening.port}

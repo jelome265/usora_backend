@@ -134,9 +134,16 @@ async fn serve_grpc(state: Arc<AppState>, address: &str) -> anyhow::Result<()> {
         }
     });
 
+    // F-025: same rationale as GrpcClients::connect's own limits -- tonic
+    // defaults to 4MB for both directions if never configured. This is
+    // the gateway's own inbound gRPC surface (GatewayServiceImpl),
+    // separate from the outbound clients configured in grpc/mod.rs.
+    const MAX_GRPC_MESSAGE_BYTES: usize = 25 * 1024 * 1024;
     let gateway_service = usora_api_gateway::proto::gateway::gateway_service_server::GatewayServiceServer::new(
         usora_api_gateway::gateway_service::GatewayServiceImpl::new(state),
-    );
+    )
+    .max_decoding_message_size(MAX_GRPC_MESSAGE_BYTES)
+    .max_encoding_message_size(MAX_GRPC_MESSAGE_BYTES);
 
     tracing::info!("internal gRPC server starting on {address}");
 
