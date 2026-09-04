@@ -1,5 +1,5 @@
-use crate::models::BoundingBox;
 use crate::ocr::{OcrEngine, OcrResult, RegionType, TextRegion};
+use crate::models::BoundingBox;
 use async_trait::async_trait;
 use image::GenericImageView;
 use ndarray::Array3;
@@ -39,21 +39,13 @@ impl MlOcrEngine {
         Ok(())
     }
 
-    fn preprocess_for_model(
-        img: &image::DynamicImage,
-        target_w: u32,
-        target_h: u32,
-    ) -> anyhow::Result<(Array3<f32>, f32, u32, u32)> {
+    fn preprocess_for_model(img: &image::DynamicImage, target_w: u32, target_h: u32) -> anyhow::Result<(Array3<f32>, f32, u32, u32)> {
         let (orig_w, orig_h) = img.dimensions();
         let scale = (target_w as f32 / orig_w as f32).min(target_h as f32 / orig_h as f32);
         let new_w = (orig_w as f32 * scale) as u32;
         let new_h = (orig_h as f32 * scale) as u32;
 
-        let resized = img.resize_exact(
-            new_w.max(1),
-            new_h.max(1),
-            image::imageops::FilterType::Lanczos3,
-        );
+        let resized = img.resize_exact(new_w.max(1), new_h.max(1), image::imageops::FilterType::Lanczos3);
 
         let mut padded = image::DynamicImage::new_rgb8(target_w, target_h);
         let (pw, ph) = padded.dimensions();
@@ -77,18 +69,12 @@ impl MlOcrEngine {
         Ok((array, scale, paste_x, paste_y))
     }
 
-    fn run_inference_tract(
-        model_path: &PathBuf,
-        input: Array3<f32>,
-    ) -> anyhow::Result<tract_onnx::prelude::TValue> {
+    fn run_inference_tract(model_path: &PathBuf, input: Array3<f32>) -> anyhow::Result<tract_onnx::prelude::TValue> {
         use tract_onnx::prelude::*;
 
         let model = onnx()
             .model_for_path(model_path.join("document_ocr.onnx"))?
-            .with_input_fact(
-                0,
-                InferenceFact::dt_shape(f32::datum_type(), tvec!(1, 3, 640, 640)),
-            )?
+            .with_input_fact(0, InferenceFact::dt_shape(f32::datum_type(), tvec!(1, 3, 640, 640)))?
             .into_optimized()?
             .into_runnable()?;
 
@@ -99,10 +85,7 @@ impl MlOcrEngine {
 
     fn run_inference(model_path: &PathBuf, input: Array3<f32>) -> anyhow::Result<Vec<Vec<f32>>> {
         if !model_path.join("document_ocr.onnx").exists() {
-            anyhow::bail!(
-                "ONNX model file not found at {:?}/document_ocr.onnx",
-                model_path
-            );
+            anyhow::bail!("ONNX model file not found at {:?}/document_ocr.onnx", model_path);
         }
         let result = Self::run_inference_tract(model_path, input)?;
         let output = result.as_slice::<f32>()?;
@@ -117,12 +100,7 @@ impl MlOcrEngine {
         Ok(results)
     }
 
-    fn decode_output(
-        output: Vec<Vec<f32>>,
-        _scale: f32,
-        _pad_x: u32,
-        _pad_y: u32,
-    ) -> (Vec<TextRegion>, String) {
+    fn decode_output(output: Vec<Vec<f32>>, _scale: f32, _pad_x: u32, _pad_y: u32) -> (Vec<TextRegion>, String) {
         let mut regions = Vec::new();
         let mut full_text = String::new();
 
@@ -131,8 +109,7 @@ impl MlOcrEngine {
                 continue;
             }
 
-            let max_idx = row
-                .iter()
+            let max_idx = row.iter()
                 .enumerate()
                 .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
                 .map(|(idx, _)| idx)
@@ -161,9 +138,7 @@ impl MlOcrEngine {
                         width: w / _scale,
                         height: h / _scale,
                     },
-                    region_type: RegionType::Field {
-                        name: format!("field_{}", i),
-                    },
+                    region_type: RegionType::Field { name: format!("field_{}", i) },
                 });
 
                 if !full_text.is_empty() {
@@ -181,8 +156,7 @@ impl MlOcrEngine {
     }
 
     fn map_index_to_char(idx: usize) -> String {
-        const CHARS: &[u8] =
-            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .-/:()&+,'";
+        const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .-/:()&+,'";
         if idx < CHARS.len() {
             String::from_utf8_lossy(&[CHARS[idx]]).to_string()
         } else {
@@ -200,8 +174,7 @@ impl OcrEngine for MlOcrEngine {
     async fn perform_ocr(&self, image_data: &[u8]) -> anyhow::Result<OcrResult> {
         let img = image::load_from_memory(image_data)?;
 
-        let (input, scale, pad_x, pad_y) =
-            Self::preprocess_for_model(&img, self.input_width, self.input_height)?;
+        let (input, scale, pad_x, pad_y) = Self::preprocess_for_model(&img, self.input_width, self.input_height)?;
 
         let output = Self::run_inference(&self.model_path, input)?;
 

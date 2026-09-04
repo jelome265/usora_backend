@@ -3,8 +3,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use axum::extract::Request;
-use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::http::StatusCode;
 use tower::{Layer, Service};
 
 use crate::auth::jwt::JwtValidator;
@@ -74,10 +74,7 @@ where
 
     fn call(&mut self, req: Request) -> Self::Future {
         let path = req.uri().path().to_string();
-        let bypass = self
-            .bypass_paths
-            .iter()
-            .any(|p| path == *p || path.starts_with(p));
+        let bypass = self.bypass_paths.iter().any(|p| path == *p || path.starts_with(p));
 
         // Clone the inner service (cheap -- tower services are designed for
         // this) so `self.inner` isn't consumed before we know whether we're
@@ -129,11 +126,7 @@ where
                 _ => {
                     let request_id = resolve_request_id(&parts.headers);
                     tracing::warn!(request_id = %request_id, "Request rejected: missing or malformed Authorization header");
-                    return Ok(auth_error_response(
-                        StatusCode::UNAUTHORIZED,
-                        "Authentication required",
-                        request_id,
-                    ));
+                    return Ok(auth_error_response(StatusCode::UNAUTHORIZED, "Authentication required", request_id));
                 }
             };
 
@@ -144,9 +137,7 @@ where
                     parts.extensions.insert(user);
 
                     if !tid.is_empty() {
-                        parts
-                            .extensions
-                            .insert(crate::middleware::tenant::TenantContext { tenant_id: tid });
+                        parts.extensions.insert(crate::middleware::tenant::TenantContext { tenant_id: tid });
                     }
 
                     let req = Request::from_parts(parts, body);
@@ -173,18 +164,13 @@ where
                         crate::auth::jwt::jwt::Error::Expired => {
                             ("Authentication token has expired", "AUTH_TOKEN_EXPIRED")
                         }
-                        crate::auth::jwt::jwt::Error::Revoked => (
-                            "Authentication token has been revoked",
-                            "AUTH_TOKEN_REVOKED",
-                        ),
+                        crate::auth::jwt::jwt::Error::Revoked => {
+                            ("Authentication token has been revoked", "AUTH_TOKEN_REVOKED")
+                        }
                         _ => ("Authentication token is invalid", "AUTH_TOKEN_INVALID"),
                     };
                     tracing::warn!(error = %e, error_code, request_id = %request_id, "JWT validation failed");
-                    Ok(auth_error_response(
-                        StatusCode::UNAUTHORIZED,
-                        client_message,
-                        request_id,
-                    ))
+                    Ok(auth_error_response(StatusCode::UNAUTHORIZED, client_message, request_id))
                 }
             }
         })

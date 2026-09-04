@@ -180,10 +180,7 @@ impl ScoringOrchestrator {
         } else if model_id == self.config.models.transaction_risk.model_id {
             &self.config.models.transaction_risk
         } else {
-            return Err(RiskEngineError::NotFound(format!(
-                "Model {} not found",
-                model_id
-            )));
+            return Err(RiskEngineError::NotFound(format!("Model {} not found", model_id)));
         };
 
         let _ = config;

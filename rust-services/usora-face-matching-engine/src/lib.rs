@@ -113,18 +113,15 @@ impl FaceMatchingEngine {
             .next()
             .ok_or_else(|| anyhow::anyhow!("No face detected in target image"))?;
 
-        let source_embedding = self
-            .embedding_model
+        let source_embedding = self.embedding_model
             .generate_embedding(source, &source_face)
             .await?;
 
-        let target_embedding = self
-            .embedding_model
+        let target_embedding = self.embedding_model
             .generate_embedding(target, &target_face)
             .await?;
 
-        let result = self
-            .cosine_matcher
+        let result = self.cosine_matcher
             .verify_one_to_one(&source_embedding, &target_embedding)
             .await?;
 
@@ -145,8 +142,7 @@ impl FaceMatchingEngine {
             .next()
             .ok_or_else(|| anyhow::anyhow!("No face detected in probe image"))?;
 
-        let embedding = self
-            .embedding_model
+        let embedding = self.embedding_model
             .generate_embedding(probe, &best_face)
             .await?;
 
@@ -157,8 +153,7 @@ impl FaceMatchingEngine {
         // identification silently searched an index that real enrollments
         // are never written to — effectively disabling duplicate/fraud
         // identity detection rather than failing loudly.
-        let results = self
-            .faiss_matcher
+        let results = self.faiss_matcher
             .search_one_to_many_with_tenant(&embedding, top_k, tenant_id)
             .await?;
 
@@ -179,13 +174,11 @@ impl FaceMatchingEngine {
             .next()
             .ok_or_else(|| anyhow::anyhow!("No face detected for liveness check"))?;
 
-        let active_result = self
-            .active_liveness
+        let active_result = self.active_liveness
             .check_liveness(image, &best_face, Some(challenge_type))
             .await?;
 
-        let passive_result = self
-            .passive_liveness
+        let passive_result = self.passive_liveness
             .check_liveness(image, &best_face, challenge_data)
             .await?;
 
@@ -231,8 +224,7 @@ impl FaceMatchingEngine {
             .next()
             .ok_or_else(|| anyhow::anyhow!("No face detected in registration image"))?;
 
-        let embedding = self
-            .embedding_model
+        let embedding = self.embedding_model
             .generate_embedding(image, &best_face)
             .await?;
 

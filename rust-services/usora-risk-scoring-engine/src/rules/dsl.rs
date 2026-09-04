@@ -52,8 +52,12 @@ impl DslRule {
 
         engine.register_type::<FeatureValue>();
 
-        engine.register_fn("is_string", |v: Dynamic| -> bool { v.is_string() });
-        engine.register_fn("is_int", |v: Dynamic| -> bool { v.is_int() });
+        engine.register_fn("is_string", |v: Dynamic| -> bool {
+            v.is_string()
+        });
+        engine.register_fn("is_int", |v: Dynamic| -> bool {
+            v.is_int()
+        });
         engine.register_fn("is_float", |v: Dynamic| -> bool {
             matches!(v, Dynamic::Float(_))
         });
