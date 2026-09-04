@@ -111,7 +111,7 @@
 
         <!-- Spring WebFlux (for WebClient) -->
         <!-- BUG found while implementing F-022: spring-boot-starter-webclient
-             is not a real Maven artifact -- it does not exist in Maven
+             is not a real Maven artifact - it does not exist in Maven
              Central under any group. WebClient/ReactorClientHttpConnector/
              reactor.netty.http.client.HttpClient (all used in
              WebClientConfig.java) are provided by spring-boot-starter-webflux.

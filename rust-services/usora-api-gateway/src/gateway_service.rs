@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use crate::proto::gateway;
+use crate::AppState;
 use chrono::Utc;
+use std::sync::Arc;
 use tonic::{Request, Response, Status};
 use tracing::instrument;
-use crate::AppState;
-use crate::proto::gateway;
 
 pub struct GatewayServiceImpl {
     state: Arc<AppState>,
@@ -29,7 +29,10 @@ impl gateway::gateway_service_server::GatewayService for GatewayServiceImpl {
         let ctx = request.into_inner();
         let tenant_id = ctx.tenant_id;
 
-        let resolution = self.state.grpc_clients.tenant
+        let resolution = self
+            .state
+            .grpc_clients
+            .tenant
             .clone()
             .get_tenant_config(crate::proto::tenant::GetTenantConfigRequest {
                 tenant_id: tenant_id.clone(),

@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use base64::Engine;
+use std::sync::Arc;
 use tokio::signal;
 use tokio::sync::Semaphore;
 use tonic::transport::Server;
@@ -18,12 +18,18 @@ async fn main() -> anyhow::Result<()> {
     // exist at all.
     usora_document_processor::metrics::init();
 
-    info!("Starting {} on {}", config.service_name, config.grpc_bind_address);
+    info!(
+        "Starting {} on {}",
+        config.service_name, config.grpc_bind_address
+    );
 
-    let doc_service = Arc::new(usora_document_processor::grpc::DocumentAnalysisServiceImpl::new(config.clone()));
+    let doc_service =
+        Arc::new(usora_document_processor::grpc::DocumentAnalysisServiceImpl::new(config.clone()));
 
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
-    health_reporter.set_serving::<DocumentAnalysisServiceServer<_>>().await;
+    health_reporter
+        .set_serving::<DocumentAnalysisServiceServer<_>>()
+        .await;
 
     let grpc_addr = config.grpc_bind_address.parse()?;
 
@@ -40,7 +46,10 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    let rest_addr = config.rest_bind_address.clone().unwrap_or_else(|| "0.0.0.0:8081".to_string());
+    let rest_addr = config
+        .rest_bind_address
+        .clone()
+        .unwrap_or_else(|| "0.0.0.0:8081".to_string());
     // config.validate() already guarantees this is non-empty — see the
     // SECURITY check added there — so this expect can only fire if
     // validate() was skipped, which would itself be a bug at the call
@@ -71,7 +80,9 @@ async fn main() -> anyhow::Result<()> {
     let grpc_future = Server::builder()
         .add_service(health_service)
         .add_service(reflection_service)
-        .add_service(DocumentAnalysisServiceServer::new(doc_service.as_ref().clone()))
+        .add_service(DocumentAnalysisServiceServer::new(
+            doc_service.as_ref().clone(),
+        ))
         .serve_with_shutdown(grpc_addr, async {
             signal::ctrl_c().await.ok();
             info!("Shutdown signal received");
@@ -107,7 +118,9 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_kafka_consumer(config: Arc<usora_document_processor::config::Config>) -> anyhow::Result<()> {
+async fn run_kafka_consumer(
+    config: Arc<usora_document_processor::config::Config>,
+) -> anyhow::Result<()> {
     use futures::StreamExt;
     use rdkafka::config::ClientConfig;
     use rdkafka::consumer::{Consumer, StreamConsumer};
@@ -199,7 +212,8 @@ async fn run_kafka_consumer(config: Arc<usora_document_processor::config::Config
                     let results_topic = config.kafka_results_topic.clone();
                     let dead_letter_topic = config.kafka_dead_letter_topic.clone();
                     let retry_count = config.kafka_retry_count;
-                    let retry_backoff = std::time::Duration::from_millis(config.kafka_retry_backoff_ms);
+                    let retry_backoff =
+                        std::time::Duration::from_millis(config.kafka_retry_backoff_ms);
 
                     // F-024: acquired here, in the poll loop, before
                     // spawning -- NOT inside the spawned task. Acquiring
@@ -211,8 +225,9 @@ async fn run_kafka_consumer(config: Arc<usora_document_processor::config::Config
                     // itself stops pulling further messages once the pool
                     // is saturated, which is the actual backpressure this
                     // finding's remediation item 4 asks for.
-                    let permit = semaphore.clone().acquire_owned().await
-                        .expect("semaphore should never be closed for the lifetime of this consumer");
+                    let permit = semaphore.clone().acquire_owned().await.expect(
+                        "semaphore should never be closed for the lifetime of this consumer",
+                    );
 
                     tokio::spawn(async move {
                         let _permit = permit;
@@ -262,12 +277,16 @@ async fn run_kafka_consumer(config: Arc<usora_document_processor::config::Config
                                 let record = FutureRecord::to(&results_topic)
                                     .payload(&json)
                                     .key(&uuid::Uuid::now_v7().to_string());
-                                if let Err(e) = producer.send(record, Timeout::After(std::time::Duration::from_secs(5))).await {
+                                if let Err(e) = producer
+                                    .send(record, Timeout::After(std::time::Duration::from_secs(5)))
+                                    .await
+                                {
                                     error!("Failed to send result: {:?}", e);
                                 }
                             }
                             Err(()) => {
-                                let e = last_err.expect("outcome is Err only when the loop set last_err");
+                                let e = last_err
+                                    .expect("outcome is Err only when the loop set last_err");
                                 usora_document_processor::metrics::DOCUMENTS_PROCESSED_TOTAL
                                     .with_label_values(&["failure"])
                                     .inc();
@@ -307,7 +326,10 @@ async fn run_kafka_consumer(config: Arc<usora_document_processor::config::Config
                                 let record = FutureRecord::to(&dead_letter_topic)
                                     .payload(&json)
                                     .key(&uuid::Uuid::now_v7().to_string());
-                                if let Err(send_err) = producer.send(record, Timeout::After(std::time::Duration::from_secs(5))).await {
+                                if let Err(send_err) = producer
+                                    .send(record, Timeout::After(std::time::Duration::from_secs(5)))
+                                    .await
+                                {
                                     // The dead-letter publish itself failed —
                                     // do NOT store the offset in this case.
                                     // Leaving the offset uncommitted means
@@ -326,8 +348,12 @@ async fn run_kafka_consumer(config: Arc<usora_document_processor::config::Config
                         // successfully routed to the dead-letter topic —
                         // both are "durably handled" outcomes, so it's now
                         // safe to let this offset be committed.
-                        if let Err(e) = consumer.store_offset(&msg_topic, msg_partition, msg_offset) {
-                            error!("Failed to store offset for {}:{}:{}: {:?}", msg_topic, msg_partition, msg_offset, e);
+                        if let Err(e) = consumer.store_offset(&msg_topic, msg_partition, msg_offset)
+                        {
+                            error!(
+                                "Failed to store offset for {}:{}:{}: {:?}",
+                                msg_topic, msg_partition, msg_offset, e
+                            );
                         }
                     });
                 }
