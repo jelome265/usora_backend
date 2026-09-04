@@ -153,9 +153,20 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let grpc_addr = config.server.grpc_addr.parse()?;
     let grpc_handle = tokio::spawn(async move {
+        // F-025: tonic defaults both max_decoding_message_size and
+        // max_encoding_message_size to 4MB per server if never
+        // configured -- matches the same gap fixed in
+        // usora-api-gateway/usora-document-processor/
+        // usora-face-matching-engine for consistency across every
+        // internal gRPC server in this platform.
+        const MAX_GRPC_MESSAGE_BYTES: usize = 25 * 1024 * 1024;
         Server::builder()
             .add_service(health_service)
-            .add_service(RiskScoringServiceServer::new(grpc_service))
+            .add_service(
+                RiskScoringServiceServer::new(grpc_service)
+                    .max_decoding_message_size(MAX_GRPC_MESSAGE_BYTES)
+                    .max_encoding_message_size(MAX_GRPC_MESSAGE_BYTES),
+            )
             .serve(grpc_addr)
             .await
             .context("gRPC server error")

@@ -64,12 +64,40 @@ impl GrpcClients {
 
         let bearer = BearerAuth(config.upstream.internal_service_token.as_ref().map(|t| t.as_str().into()));
 
-        let identity = proto::identity::identity_service_client::IdentityServiceClient::with_interceptor(orch_channel.clone(), bearer.clone());
-        let document = proto::document::document_analysis_service_client::DocumentAnalysisServiceClient::with_interceptor(comp_channel.clone(), bearer.clone());
-        let tenant = proto::tenant::tenant_service_client::TenantServiceClient::with_interceptor(orch_channel.clone(), bearer.clone());
-        let audit = proto::audit::audit_service_client::AuditServiceClient::with_interceptor(orch_channel.clone(), bearer.clone());
-        let compliance = proto::compliance::compliance_service_client::ComplianceServiceClient::with_interceptor(comp_channel.clone(), bearer.clone());
-        let notification = proto::notification::notification_service_client::NotificationServiceClient::with_interceptor(comp_channel.clone(), bearer);
+        // F-025: tonic defaults both max_decoding_message_size and
+        // max_encoding_message_size to 4MB per client/server if never
+        // configured. document-processor accepts up to 20MB files (see
+        // its own MAX_FILE_SIZE) and compliance-service's evidence
+        // submission now explicitly allows up to 20MB (see F-025's
+        // MAX_EVIDENCE_CONTENT_BYTES) -- without raising this gateway's
+        // own gRPC client limits to match, a legitimate ~15MB document
+        // upload would pass this gateway's HTTP body limit (50MB, see
+        // routes/mod.rs's RequestBodyLimitLayer) and then silently fail
+        // at THIS internal gRPC hop, well within what the actual
+        // destination service is willing to accept. Set generously above
+        // the largest known service-side limit (20MB) for headroom,
+        // consistently across every client rather than fine-tuning
+        // per-service and risking under-provisioning one by mistake.
+        const MAX_GRPC_MESSAGE_BYTES: usize = 25 * 1024 * 1024;
+
+        let identity = proto::identity::identity_service_client::IdentityServiceClient::with_interceptor(orch_channel.clone(), bearer.clone())
+            .max_decoding_message_size(MAX_GRPC_MESSAGE_BYTES)
+            .max_encoding_message_size(MAX_GRPC_MESSAGE_BYTES);
+        let document = proto::document::document_analysis_service_client::DocumentAnalysisServiceClient::with_interceptor(comp_channel.clone(), bearer.clone())
+            .max_decoding_message_size(MAX_GRPC_MESSAGE_BYTES)
+            .max_encoding_message_size(MAX_GRPC_MESSAGE_BYTES);
+        let tenant = proto::tenant::tenant_service_client::TenantServiceClient::with_interceptor(orch_channel.clone(), bearer.clone())
+            .max_decoding_message_size(MAX_GRPC_MESSAGE_BYTES)
+            .max_encoding_message_size(MAX_GRPC_MESSAGE_BYTES);
+        let audit = proto::audit::audit_service_client::AuditServiceClient::with_interceptor(orch_channel.clone(), bearer.clone())
+            .max_decoding_message_size(MAX_GRPC_MESSAGE_BYTES)
+            .max_encoding_message_size(MAX_GRPC_MESSAGE_BYTES);
+        let compliance = proto::compliance::compliance_service_client::ComplianceServiceClient::with_interceptor(comp_channel.clone(), bearer.clone())
+            .max_decoding_message_size(MAX_GRPC_MESSAGE_BYTES)
+            .max_encoding_message_size(MAX_GRPC_MESSAGE_BYTES);
+        let notification = proto::notification::notification_service_client::NotificationServiceClient::with_interceptor(comp_channel.clone(), bearer)
+            .max_decoding_message_size(MAX_GRPC_MESSAGE_BYTES)
+            .max_encoding_message_size(MAX_GRPC_MESSAGE_BYTES);
 
         Ok(Self {
             identity,

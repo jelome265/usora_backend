@@ -68,10 +68,26 @@ async fn main() -> anyhow::Result<()> {
     });
 
     info!("gRPC server listening on {}", grpc_addr);
+    // F-025: tonic defaults both max_decoding_message_size and
+    // max_encoding_message_size to 4MB per server if never configured.
+    // This service's own file-size limit (MAX_FILE_SIZE, see
+    // pipeline/ingestion.rs) allows up to 20MB -- without this, that
+    // check was effectively unreachable for any file between 4MB and
+    // 20MB submitted over gRPC specifically, since tonic would reject the
+    // message at the transport layer before it ever reached
+    // application-level validation. Set consistently with the gateway
+    // client's own limit (see usora-api-gateway's GrpcClients::connect)
+    // so neither side of this connection silently caps below what the
+    // other is willing to send/accept.
+    const MAX_GRPC_MESSAGE_BYTES: usize = 25 * 1024 * 1024;
     let grpc_future = Server::builder()
         .add_service(health_service)
         .add_service(reflection_service)
-        .add_service(DocumentAnalysisServiceServer::new(doc_service.as_ref().clone()))
+        .add_service(
+            DocumentAnalysisServiceServer::new(doc_service.as_ref().clone())
+                .max_decoding_message_size(MAX_GRPC_MESSAGE_BYTES)
+                .max_encoding_message_size(MAX_GRPC_MESSAGE_BYTES),
+        )
         .serve_with_shutdown(grpc_addr, async {
             signal::ctrl_c().await.ok();
             info!("Shutdown signal received");

@@ -179,6 +179,19 @@ async fn start_grpc_server(
         .add_service(health_service)
         .add_service(
             proto::identity_verification_service_server::IdentityVerificationServiceServer::new(service)
+                // F-025: config.max_message_size was already being used
+                // for HTTP/2 flow-control window sizing above, but that
+                // controls buffering/throughput, NOT the actual maximum
+                // decoded message size tonic will accept -- that's a
+                // separate setting (max_decoding_message_size/
+                // max_encoding_message_size) that defaults to 4MB
+                // regardless of window size unless set explicitly, which
+                // this service never did. A face image submitted for
+                // matching could easily exceed 4MB; this was silently
+                // capping below what config.max_message_size already
+                // documented as the intended limit.
+                .max_decoding_message_size(config.max_message_size)
+                .max_encoding_message_size(config.max_message_size)
         )
         .serve_with_shutdown(addr, async {
             tokio::signal::ctrl_c().await.ok();
