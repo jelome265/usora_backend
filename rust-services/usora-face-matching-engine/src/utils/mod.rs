@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use chrono::Utc;
 use image::{
-    imageops::FilterType, io::Reader as ImageReader, DynamicImage, GenericImageView,
-    ImageBuffer, Rgb,
+    imageops::FilterType, io::Reader as ImageReader, DynamicImage, GenericImageView, ImageBuffer,
+    Rgb,
 };
 use ndarray::{Array, Array3, Axis, Dim};
 use std::io::Cursor;
@@ -55,10 +55,7 @@ pub fn resize_face(image: &DynamicImage, width: u32, height: u32) -> DynamicImag
     image.resize_exact(width, height, FilterType::Lanczos3)
 }
 
-pub fn align_face(
-    image: &DynamicImage,
-    landmarks: &[[f64; 2]],
-) -> Result<DynamicImage> {
+pub fn align_face(image: &DynamicImage, landmarks: &[[f64; 2]]) -> Result<DynamicImage> {
     if landmarks.len() < 5 {
         anyhow::bail!("Need at least 5 landmarks for alignment");
     }
@@ -115,8 +112,7 @@ pub fn preprocess_for_embedding(image: &DynamicImage) -> Result<Array3<f32>> {
         for x in 0..112 {
             let pixel = rgb.get_pixel(x, y);
             for c in 0..3 {
-                tensor[[c, y as usize, x as usize]] =
-                    (pixel[c] as f32 / 255.0 - mean[c]) / std[c];
+                tensor[[c, y as usize, x as usize]] = (pixel[c] as f32 / 255.0 - mean[c]) / std[c];
             }
         }
     }
@@ -188,7 +184,8 @@ pub fn compute_brightness(image: &DynamicImage) -> f64 {
 
 pub fn compute_contrast(image: &DynamicImage) -> f64 {
     let gray = image.to_luma8();
-    let mean: f64 = gray.as_raw().iter().map(|&p| p as f64).sum::<f64>() / gray.as_raw().len() as f64;
+    let mean: f64 =
+        gray.as_raw().iter().map(|&p| p as f64).sum::<f64>() / gray.as_raw().len() as f64;
     let variance: f64 = gray
         .as_raw()
         .iter()
@@ -268,7 +265,11 @@ pub fn non_maximum_suppression(
     score_threshold: f32,
 ) -> Vec<DetectedFace> {
     detections.retain(|d| d.confidence >= score_threshold);
-    detections.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    detections.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut keep = Vec::new();
     let mut suppressed = vec![false; detections.len()];
