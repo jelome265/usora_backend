@@ -2,9 +2,9 @@ package com.usora.identity.entity;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
 import java.time.Instant;
 import java.util.Set;
@@ -13,7 +13,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "tenants", schema = "identity")
 @Data
-@Builder
+@SuperBuilder
 @NoArgsConstructor
 @AllArgsConstructor
 public class TenantEntity extends BaseEntity {
@@ -58,7 +58,7 @@ public class TenantEntity extends BaseEntity {
     @Entity
     @Table(name = "oauth2_clients", schema = "identity")
     @Data
-    @Builder
+    @SuperBuilder
     @NoArgsConstructor
     @AllArgsConstructor
     public static class OAuth2ClientEntity extends BaseEntity {
@@ -117,7 +117,7 @@ public class TenantEntity extends BaseEntity {
     @Entity
     @Table(name = "users", schema = "identity")
     @Data
-    @Builder
+    @SuperBuilder
     @NoArgsConstructor
     @AllArgsConstructor
     public static class UserEntity extends BaseEntity {

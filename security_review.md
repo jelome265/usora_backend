@@ -3,6 +3,7 @@
 **Author:** Jules, Principal Security & Infrastructure Engineer
 **Date:** September 2026
 **Document ID:** `USORA-SECURITY-REVIEW-2026-09`
+**Review Scope:** Full Security Review (API Gateway, Compute Engines, Orchestration Services, IaC & CI/CD Pipelines)
 **Classification:** Confidentially Restricted — Internal Engineering & Audit Operations
 **Target Architecture:** Rust Axum/Tokio API Gateway + 3 Rust Compute Engines + 7 Java Spring Boot Orchestration Services
 **Framework Standard:** C4 Architecture Model (Context, Containers, Components, Code/Data) & SOC 2 Type II / ISO 27001 Baseline

@@ -130,8 +130,9 @@ impl PipelineStage for IngestionStage {
         let (w, h) = img.dimensions();
         Self::validate_dimensions(w, h)?;
 
-        let temp_dir = std::env::temp_dir().join("usora-document-processor");
+        let temp_dir = std::env::temp_dir().join(format!("usora-dp-{}", Uuid::new_v4()));
         let _temp_path = Self::save_temp(data, &temp_dir)?;
+        let _ = std::fs::remove_dir_all(&temp_dir);
 
         let metadata = Self::extract_metadata(&img);
 
@@ -192,4 +193,3 @@ mod tests {
             "one pixel over the dimension limit must be rejected");
     }
 }
-
