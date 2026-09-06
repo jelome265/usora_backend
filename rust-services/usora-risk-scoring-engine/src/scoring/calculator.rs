@@ -1,6 +1,6 @@
 use crate::models::{
-    ContributionDirection, EnsembleResult, FeatureContribution, RiskLevel, RuleContribution,
-    RuleResult, ScoreExplanation, RiskThresholds,
+    ContributionDirection, EnsembleResult, FeatureContribution, RiskLevel, RiskThresholds,
+    RuleContribution, RuleResult, ScoreExplanation,
 };
 use crate::utils::{clamp, sigmoid, softmax};
 use std::collections::HashMap;
@@ -35,11 +35,7 @@ impl ScoreCalculator {
     ) -> Self {
         let total = ml_weight + rule_weight;
         Self {
-            ml_weight: if total > 0.0 {
-                ml_weight / total
-            } else {
-                0.7
-            },
+            ml_weight: if total > 0.0 { ml_weight / total } else { 0.7 },
             rule_weight: if total > 0.0 {
                 rule_weight / total
             } else {
@@ -56,16 +52,20 @@ impl ScoreCalculator {
         ml_result: &EnsembleResult,
         rule_results: &[RuleResult],
     ) -> (f64, RiskLevel, f64, Option<RiskLevel>) {
-        let ml_score = ml_result.probabilities.iter().enumerate().fold(0.0, |acc, (i, &p)| {
-            let class_score = match i {
-                0 => 0.0,
-                1 => 0.3,
-                2 => 0.7,
-                3 => 0.9,
-                _ => 0.5,
-            };
-            acc + p * class_score
-        });
+        let ml_score = ml_result
+            .probabilities
+            .iter()
+            .enumerate()
+            .fold(0.0, |acc, (i, &p)| {
+                let class_score = match i {
+                    0 => 0.0,
+                    1 => 0.3,
+                    2 => 0.7,
+                    3 => 0.9,
+                    _ => 0.5,
+                };
+                acc + p * class_score
+            });
 
         let ml_risk_level = RiskLevel::from_score(ml_score, &self.thresholds);
 
