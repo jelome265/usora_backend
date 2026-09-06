@@ -13,13 +13,15 @@ pub fn uuid_v7() -> String {
 }
 
 pub fn hmac_sign(key: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC key length valid");
+    let mut mac = Hmac::<Sha256>::new_from_slice(key)
+        .expect("HMAC key length valid");
     mac.update(data);
     mac.finalize().into_bytes().to_vec()
 }
 
 pub fn hmac_verify(key: &[u8], data: &[u8], signature: &[u8]) -> bool {
-    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC key length valid");
+    let mut mac = Hmac::<Sha256>::new_from_slice(key)
+        .expect("HMAC key length valid");
     mac.update(data);
     mac.verify_slice(signature).is_ok()
 }
