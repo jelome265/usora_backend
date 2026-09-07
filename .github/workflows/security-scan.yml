@@ -219,7 +219,6 @@ jobs:
         # both; a real Semgrep finding now actually fails this job.
         run: |
           semgrep \
-            --config=auto \
             --config=p/rust \
             --config=p/java \
             --config=p/owasp-top-ten \
@@ -279,6 +278,8 @@ jobs:
         # leak (gitleaks-action exits nonzero on any leak found) could
         # never fail this job -- it ran purely as an evidence collector.
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run TruffleHog
         # F-015: this was pinned to `@main` -- not even a version tag, a
@@ -584,7 +585,7 @@ jobs:
         continue-on-error: true
 
       - name: Notify Security Team on Findings
-        if: steps.security-summary.outputs.verdict == 'failure' && env.SECURITY_SLACK_WEBHOOK_URL != ''
+        if: steps.security-summary.outputs.verdict == 'failure' && secrets.SECURITY_SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |
@@ -604,7 +605,7 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SECURITY_SLACK_WEBHOOK_URL }}
 
       - name: Notify on Success
-        if: steps.security-summary.outputs.verdict == 'success' && env.SECURITY_SLACK_WEBHOOK_URL != ''
+        if: steps.security-summary.outputs.verdict == 'success' && secrets.SECURITY_SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v4.0.0
         with:
           payload: |

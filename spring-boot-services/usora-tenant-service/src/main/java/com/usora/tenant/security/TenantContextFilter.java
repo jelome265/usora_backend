@@ -60,22 +60,10 @@ public class TenantContextFilter implements Filter {
                 .build();
 
         try {
-            TenantContext.runWith(context, () -> {
-                try {
-                    chain.doFilter(servletRequest, servletResponse);
-                } catch (IOException | ServletException e) {
-                    throw new RuntimeException(e);
-                }
-            });
-        } catch (RuntimeException e) {
-            if (e.getCause() instanceof IOException) {
-                throw (IOException) e.getCause();
-            }
-            if (e.getCause() instanceof ServletException) {
-                throw (ServletException) e.getCause();
-            }
-            throw e;
+            TenantContext.set(context);
+            chain.doFilter(servletRequest, servletResponse);
         } finally {
+            TenantContext.clear();
             MDC.clear();
         }
     }

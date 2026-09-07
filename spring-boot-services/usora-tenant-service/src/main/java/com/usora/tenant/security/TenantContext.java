@@ -70,7 +70,7 @@ public class TenantContext {
 
     public static UUID getCurrentTenantId() {
         TenantContext context = get();
-        return context != null ? context.getCurrentTenantId() : null;
+        return context != null ? context.currentTenantId : null;
     }
 
     public static boolean hasRole(String role) {
