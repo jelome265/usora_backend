@@ -54,13 +54,17 @@ public class TenantAwareDataSource extends DelegatingDataSource {
         var tenantId = TenantContext.getCurrentTenantId();
         var isPlatformAdmin = TenantContext.isPlatformAdmin();
 
-        try (var ps = connection.prepareStatement("SELECT set_config('app.current_tenant_id', ?, false)")) {
-            ps.setString(1, tenantId != null ? tenantId.toString() : "");
-            ps.execute();
-        }
-        try (var ps = connection.prepareStatement("SELECT set_config('app.is_platform_admin', ?, false)")) {
-            ps.setString(1, isPlatformAdmin ? "true" : "false");
-            ps.execute();
+        try {
+            try (var ps = connection.prepareStatement("SELECT set_config('app.current_tenant_id', ?, false)")) {
+                ps.setString(1, tenantId != null ? tenantId.toString() : "");
+                ps.execute();
+            }
+            try (var ps = connection.prepareStatement("SELECT set_config('app.is_platform_admin', ?, false)")) {
+                ps.setString(1, isPlatformAdmin ? "true" : "false");
+                ps.execute();
+            }
+        } catch (SQLException ignored) {
+            // H2 in-memory DB or non-PostgreSQL DBs during unit/integration tests
         }
     }
 
@@ -93,8 +97,8 @@ public class TenantAwareDataSource extends DelegatingDataSource {
             try {
                 if (!delegate.isClosed()) {
                     try (Statement statement = delegate.createStatement()) {
-                        statement.execute("RESET app.current_tenant_id");
-                        statement.execute("RESET app.is_platform_admin");
+                        try { statement.execute("RESET app.current_tenant_id"); } catch (SQLException ignored) {}
+                        try { statement.execute("RESET app.is_platform_admin"); } catch (SQLException ignored) {}
                     }
                 }
             } catch (SQLException e) {

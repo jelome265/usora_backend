@@ -19,6 +19,8 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -76,7 +78,7 @@ class ApiIntegrationTest {
         String json = objectMapper.writeValueAsString(request);
 
         MvcResult result = mockMvc.perform(post("/api/v1/tenants")
-                        .with(jwt())
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isCreated())
@@ -88,7 +90,7 @@ class ApiIntegrationTest {
 
     @Test
     void getTenant_shouldReturn200() throws Exception {
-        mockMvc.perform(get("/api/v1/tenants/{id}", existingTenantId).with(jwt()))
+        mockMvc.perform(get("/api/v1/tenants/{id}", existingTenantId).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Existing Tenant"))
                 .andExpect(jsonPath("$.domain").value("existing.example.com"));
@@ -96,14 +98,14 @@ class ApiIntegrationTest {
 
     @Test
     void getTenant_shouldReturn404() throws Exception {
-        mockMvc.perform(get("/api/v1/tenants/{id}", UUID.randomUUID()).with(jwt()))
+        mockMvc.perform(get("/api/v1/tenants/{id}", UUID.randomUUID()).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"))))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void listTenants_shouldReturn200() throws Exception {
         mockMvc.perform(get("/api/v1/tenants")
-                        .with(jwt())
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")))
                         .param("page", "0")
                         .param("size", "10"))
                 .andExpect(status().isOk())
@@ -125,7 +127,7 @@ class ApiIntegrationTest {
         String json = objectMapper.writeValueAsString(request);
 
         mockMvc.perform(post("/api/v1/tenants")
-                        .with(jwt())
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isConflict())
@@ -135,7 +137,7 @@ class ApiIntegrationTest {
     @Test
     void onboardTenant_shouldReturn400ForMissingFields() throws Exception {
         mockMvc.perform(post("/api/v1/tenants")
-                        .with(jwt())
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
@@ -144,7 +146,7 @@ class ApiIntegrationTest {
 
     @Test
     void getTenantStatus_shouldReturn200() throws Exception {
-        mockMvc.perform(get("/api/v1/tenants/{id}/status", existingTenantId).with(jwt()))
+        mockMvc.perform(get("/api/v1/tenants/{id}/status", existingTenantId).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
     }
