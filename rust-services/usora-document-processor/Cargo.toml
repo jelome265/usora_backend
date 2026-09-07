@@ -53,7 +53,7 @@ jsonwebtoken = "11"
 
 [build-dependencies]
 tonic-build = "0.12"
-prost-build = "0.13"
+prost-build = "0.14"
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["async_tokio"] }
