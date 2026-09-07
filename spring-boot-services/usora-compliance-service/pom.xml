@@ -27,7 +27,7 @@
         <drools.version>10.2.0</drools.version>
         <mapstruct.version>1.6.3</mapstruct.version>
         <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
-        <grpc.version>1.83.1</grpc.version>
+        <grpc.version>1.84.0</grpc.version>
         <protobuf.version>4.28.2</protobuf.version>
         <!-- F-016: jackson.version (was 2.17.2) removed; it was never
              actually referenced anywhere in this POM (no
