@@ -28,7 +28,7 @@
              version pinned to match usora-compliance-service's, the only
              other Java service with a real gRPC server, for consistency
              across services. -->
-        <grpc.version>1.83.1</grpc.version>
+        <grpc.version>1.84.0</grpc.version>
         <protoc-jar-maven-plugin.version>3.11.4</protoc-jar-maven-plugin.version>
         <protobuf-java.version>3.25.5</protobuf-java.version>
         <micrometer.version>1.17.1</micrometer.version>
