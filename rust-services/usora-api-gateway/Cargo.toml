@@ -31,7 +31,7 @@ chrono = { version = "0.4", features = ["serde"] }
 opentelemetry = { version = "0.32", features = ["trace", "metrics"] }
 opentelemetry-otlp = { version = "0.27", features = ["trace", "metrics", "grpc-tonic"] }
 tracing = "0.1"
-tracing-opentelemetry = "0.27"
+tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 prometheus = { version = "0.13", features = ["process"] }
