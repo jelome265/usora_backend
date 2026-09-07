@@ -4106,7 +4106,7 @@ dependencies = [
  "prost 0.13.5",
  "prost-build 0.14.4",
  "prost-types 0.13.5",
- "rand 0.8.8",
+ "rand 0.10.2",
  "rcgen",
  "rdkafka",
  "redis",
