@@ -5352,7 +5352,7 @@ dependencies = [
  "prost 0.14.4",
  "prost-build",
  "prost-types 0.13.5",
- "rand 0.8.8",
+ "rand 0.10.2",
  "rayon",
  "rdkafka",
  "redis",
