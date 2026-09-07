@@ -13,9 +13,18 @@ import java.time.Duration;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.support.NoOpCacheManager;
+
 @Configuration
 @EnableCaching
 public class CacheConfig {
+
+    @Bean
+    @ConditionalOnProperty(name = "spring.cache.type", havingValue = "none")
+    public CacheManager noOpCacheManager() {
+        return new NoOpCacheManager();
+    }
 
     @Bean
     @ConditionalOnProperty(name = "spring.cache.type", havingValue = "redis", matchIfMissing = true)

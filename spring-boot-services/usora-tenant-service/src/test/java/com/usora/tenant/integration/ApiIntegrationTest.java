@@ -12,11 +12,17 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 import static org.hamcrest.Matchers.*;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -39,10 +45,16 @@ class ApiIntegrationTest {
     @Autowired
     private TenantRepository tenantRepository;
 
+    @MockitoBean
+    private KafkaTemplate kafkaTemplate;
+
     private UUID existingTenantId;
 
     @BeforeEach
     void setUp() {
+        when(kafkaTemplate.send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(kafkaTemplate.send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(CompletableFuture.completedFuture(null));
+
         tenantRepository.deleteAll();
 
         TenantEntity tenant = new TenantEntity();
