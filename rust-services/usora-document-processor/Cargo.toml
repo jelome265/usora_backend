@@ -52,7 +52,7 @@ axum = "0.8"
 jsonwebtoken = "11"
 
 [build-dependencies]
-tonic-build = "0.12"
+tonic-build = "0.14"
 prost-build = "0.13"
 
 [dev-dependencies]
