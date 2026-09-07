@@ -27,7 +27,7 @@ rdkafka = { version = "0.39", features = ["cmake-build"] }
 redis = { version = "1.6", features = ["tokio-comp", "connection-manager", "json"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-opentelemetry = "0.27"
+opentelemetry = "0.32"
 opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.27"
 opentelemetry-semantic-conventions = "0.32"
