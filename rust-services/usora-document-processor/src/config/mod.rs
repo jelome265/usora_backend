@@ -53,8 +53,9 @@ impl Config {
                 .unwrap_or_else(|_| "0.0.0.0:50052".to_string()),
             redis_url: std::env::var("REDIS_URL")
                 .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string()),
-            postgres_url: std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/usora".to_string()),
+            postgres_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                "postgres://postgres:postgres@localhost:5432/usora".to_string()
+            }),
             max_concurrent_jobs: std::env::var("MAX_CONCURRENT_JOBS")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -100,7 +101,12 @@ impl Config {
         // analysis and takes tenant_id from the request body — it MUST be
         // authenticated. Refuse to start rather than silently serve that
         // surface unauthenticated. See auth.rs for the full rationale.
-        if self.internal_service_jwt_secret.as_deref().unwrap_or("").is_empty() {
+        if self
+            .internal_service_jwt_secret
+            .as_deref()
+            .unwrap_or("")
+            .is_empty()
+        {
             anyhow::bail!(
                 "INTERNAL_SERVICE_JWT_SECRET must be set — the REST API cannot start \
                  without it, since it would otherwise serve document/biometric analysis \
