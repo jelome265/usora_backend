@@ -35,7 +35,12 @@ pub struct RateLimitLayer {
 }
 
 impl RateLimitLayer {
-    pub fn new(default_rps: u64, burst_size: u64, window_ms: u64, local_fallback_divisor: u64) -> Self {
+    pub fn new(
+        default_rps: u64,
+        burst_size: u64,
+        window_ms: u64,
+        local_fallback_divisor: u64,
+    ) -> Self {
         Self {
             default_rps,
             burst_size,
@@ -165,23 +170,34 @@ where
                         // in the first place (see local_fallback_divisor).
                         rate_limit_degraded_total().inc();
                         local_fallback_check(
-                            &buckets, &bucket_key, default_rps, burst_size, window_ms,
+                            &buckets,
+                            &bucket_key,
+                            default_rps,
+                            burst_size,
+                            window_ms,
                             local_fallback_divisor,
-                        ).await
+                        )
+                        .await
                     }
                 }
             } else {
                 local_fallback_check(
-                    &buckets, &bucket_key, default_rps, burst_size, window_ms,
+                    &buckets,
+                    &bucket_key,
+                    default_rps,
+                    burst_size,
+                    window_ms,
                     local_fallback_divisor,
-                ).await
+                )
+                .await
             };
 
             if !allowed {
                 let resp = (
                     axum::http::StatusCode::TOO_MANY_REQUESTS,
                     [("Retry-After", "1")],
-                ).into_response();
+                )
+                    .into_response();
                 return Ok(resp);
             }
 

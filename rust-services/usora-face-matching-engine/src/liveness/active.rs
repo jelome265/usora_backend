@@ -16,11 +16,16 @@ pub struct ActiveLivenessDetector {
 }
 
 enum ActiveLivenessModel {
-    Onnx(tract_onnx::prelude::SimplePlan<
-        tract_onnx::prelude::TypedFact,
-        Box<dyn tract_onnx::prelude::TypedOp>,
-        tract_onnx::prelude::Graph<tract_onnx::prelude::TypedFact, Box<dyn tract_onnx::prelude::TypedOp>>,
-    >),
+    Onnx(
+        tract_onnx::prelude::SimplePlan<
+            tract_onnx::prelude::TypedFact,
+            Box<dyn tract_onnx::prelude::TypedOp>,
+            tract_onnx::prelude::Graph<
+                tract_onnx::prelude::TypedFact,
+                Box<dyn tract_onnx::prelude::TypedOp>,
+            >,
+        >,
+    ),
     Heuristic,
 }
 
@@ -98,7 +103,11 @@ impl ActiveLivenessDetector {
         }
 
         let mean: f64 = eye_row.iter().map(|&p| p as f64).sum::<f64>() / eye_row.len() as f64;
-        let variance: f64 = eye_row.iter().map(|&p| (p as f64 - mean).powi(2)).sum::<f64>() / eye_row.len() as f64;
+        let variance: f64 = eye_row
+            .iter()
+            .map(|&p| (p as f64 - mean).powi(2))
+            .sum::<f64>()
+            / eye_row.len() as f64;
 
         let openness_score = if variance < 50.0 && eye_height < 5.0 {
             0.0
@@ -141,7 +150,10 @@ impl ActiveLivenessDetector {
         let mouth_row: Vec<u8> = (0..w).map(|x| gray.get_pixel(x, mouth_y_rel)[0]).collect();
         let mean: f64 = mouth_row.iter().map(|&p| p as f64).sum::<f64>() / mouth_row.len() as f64;
 
-        let dark_count = mouth_row.iter().filter(|&&p| (p as f64) < mean - 20.0).count();
+        let dark_count = mouth_row
+            .iter()
+            .filter(|&&p| (p as f64) < mean - 20.0)
+            .count();
 
         let smile_score = if normalized_mouth_width > 0.5 && dark_count > mouth_row.len() / 4 {
             1.0
@@ -199,7 +211,10 @@ impl ActiveLivenessDetector {
         model: &tract_onnx::prelude::SimplePlan<
             tract_onnx::prelude::TypedFact,
             Box<dyn tract_onnx::prelude::TypedOp>,
-            tract_onnx::prelude::Graph<tract_onnx::prelude::TypedFact, Box<dyn tract_onnx::prelude::TypedOp>>,
+            tract_onnx::prelude::Graph<
+                tract_onnx::prelude::TypedFact,
+                Box<dyn tract_onnx::prelude::TypedOp>,
+            >,
         >,
         image: &DynamicImage,
         face: &DetectedFace,
@@ -218,10 +233,7 @@ impl ActiveLivenessDetector {
             }
         }
 
-        let input = tract_onnx::prelude::tensor4(
-            tensor.as_slice().unwrap(),
-            &[1, 3, 112, 112],
-        )?;
+        let input = tract_onnx::prelude::tensor4(tensor.as_slice().unwrap(), &[1, 3, 112, 112])?;
 
         let result = model.run(tvec!(input))?;
         let output = result[0].to_array_view::<f32>()?;
@@ -248,9 +260,7 @@ impl LivenessDetector for ActiveLivenessDetector {
         };
 
         let model_score = match &self.model {
-            Some(ActiveLivenessModel::Onnx(m)) => {
-                self.run_onnx_inference(m, image, face)?
-            }
+            Some(ActiveLivenessModel::Onnx(m)) => self.run_onnx_inference(m, image, face)?,
             _ => action_score,
         };
 

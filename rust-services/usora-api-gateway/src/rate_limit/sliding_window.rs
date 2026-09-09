@@ -13,7 +13,12 @@ impl SlidingWindowRateLimiter {
         }
     }
 
-    pub async fn allow_request(&self, key: &str, max_requests: u64, window_ms: u64) -> Result<bool, redis::RedisError> {
+    pub async fn allow_request(
+        &self,
+        key: &str,
+        max_requests: u64,
+        window_ms: u64,
+    ) -> Result<bool, redis::RedisError> {
         let redis_key = format!("{}:sw:{}", self.prefix, key);
         let now = chrono::Utc::now().timestamp_millis() as u64;
         let window_start = now.saturating_sub(window_ms);
