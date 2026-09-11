@@ -1,4 +1,4 @@
-use base64::{Engine, engine::general_purpose};
+use base64::{engine::general_purpose, Engine};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
