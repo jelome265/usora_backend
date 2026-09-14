@@ -229,7 +229,6 @@ jobs:
             --output=semgrep-results.sarif \
             --error \
             --timeout=60 \
-            --metrics=off \
             rust-services/ spring-boot-services/ shared/
 
       - name: Upload Semgrep SARIF
@@ -279,6 +278,8 @@ jobs:
         # leak (gitleaks-action exits nonzero on any leak found) could
         # never fail this job -- it ran purely as an evidence collector.
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run TruffleHog
         # F-015: this was pinned to `@main` -- not even a version tag, a
