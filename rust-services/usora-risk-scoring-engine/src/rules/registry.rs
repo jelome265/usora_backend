@@ -50,11 +50,18 @@ impl RuleRegistry {
         Ok(())
     }
 
-    pub async fn update_rule(&self, rule_id: &str, updated_rule: RuleDefinition) -> Result<(), RuleError> {
+    pub async fn update_rule(
+        &self,
+        rule_id: &str,
+        updated_rule: RuleDefinition,
+    ) -> Result<(), RuleError> {
         DslRule::validate(&updated_rule.dsl_script)?;
 
         let mut rules = self.rules.write().await;
-        let tenant_key = updated_rule.tenant_id.clone().unwrap_or_else(|| "global".into());
+        let tenant_key = updated_rule
+            .tenant_id
+            .clone()
+            .unwrap_or_else(|| "global".into());
 
         if let Some(tenant_rules) = rules.get_mut(&tenant_key) {
             if let Some(existing) = tenant_rules.iter_mut().find(|r| r.rule_id == rule_id) {
@@ -67,7 +74,11 @@ impl RuleRegistry {
         Err(RuleError::NotFound(rule_id.to_string()))
     }
 
-    pub async fn delete_rule(&self, rule_id: &str, tenant_id: Option<&str>) -> Result<(), RuleError> {
+    pub async fn delete_rule(
+        &self,
+        rule_id: &str,
+        tenant_id: Option<&str>,
+    ) -> Result<(), RuleError> {
         let mut rules = self.rules.write().await;
         let tenant_key = tenant_id.unwrap_or("global");
 
@@ -94,10 +105,7 @@ impl RuleRegistry {
 
     pub async fn get_rules_for_tenant(&self, tenant_id: &str) -> Vec<RuleDefinition> {
         let rules = self.rules.read().await;
-        let mut result = rules
-            .get("global")
-            .cloned()
-            .unwrap_or_default();
+        let mut result = rules.get("global").cloned().unwrap_or_default();
 
         if let Some(tenant_specific) = rules.get(tenant_id) {
             result.extend(tenant_specific.iter().cloned());

@@ -1,20 +1,16 @@
 use crate::generated::usora::document::v1::{
-    document_analysis_service_server::DocumentAnalysisService,
-    DocumentAnalysisRequest, DocumentAnalysisResponse,
-    ForgeryDetectionRequest, ForgeryDetectionResponse,
-    MetadataExtractionRequest, MetadataExtractionResponse,
-    CrossReferenceRequest, CrossReferenceResponse,
-    SecurityFeaturesRequest, SecurityFeaturesResponse,
-    TemplateRequest, TemplateResponse,
-    ExtractedData,
-    FieldConsistency, FeatureCheckResult, TemplateLayout, TemplateField, Position,
+    document_analysis_service_server::DocumentAnalysisService, CrossReferenceRequest,
+    CrossReferenceResponse, DocumentAnalysisRequest, DocumentAnalysisResponse, ExtractedData,
+    FeatureCheckResult, FieldConsistency, ForgeryDetectionRequest, ForgeryDetectionResponse,
+    MetadataExtractionRequest, MetadataExtractionResponse, Position, SecurityFeaturesRequest,
+    SecurityFeaturesResponse, TemplateField, TemplateLayout, TemplateRequest, TemplateResponse,
 };
 use crate::models;
 use crate::Config;
+use prost_types::{Struct, Timestamp, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tonic::{async_trait, Request, Response, Status};
-use prost_types::{Timestamp, Struct, Value};
 
 pub struct DocumentAnalysisServiceImpl {
     config: Arc<Config>,
@@ -50,13 +46,19 @@ impl DocumentAnalysisServiceImpl {
     ) -> SecurityFeaturesResponse {
         let (individual_checks, heuristic_only_checks) = validation
             .as_ref()
-            .map(|v| (v.authenticity.individual_checks.clone(), v.authenticity.heuristic_only_checks.clone()))
+            .map(|v| {
+                (
+                    v.authenticity.individual_checks.clone(),
+                    v.authenticity.heuristic_only_checks.clone(),
+                )
+            })
             .unwrap_or_default();
 
         let make_feature_check = |name: &str,
-                                   heuristic_field: &str,
-                                   heuristic_details: &str,
-                                   passed_threshold: f32| -> Option<FeatureCheckResult> {
+                                  heuristic_field: &str,
+                                  heuristic_details: &str,
+                                  passed_threshold: f32|
+         -> Option<FeatureCheckResult> {
             individual_checks.get(heuristic_field).map(|&confidence| {
                 let is_heuristic = heuristic_only_checks.iter().any(|f| f == heuristic_field);
                 let details = if is_heuristic {
@@ -78,19 +80,45 @@ impl DocumentAnalysisServiceImpl {
         };
 
         let uv_check = make_feature_check(
-            "uv_fluorescence", "uv_fluorescence_heuristic", "UV fluorescence heuristic result", 0.3);
+            "uv_fluorescence",
+            "uv_fluorescence_heuristic",
+            "UV fluorescence heuristic result",
+            0.3,
+        );
         let ir_check = make_feature_check(
-            "ir_absorption", "ir_absorption_heuristic", "IR absorption heuristic result", 0.3);
+            "ir_absorption",
+            "ir_absorption_heuristic",
+            "IR absorption heuristic result",
+            0.3,
+        );
         let hologram_check = make_feature_check(
-            "hologram", "hologram_heuristic", "Hologram pixel-variance heuristic result", 0.3);
+            "hologram",
+            "hologram_heuristic",
+            "Hologram pixel-variance heuristic result",
+            0.3,
+        );
         let microprint_check = make_feature_check(
-            "microprint", "microprint", "Microprint detail analysis result", 0.5);
+            "microprint",
+            "microprint",
+            "Microprint detail analysis result",
+            0.5,
+        );
         let watermark_check = make_feature_check(
-            "watermark", "watermark", "Watermark pattern analysis result", 0.5);
+            "watermark",
+            "watermark",
+            "Watermark pattern analysis result",
+            0.5,
+        );
 
-        let all_features_present = [&uv_check, &ir_check, &hologram_check, &microprint_check, &watermark_check]
-            .iter()
-            .all(|c| c.as_ref().is_some_and(|c| c.present));
+        let all_features_present = [
+            &uv_check,
+            &ir_check,
+            &hologram_check,
+            &microprint_check,
+            &watermark_check,
+        ]
+        .iter()
+        .all(|c| c.as_ref().is_some_and(|c| c.present));
         let overall_security_score = validation
             .as_ref()
             .map(|v| v.authenticity.overall_score as f64)
@@ -105,8 +133,11 @@ impl DocumentAnalysisServiceImpl {
             hologram_check,
             microprint_check,
             watermark_check,
-            warnings: heuristic_only_checks.iter()
-                .map(|f| format!("{f} is a visible-light heuristic only, not genuine forensic evidence"))
+            warnings: heuristic_only_checks
+                .iter()
+                .map(|f| {
+                    format!("{f} is a visible-light heuristic only, not genuine forensic evidence")
+                })
                 .collect(),
         }
     }
@@ -121,7 +152,10 @@ impl DocumentAnalysisService for DocumentAnalysisServiceImpl {
         let start = std::time::Instant::now();
         let inner = req.into_inner();
 
-        let result = self.processor.process_document(&inner.document_image).await
+        let result = self
+            .processor
+            .process_document(&inner.document_image)
+            .await
             .map_err(|e| Status::internal(format!("Processing failed: {}", e)))?;
 
         let extracted = ExtractedData {
@@ -138,8 +172,15 @@ impl DocumentAnalysisService for DocumentAnalysisServiceImpl {
             mrz_line: result.data.mrz_line.unwrap_or_default(),
             encoded_face: result.data.encoded_face.unwrap_or_default(),
             raw_fields: result.data.raw_fields,
-            field_confidences: result.data.fields.iter().map(|f| (f.name.clone(), f.confidence as f64)).collect(),
-            metadata: Some(Struct { fields: HashMap::new() }),
+            field_confidences: result
+                .data
+                .fields
+                .iter()
+                .map(|f| (f.name.clone(), f.confidence as f64))
+                .collect(),
+            metadata: Some(Struct {
+                fields: HashMap::new(),
+            }),
         };
 
         let forgery = ForgeryDetectionResponse {
@@ -184,7 +225,9 @@ impl DocumentAnalysisService for DocumentAnalysisServiceImpl {
         // field here regardless of what AuthenticityCheckEngine actually
         // found.
         let security = Self::build_security_features_response(
-            result.document_id.to_string(), &result.validation);
+            result.document_id.to_string(),
+            &result.validation,
+        );
 
         let resp = DocumentAnalysisResponse {
             document_id: result.document_id.to_string(),
@@ -194,8 +237,16 @@ impl DocumentAnalysisService for DocumentAnalysisServiceImpl {
             metadata_result: Some(metadata_result),
             cross_reference_result: Some(cross_ref),
             security_features_result: Some(security),
-            overall_authenticity_score: result.validation.as_ref().map(|v| v.authenticity.overall_score as f64).unwrap_or(0.0),
-            warnings: result.validation.as_ref().map(|v| v.warnings.clone()).unwrap_or_default(),
+            overall_authenticity_score: result
+                .validation
+                .as_ref()
+                .map(|v| v.authenticity.overall_score as f64)
+                .unwrap_or(0.0),
+            warnings: result
+                .validation
+                .as_ref()
+                .map(|v| v.warnings.clone())
+                .unwrap_or_default(),
             processing_time_ms: result.processing_time_ms,
         };
 
@@ -236,7 +287,9 @@ impl DocumentAnalysisService for DocumentAnalysisServiceImpl {
         let inner = req.into_inner();
         let exif = HashMap::new();
         let now = std::time::SystemTime::now();
-        let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+        let duration = now
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
 
         Ok(Response::new(MetadataExtractionResponse {
             document_id: inner.document_id,
@@ -326,11 +379,16 @@ impl DocumentAnalysisService for DocumentAnalysisServiceImpl {
         // response from real (if heuristic-only, honestly labeled as
         // such) per-check results via the shared
         // build_security_features_response helper.
-        let result = self.processor.process_document(&inner.document_image).await
+        let result = self
+            .processor
+            .process_document(&inner.document_image)
+            .await
             .map_err(|e| Status::internal(format!("Processing failed: {}", e)))?;
 
         Ok(Response::new(Self::build_security_features_response(
-            inner.document_id, &result.validation)))
+            inner.document_id,
+            &result.validation,
+        )))
     }
 
     async fn get_document_template(
@@ -340,7 +398,10 @@ impl DocumentAnalysisService for DocumentAnalysisServiceImpl {
         let inner = req.into_inner();
 
         Ok(Response::new(TemplateResponse {
-            template_id: format!("{}/{}/{}", inner.tenant_id, inner.country_code, inner.document_type),
+            template_id: format!(
+                "{}/{}/{}",
+                inner.tenant_id, inner.country_code, inner.document_type
+            ),
             country_code: inner.country_code,
             document_type: inner.document_type,
             layout: Some(TemplateLayout {
@@ -355,9 +416,42 @@ impl DocumentAnalysisService for DocumentAnalysisServiceImpl {
                 ],
             }),
             fields: vec![
-                TemplateField { name: "full_name".to_string(), type_: "string".to_string(), expected_format: "Latin".to_string(), mandatory: true, position: Some(Position { x_rel: 0.2, y_rel: 0.3, width_rel: 0.6, height_rel: 0.08 }) },
-                TemplateField { name: "date_of_birth".to_string(), type_: "date".to_string(), expected_format: "DD/MM/YYYY".to_string(), mandatory: true, position: Some(Position { x_rel: 0.2, y_rel: 0.4, width_rel: 0.3, height_rel: 0.06 }) },
-                TemplateField { name: "document_number".to_string(), type_: "string".to_string(), expected_format: "alphanumeric".to_string(), mandatory: true, position: Some(Position { x_rel: 0.2, y_rel: 0.5, width_rel: 0.4, height_rel: 0.06 }) },
+                TemplateField {
+                    name: "full_name".to_string(),
+                    type_: "string".to_string(),
+                    expected_format: "Latin".to_string(),
+                    mandatory: true,
+                    position: Some(Position {
+                        x_rel: 0.2,
+                        y_rel: 0.3,
+                        width_rel: 0.6,
+                        height_rel: 0.08,
+                    }),
+                },
+                TemplateField {
+                    name: "date_of_birth".to_string(),
+                    type_: "date".to_string(),
+                    expected_format: "DD/MM/YYYY".to_string(),
+                    mandatory: true,
+                    position: Some(Position {
+                        x_rel: 0.2,
+                        y_rel: 0.4,
+                        width_rel: 0.3,
+                        height_rel: 0.06,
+                    }),
+                },
+                TemplateField {
+                    name: "document_number".to_string(),
+                    type_: "string".to_string(),
+                    expected_format: "alphanumeric".to_string(),
+                    mandatory: true,
+                    position: Some(Position {
+                        x_rel: 0.2,
+                        y_rel: 0.5,
+                        width_rel: 0.4,
+                        height_rel: 0.06,
+                    }),
+                },
             ],
             version: "1.0".to_string(),
             valid_from: Some(std::time::SystemTime::now().into()),
@@ -368,7 +462,11 @@ impl DocumentAnalysisService for DocumentAnalysisServiceImpl {
 }
 
 fn extract_field(fields: &[models::ExtractedField], name: &str) -> String {
-    fields.iter().find(|f| f.name == name).map(|f| f.value.clone()).unwrap_or_default()
+    fields
+        .iter()
+        .find(|f| f.name == name)
+        .map(|f| f.value.clone())
+        .unwrap_or_default()
 }
 
 impl std::fmt::Debug for DocumentAnalysisServiceImpl {
