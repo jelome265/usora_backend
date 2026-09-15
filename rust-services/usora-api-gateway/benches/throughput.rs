@@ -54,11 +54,7 @@ fn bench_jwt_validation(c: &mut Criterion) {
     });
 
     c.bench_function("jwt_decode", |b| {
-        b.iter(|| {
-            black_box(
-                decode::<BenchClaims>(&token, &decoding_key, &validation).unwrap(),
-            )
-        });
+        b.iter(|| black_box(decode::<BenchClaims>(&token, &decoding_key, &validation).unwrap()));
     });
 }
 
