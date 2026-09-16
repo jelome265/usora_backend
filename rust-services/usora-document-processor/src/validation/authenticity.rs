@@ -31,14 +31,18 @@ impl AuthenticityCheckEngine {
             return (false, 0.0);
         }
 
-        let mean: f32 = color_variations.iter().map(|&v| v as f32).sum::<f32>() / color_variations.len() as f32;
-        let variance: f32 = color_variations.iter()
+        let mean: f32 =
+            color_variations.iter().map(|&v| v as f32).sum::<f32>() / color_variations.len() as f32;
+        let variance: f32 = color_variations
+            .iter()
             .map(|&v| (v as f32 - mean).powi(2))
-            .sum::<f32>() / color_variations.len() as f32;
+            .sum::<f32>()
+            / color_variations.len() as f32;
         let std_dev = variance.sqrt();
 
         let region_count = color_variations.len();
-        let high_freq = color_variations.iter()
+        let high_freq = color_variations
+            .iter()
             .filter(|&&v| (v as f32 - mean).abs() > std_dev)
             .count();
 
@@ -102,7 +106,11 @@ impl AuthenticityCheckEngine {
 
         let ir_pattern_score = (dark_ratio * 2.0 + mid_ratio * 0.5) / 2.5;
         let detected = ir_pattern_score > 0.3;
-        let confidence = if detected { ir_pattern_score.min(0.9) } else { (1.0 - ir_pattern_score).max(0.2) };
+        let confidence = if detected {
+            ir_pattern_score.min(0.9)
+        } else {
+            (1.0 - ir_pattern_score).max(0.2)
+        };
 
         (detected, confidence)
     }
