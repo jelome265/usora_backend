@@ -25,9 +25,18 @@ pub struct IdentityVerificationServiceImpl {
 
 #[async_trait::async_trait]
 pub trait DocumentProcessingClient: Send + Sync {
-    async fn verify_document(&self, req: DocumentVerificationRequest) -> Result<DocumentVerificationResponse, String>;
-    async fn extract_document_data(&self, req: DocumentExtractionRequest) -> Result<DocumentExtractionResponse, String>;
-    async fn verify_authenticity(&self, req: AuthenticityRequest) -> Result<AuthenticityResponse, String>;
+    async fn verify_document(
+        &self,
+        req: DocumentVerificationRequest,
+    ) -> Result<DocumentVerificationResponse, String>;
+    async fn extract_document_data(
+        &self,
+        req: DocumentExtractionRequest,
+    ) -> Result<DocumentExtractionResponse, String>;
+    async fn verify_authenticity(
+        &self,
+        req: AuthenticityRequest,
+    ) -> Result<AuthenticityResponse, String>;
 }
 
 pub struct GrpcDocumentClient {
@@ -36,13 +45,22 @@ pub struct GrpcDocumentClient {
 
 #[async_trait::async_trait]
 impl DocumentProcessingClient for GrpcDocumentClient {
-    async fn verify_document(&self, req: DocumentVerificationRequest) -> Result<DocumentVerificationResponse, String> {
+    async fn verify_document(
+        &self,
+        req: DocumentVerificationRequest,
+    ) -> Result<DocumentVerificationResponse, String> {
         Err("Document verification requires document processor service".to_string())
     }
-    async fn extract_document_data(&self, req: DocumentExtractionRequest) -> Result<DocumentExtractionResponse, String> {
+    async fn extract_document_data(
+        &self,
+        req: DocumentExtractionRequest,
+    ) -> Result<DocumentExtractionResponse, String> {
         Err("Document data extraction requires document processor service".to_string())
     }
-    async fn verify_authenticity(&self, req: AuthenticityRequest) -> Result<AuthenticityResponse, String> {
+    async fn verify_authenticity(
+        &self,
+        req: AuthenticityRequest,
+    ) -> Result<AuthenticityResponse, String> {
         Err("Document authenticity verification requires document processor service".to_string())
     }
 }
@@ -82,7 +100,8 @@ impl IdentityVerificationService for IdentityVerificationServiceImpl {
             self.engine.default_threshold()
         };
 
-        let result = self.engine
+        let result = self
+            .engine
             .verify_faces(&source_image, &target_image, threshold)
             .await
             .map_err(|e| Status::internal(format!("Verification failed: {}", e)))?;
@@ -125,7 +144,8 @@ impl IdentityVerificationService for IdentityVerificationServiceImpl {
         let image = utils::load_image_from_bytes(&req.image)
             .map_err(|e| Status::invalid_argument(format!("Invalid image: {}", e)))?;
 
-        let result = self.engine
+        let result = self
+            .engine
             .check_liveness(&image, &req.challenge_type, req.challenge_data.as_deref())
             .await
             .map_err(|e| Status::internal(format!("Liveness check failed: {}", e)))?;
@@ -164,29 +184,38 @@ impl IdentityVerificationService for IdentityVerificationServiceImpl {
         let probe_image = utils::load_image_from_bytes(&req.probe_image)
             .map_err(|e| Status::invalid_argument(format!("Invalid probe image: {}", e)))?;
 
-        let top_k = if req.top_k > 0 { req.top_k as usize } else { 10 };
+        let top_k = if req.top_k > 0 {
+            req.top_k as usize
+        } else {
+            10
+        };
 
-        let result = self.engine
+        let result = self
+            .engine
             .identify_face(&probe_image, top_k, &req.tenant_id)
             .await
             .map_err(|e| Status::internal(format!("Biometric match failed: {}", e)))?;
 
         let processing_time = start.elapsed().as_millis() as i64;
 
-        let matches: Vec<MatchResult> = result.iter().enumerate().map(|(i, r)| {
-            MatchResult {
+        let matches: Vec<MatchResult> = result
+            .iter()
+            .enumerate()
+            .map(|(i, r)| MatchResult {
                 user_id: r.user_id.map(|u| u.to_string()).unwrap_or_default(),
                 similarity_score: r.similarity_score,
                 match_confidence: r.match_confidence,
                 probe_detection: None,
                 probe_quality: None,
                 rank: (i + 1) as i32,
-            }
-        }).collect();
+            })
+            .collect();
 
         let response = BiometricMatchResponse {
             request_id: req.request_id.clone(),
-            match_found: matches.iter().any(|m| m.similarity_score >= self.engine.default_threshold()),
+            match_found: matches
+                .iter()
+                .any(|m| m.similarity_score >= self.engine.default_threshold()),
             matches,
             total_gallery_size: 0,
             processing_time_ms: processing_time,
@@ -216,11 +245,15 @@ impl IdentityVerificationService for IdentityVerificationServiceImpl {
         if let Some(ref client) = self.document_client {
             match client.verify_document(req).await {
                 Ok(resp) => Ok(Response::new(resp)),
-                Err(e) => Err(Status::internal(format!("Document verification failed: {e}"))),
+                Err(e) => Err(Status::internal(format!(
+                    "Document verification failed: {e}"
+                ))),
             }
         } else {
             warn!("No document processor client configured");
-            Err(Status::unimplemented("Document verification not available - no document processor configured"))
+            Err(Status::unimplemented(
+                "Document verification not available - no document processor configured",
+            ))
         }
     }
 
@@ -241,7 +274,9 @@ impl IdentityVerificationService for IdentityVerificationServiceImpl {
             }
         } else {
             warn!("No document processor client configured");
-            Err(Status::unimplemented("Document extraction not available - no document processor configured"))
+            Err(Status::unimplemented(
+                "Document extraction not available - no document processor configured",
+            ))
         }
     }
 
@@ -258,11 +293,15 @@ impl IdentityVerificationService for IdentityVerificationServiceImpl {
         if let Some(ref client) = self.document_client {
             match client.verify_authenticity(req).await {
                 Ok(resp) => Ok(Response::new(resp)),
-                Err(e) => Err(Status::internal(format!("Document authenticity check failed: {e}"))),
+                Err(e) => Err(Status::internal(format!(
+                    "Document authenticity check failed: {e}"
+                ))),
             }
         } else {
             warn!("No document processor client configured");
-            Err(Status::unimplemented("Document authenticity check not available - no document processor configured"))
+            Err(Status::unimplemented(
+                "Document authenticity check not available - no document processor configured",
+            ))
         }
     }
 }
