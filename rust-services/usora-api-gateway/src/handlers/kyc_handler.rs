@@ -1,12 +1,12 @@
-use axum::extract::{Multipart, State};
-use axum::http::StatusCode;
-use axum::Json;
 use std::sync::Arc;
+use axum::extract::{State, Multipart};
+use axum::Json;
+use axum::http::StatusCode;
 
+use crate::AppState;
 use crate::models::*;
 use crate::proto;
 use crate::utils;
-use crate::AppState;
 
 fn format_verification_status(status: i32) -> String {
     proto::identity::VerificationStatus::try_from(status)
@@ -122,7 +122,10 @@ pub async fn submit_biometric(
     if face_image.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::error("face_image is required", request_id)),
+            Json(ApiResponse::error(
+                "face_image is required",
+                request_id,
+            )),
         ));
     }
 

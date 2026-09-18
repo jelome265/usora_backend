@@ -1,10 +1,10 @@
-pub mod jwks_client;
 pub mod jwt;
+pub mod jwks_client;
 pub mod mtls;
 pub mod oauth;
 
-use serde::{Deserialize, Serialize};
 use std::fmt;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthenticatedUser {
