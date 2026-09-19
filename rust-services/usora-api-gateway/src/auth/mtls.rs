@@ -11,7 +11,8 @@ pub struct MtlsValidator {
 impl MtlsValidator {
     pub fn new(ca_cert_path: &str) -> anyhow::Result<Self> {
         let mut reader = std::io::BufReader::new(std::fs::File::open(ca_cert_path)?);
-        let ca_certs = rustls_pemfile::certs(&mut reader).collect::<Result<Vec<_>, _>>()?;
+        let ca_certs = rustls_pemfile::certs(&mut reader)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self { ca_certs })
     }
