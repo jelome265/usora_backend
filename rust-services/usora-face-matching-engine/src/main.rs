@@ -46,8 +46,12 @@ async fn main() -> Result<()> {
     )?);
 
     let quality_checker = Arc::new(QualityChecker::new());
-    let active_liveness = Arc::new(ActiveLivenessDetector::new(config.models.liveness_model_path.as_deref())?);
-    let passive_liveness = Arc::new(PassiveLivenessDetector::new(config.models.liveness_model_path.as_deref())?);
+    let active_liveness = Arc::new(ActiveLivenessDetector::new(
+        config.models.liveness_model_path.as_deref(),
+    )?);
+    let passive_liveness = Arc::new(PassiveLivenessDetector::new(
+        config.models.liveness_model_path.as_deref(),
+    )?);
     let cosine_matcher = Arc::new(CosineMatcher::new(config.matching.one_to_one_threshold));
 
     let faiss_matcher = Arc::new(FaissMatcher::new(
@@ -70,9 +74,8 @@ async fn main() -> Result<()> {
     let grpc_config = config.grpc.clone();
     let grpc_engine = engine.clone();
 
-    let grpc_handle = tokio::spawn(async move {
-        start_grpc_server(grpc_config, grpc_engine).await
-    });
+    let grpc_handle =
+        tokio::spawn(async move { start_grpc_server(grpc_config, grpc_engine).await });
 
     let kafka_config = config.kafka.clone();
     let processing_config = config.processing.clone();
@@ -83,9 +86,8 @@ async fn main() -> Result<()> {
     });
 
     let metrics_config = config.telemetry.clone();
-    let metrics_handle = tokio::spawn(async move {
-        start_metrics_server(metrics_config.metrics_port).await
-    });
+    let metrics_handle =
+        tokio::spawn(async move { start_metrics_server(metrics_config.metrics_port).await });
 
     tokio::select! {
         r = grpc_handle => {
@@ -118,14 +120,12 @@ fn init_telemetry(config: &Config) -> Result<()> {
                         .tonic()
                         .with_endpoint(endpoint),
                 )
-                .with_trace_config(
-                    opentelemetry::sdk::trace::config().with_resource(
-                        opentelemetry::sdk::Resource::new(vec![
-                            KeyValue::new("service.name", config.telemetry.service_name.clone()),
-                            KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
-                        ]),
-                    ),
-                )
+                .with_trace_config(opentelemetry::sdk::trace::config().with_resource(
+                    opentelemetry::sdk::Resource::new(vec![
+                        KeyValue::new("service.name", config.telemetry.service_name.clone()),
+                        KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
+                    ]),
+                ))
                 .install_batch(opentelemetry::runtime::Tokio)?;
 
             let tracer = provider.get_tracer(config.telemetry.service_name.clone());
@@ -178,20 +178,22 @@ async fn start_grpc_server(
         .initial_connection_window_size(Some(config.max_message_size as u32))
         .add_service(health_service)
         .add_service(
-            proto::identity_verification_service_server::IdentityVerificationServiceServer::new(service)
-                // F-025: config.max_message_size was already being used
-                // for HTTP/2 flow-control window sizing above, but that
-                // controls buffering/throughput, NOT the actual maximum
-                // decoded message size tonic will accept -- that's a
-                // separate setting (max_decoding_message_size/
-                // max_encoding_message_size) that defaults to 4MB
-                // regardless of window size unless set explicitly, which
-                // this service never did. A face image submitted for
-                // matching could easily exceed 4MB; this was silently
-                // capping below what config.max_message_size already
-                // documented as the intended limit.
-                .max_decoding_message_size(config.max_message_size)
-                .max_encoding_message_size(config.max_message_size)
+            proto::identity_verification_service_server::IdentityVerificationServiceServer::new(
+                service,
+            )
+            // F-025: config.max_message_size was already being used
+            // for HTTP/2 flow-control window sizing above, but that
+            // controls buffering/throughput, NOT the actual maximum
+            // decoded message size tonic will accept -- that's a
+            // separate setting (max_decoding_message_size/
+            // max_encoding_message_size) that defaults to 4MB
+            // regardless of window size unless set explicitly, which
+            // this service never did. A face image submitted for
+            // matching could easily exceed 4MB; this was silently
+            // capping below what config.max_message_size already
+            // documented as the intended limit.
+            .max_decoding_message_size(config.max_message_size)
+            .max_encoding_message_size(config.max_message_size),
         )
         .serve_with_shutdown(addr, async {
             tokio::signal::ctrl_c().await.ok();
@@ -226,7 +228,10 @@ async fn start_kafka_consumer(
         // the identical pattern across the Rust fleet.
         .set("enable.auto.offset.store", "false")
         .set("auto.offset.reset", "earliest")
-        .set("max.poll.interval.ms", &config.max_poll_interval_ms.to_string())
+        .set(
+            "max.poll.interval.ms",
+            &config.max_poll_interval_ms.to_string(),
+        )
         .set("session.timeout.ms", &config.session_timeout_ms.to_string())
         .create()?;
 
@@ -253,7 +258,8 @@ async fn start_kafka_consumer(
                 let results_topic = config.results_topic.clone();
                 let audit_topic = config.audit_topic.clone();
                 let retry_max_attempts = processing.retry_max_attempts;
-                let retry_base_delay = std::time::Duration::from_millis(processing.retry_base_delay_ms);
+                let retry_base_delay =
+                    std::time::Duration::from_millis(processing.retry_base_delay_ms);
 
                 // Extract everything owned BEFORE spawning — `msg` is a
                 // BorrowedMessage tied to the consumer's lifetime and
@@ -270,7 +276,8 @@ async fn start_kafka_consumer(
                         // No payload to process — nothing to retry or
                         // DLQ; just let this offset commit so an empty
                         // message doesn't block the partition forever.
-                        if let Err(e) = consumer.store_offset(&msg_topic, msg_partition, msg_offset) {
+                        if let Err(e) = consumer.store_offset(&msg_topic, msg_partition, msg_offset)
+                        {
                             error!(error = %e, "failed to store offset for empty-payload message");
                         }
                         return;
@@ -287,7 +294,11 @@ async fn start_kafka_consumer(
                                     break None;
                                 }
                                 attempt += 1;
-                                warn!(attempt, max_attempts = retry_max_attempts, "face matching task failed, retrying after backoff");
+                                warn!(
+                                    attempt,
+                                    max_attempts = retry_max_attempts,
+                                    "face matching task failed, retrying after backoff"
+                                );
                                 tokio::time::sleep(retry_base_delay * attempt).await;
                             }
                         }
@@ -298,7 +309,10 @@ async fn start_kafka_consumer(
                             let record = FutureRecord::to(&results_topic)
                                 .payload(&result)
                                 .key(msg_key.as_deref());
-                            if let Err((e, _)) = producer.send(record, tokio::time::Duration::from_secs(5)).await {
+                            if let Err((e, _)) = producer
+                                .send(record, tokio::time::Duration::from_secs(5))
+                                .await
+                            {
                                 error!(error = %e, "Failed to publish result");
                             }
                         }
@@ -316,7 +330,10 @@ async fn start_kafka_consumer(
                             let record = FutureRecord::to(&audit_topic)
                                 .payload(&error_payload.to_string())
                                 .key(msg_key.as_deref());
-                            if let Err((send_err, _)) = producer.send(record, tokio::time::Duration::from_secs(5)).await {
+                            if let Err((send_err, _)) = producer
+                                .send(record, tokio::time::Duration::from_secs(5))
+                                .await
+                            {
                                 // Could not even durably record the
                                 // failure — leave the offset unstored so
                                 // this message is redelivered rather than
@@ -349,20 +366,32 @@ async fn process_kafka_message(payload: &[u8], engine: &FaceMatchingEngine) -> R
 
     let result = match task_type {
         "verify_face" => {
-            let source_b64 = task["payload"]["source_image"].as_str().ok_or_else(|| anyhow::anyhow!("Missing source_image"))?;
-            let target_b64 = task["payload"]["target_image"].as_str().ok_or_else(|| anyhow::anyhow!("Missing target_image"))?;
-            let threshold = task["payload"]["threshold"].as_f64().unwrap_or(engine.default_threshold());
+            let source_b64 = task["payload"]["source_image"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing source_image"))?;
+            let target_b64 = task["payload"]["target_image"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing target_image"))?;
+            let threshold = task["payload"]["threshold"]
+                .as_f64()
+                .unwrap_or(engine.default_threshold());
 
             let source_bytes = usora_face_matching_engine::utils::decode_image_base64(source_b64)?;
             let target_bytes = usora_face_matching_engine::utils::decode_image_base64(target_b64)?;
-            let source_img = usora_face_matching_engine::utils::load_image_from_bytes(&source_bytes)?;
-            let target_img = usora_face_matching_engine::utils::load_image_from_bytes(&target_bytes)?;
+            let source_img =
+                usora_face_matching_engine::utils::load_image_from_bytes(&source_bytes)?;
+            let target_img =
+                usora_face_matching_engine::utils::load_image_from_bytes(&target_bytes)?;
 
-            let verify_result = engine.verify_faces(&source_img, &target_img, threshold).await?;
+            let verify_result = engine
+                .verify_faces(&source_img, &target_img, threshold)
+                .await?;
             serde_json::to_value(&verify_result)?
         }
         "identify_face" => {
-            let probe_b64 = task["payload"]["probe_image"].as_str().ok_or_else(|| anyhow::anyhow!("Missing probe_image"))?;
+            let probe_b64 = task["payload"]["probe_image"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing probe_image"))?;
             let top_k = task["payload"]["top_k"].as_u64().unwrap_or(10) as usize;
             // SECURITY: must come from the task itself, never defaulted —
             // silently falling back to a placeholder tenant here would
@@ -379,19 +408,29 @@ async fn process_kafka_message(payload: &[u8], engine: &FaceMatchingEngine) -> R
             serde_json::to_value(&identify_result)?
         }
         "liveness_check" => {
-            let image_b64 = task["payload"]["image"].as_str().ok_or_else(|| anyhow::anyhow!("Missing image"))?;
-            let challenge_type = task["payload"]["challenge_type"].as_str().unwrap_or("passive");
+            let image_b64 = task["payload"]["image"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing image"))?;
+            let challenge_type = task["payload"]["challenge_type"]
+                .as_str()
+                .unwrap_or("passive");
             let challenge_data = task["payload"]["challenge_data"].as_str();
 
             let image_bytes = usora_face_matching_engine::utils::decode_image_base64(image_b64)?;
             let image = usora_face_matching_engine::utils::load_image_from_bytes(&image_bytes)?;
 
-            let liveness_result = engine.check_liveness(&image, challenge_type, challenge_data).await?;
+            let liveness_result = engine
+                .check_liveness(&image, challenge_type, challenge_data)
+                .await?;
             serde_json::to_value(&liveness_result)?
         }
         "register_face" => {
-            let image_b64 = task["payload"]["image"].as_str().ok_or_else(|| anyhow::anyhow!("Missing image"))?;
-            let user_id = task["payload"]["user_id"].as_str().ok_or_else(|| anyhow::anyhow!("Missing user_id"))?;
+            let image_b64 = task["payload"]["image"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing image"))?;
+            let user_id = task["payload"]["user_id"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("Missing user_id"))?;
 
             let image_bytes = usora_face_matching_engine::utils::decode_image_base64(image_b64)?;
             let image = usora_face_matching_engine::utils::load_image_from_bytes(&image_bytes)?;
@@ -416,11 +455,11 @@ async fn process_kafka_message(payload: &[u8], engine: &FaceMatchingEngine) -> R
 }
 
 async fn start_metrics_server(port: u16) -> Result<()> {
+    use http_body_util::Full;
+    use hyper::body::Bytes;
     use hyper::body::Incoming;
     use hyper::service::service_fn;
     use hyper::{Request, Response};
-    use http_body_util::Full;
-    use hyper::body::Bytes;
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
 

@@ -228,9 +228,10 @@ impl InferenceService {
             .unwrap_or(0);
 
         let latency = sw.elapsed_ms();
-        let first = all_results.into_iter().next().unwrap_or_else(|| {
-            panic!("Ensemble must have at least one model result")
-        });
+        let first = all_results
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("Ensemble must have at least one model result"));
 
         Ok(EnsembleResult {
             scores: ensemble_probs.clone(),
