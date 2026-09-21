@@ -29,26 +29,11 @@ fn build_test_features() -> HashMap<String, FeatureValue> {
         "device_fingerprint".into(),
         FeatureValue::String("bench-device-001".into()),
     );
-    features.insert(
-        "ip_reputation".into(),
-        FeatureValue::Float(0.85),
-    );
-    features.insert(
-        "behavioral_velocity".into(),
-        FeatureValue::Integer(42),
-    );
-    features.insert(
-        "historical_fraud_rate".into(),
-        FeatureValue::Float(0.02),
-    );
-    features.insert(
-        "geographic_risk".into(),
-        FeatureValue::Float(0.3),
-    );
-    features.insert(
-        "watchlist_hits".into(),
-        FeatureValue::Integer(0),
-    );
+    features.insert("ip_reputation".into(), FeatureValue::Float(0.85));
+    features.insert("behavioral_velocity".into(), FeatureValue::Integer(42));
+    features.insert("historical_fraud_rate".into(), FeatureValue::Float(0.02));
+    features.insert("geographic_risk".into(), FeatureValue::Float(0.3));
+    features.insert("watchlist_hits".into(), FeatureValue::Integer(0));
     features
 }
 
@@ -117,9 +102,7 @@ fn bench_scoring_pipeline(c: &mut Criterion) {
     c.bench_function("normalization", |b| {
         b.iter(|| {
             let features = build_test_features();
-            black_box(normalization_params.normalize(
-                &features,
-            ));
+            black_box(normalization_params.normalize(&features));
         })
     });
 
@@ -142,12 +125,7 @@ fn bench_scoring_pipeline(c: &mut Criterion) {
                 model_id: "bench".into(),
                 model_version: "1.0".into(),
             };
-            black_box(calculator.generate_explanation(
-                &ml_result,
-                &[],
-                0.5,
-                0.55,
-            ));
+            black_box(calculator.generate_explanation(&ml_result, &[], 0.5, 0.55));
         })
     });
 
