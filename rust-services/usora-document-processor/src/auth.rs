@@ -29,7 +29,7 @@ use axum::extract::{Request, State};
 use axum::http::{header, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -92,11 +92,7 @@ pub async fn require_service_auth(
     // equivalent principle enforced for compliance-service's dual
     // authorization (finding C2 in the audit doc): a validly signed token
     // for a *different* purpose must not be accepted here.
-    if !claims
-        .scope
-        .iter()
-        .any(|s| s == "document-processor:invoke")
-    {
+    if !claims.scope.iter().any(|s| s == "document-processor:invoke") {
         tracing::warn!(subject = %claims.sub, "REST auth rejected token missing required scope");
         return (StatusCode::FORBIDDEN, "token missing required scope").into_response();
     }

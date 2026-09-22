@@ -1,7 +1,10 @@
 use crate::extraction::ExtractionEngine;
 use crate::models::{DocumentImage, ExtractedField, ExtractionMethod};
 use async_trait::async_trait;
-use rxing::{BarcodeFormat, DecodingHintDictionary, RXingResult, Result as RxingResult};
+use rxing::{
+    BarcodeFormat, DecodingHintDictionary, Result as RxingResult,
+    RXingResult,
+};
 
 pub struct BarcodeEngine;
 
@@ -21,10 +24,7 @@ impl BarcodeEngine {
         if let rxing::DecodeHintType::PossibleFormats(ref mut formats) = possible_formats {
             formats.push(format);
         }
-        hints.insert(
-            rxing::DecodeHintType::PossibleFormats(Vec::new()),
-            possible_formats,
-        );
+        hints.insert(rxing::DecodeHintType::PossibleFormats(Vec::new()), possible_formats);
 
         let mut reader = rxing::MultiUseReader::default();
         match reader.decode_with_hints(data, width, height, &hints) {
@@ -64,9 +64,7 @@ impl BarcodeEngine {
 
         if results.is_empty() {
             let mut reader = rxing::MultiUseReader::default();
-            if let Ok(result) =
-                reader.decode_with_hints(data, width, height, &DecodingHintDictionary::new())
-            {
+            if let Ok(result) = reader.decode_with_hints(data, width, height, &DecodingHintDictionary::new()) {
                 let format_name = format!("{:?}", result.getBarcodeFormat());
                 results.push((format_name, result.getText()));
             }

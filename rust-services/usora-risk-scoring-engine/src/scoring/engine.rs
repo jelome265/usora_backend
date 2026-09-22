@@ -5,8 +5,8 @@ use crate::ml::inference::InferenceService;
 use crate::ml::{FeatureMap, ModelEnsemble, ModelError};
 use crate::models::{
     ApplicantScoringRequest, EnsembleResult, ExplainabilityRequest, ExplainabilityResponse,
-    FeatureValue, RiskFactorsRequest, RiskFactorsResponse, RiskLevel, RiskThresholds, RuleResult,
-    ScoreExplanation, ScoringResponse,
+    FeatureValue, RiskFactorsRequest, RiskFactorsResponse, RiskLevel, RiskThresholds,
+    RuleResult, ScoreExplanation, ScoringResponse,
 };
 use crate::rules::evaluator::RuleEvaluator;
 use crate::rules::registry::RuleRegistry;
@@ -140,11 +140,7 @@ impl PipelineScoringEngine {
             ml_score: Some(ml_score),
             ml_risk_level,
             rule_score: Some(
-                rule_results
-                    .iter()
-                    .filter(|r| r.triggered)
-                    .map(|r| r.score_delta)
-                    .sum(),
+                rule_results.iter().filter(|r| r.triggered).map(|r| r.score_delta).sum(),
             ),
             rule_risk_level: None,
             explanation,
