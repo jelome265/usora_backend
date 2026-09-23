@@ -56,8 +56,8 @@
              JwtTokenProvider already imported io.jsonwebtoken.* (Jwts,
              Keys, Decoders) with NO jjwt dependency declared anywhere in
              this POM; this module could not have compiled as checked
-             in, the same "source references a class with no
-             corresponding dependency" pattern found and fixed in
+             in, the same source references a class with no
+             corresponding dependency pattern found and fixed in
              usora-core-service, usora-audit-service, usora-compliance-service,
              and usora-notification-service earlier this session (F-011/F-012).
              Version pinned to 0.12.6 for all three artifacts to match
@@ -111,7 +111,7 @@
 
         <!-- Spring WebFlux (for WebClient) -->
         <!-- BUG found while implementing F-022: spring-boot-starter-webclient
-             is not a real Maven artifact -- it does not exist in Maven
+             is not a real Maven artifact - it does not exist in Maven
              Central under any group. WebClient/ReactorClientHttpConnector/
              reactor.netty.http.client.HttpClient (all used in
              WebClientConfig.java) are provided by spring-boot-starter-webflux.
