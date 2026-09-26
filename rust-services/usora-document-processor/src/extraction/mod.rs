@@ -19,7 +19,9 @@ pub struct Extractor {
 
 impl Extractor {
     pub fn new() -> Self {
-        Self { engines: Vec::new() }
+        Self {
+            engines: Vec::new(),
+        }
     }
 
     pub fn with_engine(mut self, engine: Arc<dyn ExtractionEngine>) -> Self {
@@ -37,11 +39,7 @@ impl Extractor {
             match engine.extract(image).await {
                 Ok(fields) => all_fields.extend(fields),
                 Err(e) => {
-                    tracing::warn!(
-                        "Extraction engine {} failed: {:?}",
-                        engine.name(),
-                        e
-                    );
+                    tracing::warn!("Extraction engine {} failed: {:?}", engine.name(), e);
                 }
             }
         }
@@ -59,11 +57,7 @@ impl Extractor {
                 match engine.extract(image).await {
                     Ok(fields) => all_fields.extend(fields),
                     Err(e) => {
-                        tracing::warn!(
-                            "Extraction engine {} failed: {:?}",
-                            engine.name(),
-                            e
-                        );
+                        tracing::warn!("Extraction engine {} failed: {:?}", engine.name(), e);
                     }
                 }
             }
