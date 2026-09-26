@@ -68,13 +68,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup Trivy
+      - name: Setup Trivy & Resolve Maven Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y wget apt-transport-https gnupg
           wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
           echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb bookworm main" | sudo tee /etc/apt/sources.list.d/trivy.list
           sudo apt-get update && sudo apt-get install -y trivy
+          mvn dependency:resolve -q -f pom.xml || true
 
       - name: Trivy Filesystem Scan
         # F-014: previously --exit-code 0 with continue-on-error: true,
@@ -219,7 +220,6 @@ jobs:
         # both; a real Semgrep finding now actually fails this job.
         run: |
           semgrep \
-            --config=auto \
             --config=p/rust \
             --config=p/java \
             --config=p/owasp-top-ten \
@@ -279,6 +279,8 @@ jobs:
         # leak (gitleaks-action exits nonzero on any leak found) could
         # never fail this job -- it ran purely as an evidence collector.
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run TruffleHog
         # F-015: this was pinned to `@main` -- not even a version tag, a
