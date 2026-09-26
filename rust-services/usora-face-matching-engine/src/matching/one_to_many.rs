@@ -140,7 +140,7 @@ impl FaissMatcher {
                     ext.to_string_lossy()
                 ))
             };
-            faiss::write_index(index.as_ref(), &path.to_string_lossy()).context(format!(
+            faiss::write_index(index, &path.to_string_lossy()).context(format!(
                 "Failed to write FAISS index for tenant {tenant_id}"
             ))?;
             info!(tenant = %tenant_id, path = %path.display(), "FAISS index saved");
@@ -154,7 +154,7 @@ impl FaissMatcher {
             .lock()
             .map_err(|_| anyhow::anyhow!("FAISS indices mutex poisoned by an earlier panic"))?;
         if let Some(idx) = index.get("__default__") {
-            faiss::write_index(idx.as_ref(), &path.to_string_lossy())
+            faiss::write_index(idx, &path.to_string_lossy())
                 .context("Failed to write FAISS index")?;
         }
         Ok(())
