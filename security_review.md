@@ -251,3 +251,12 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 The USORA KYC Platform features a high-performance polyglot architecture capable of processing complex compliance workflows at sub-second latencies. By implementing the consolidated remediation plan detailed in this Security Architecture Review—hardening edge authentication, enforcing PostgreSQL Row-Level Security, removing downstream header trust, parameterizing Terraform IaC endpoints, and locking down Kubernetes egress policies—USORA satisfies SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 requirements.
 
 *Report compiled and certified by: Jules, Principal Security & Infrastructure Engineer.*
+
+---
+
+## 9. Document History & Revision Log
+
+| Revision | Date | Author | Description |
+|---|---|---|---|
+| v1.0 | September 2026 | Jules | Initial consolidated enterprise security review and C4 baseline audit. |
+| v1.1 | September 2026 | Jules | Verified C1–C7 and H1–H6 remediation statuses and validated security scan workflow pipelines. |
