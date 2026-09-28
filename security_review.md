@@ -166,6 +166,11 @@ The Component level analyzes the inner mechanics of the API Gateway, Spring Boot
 - **Impact:** Malicious scripts could trigger infinite loops or OOM panics in risk scoring pods.
 - **Remediation:** Initialize Rhai using `Engine::new_raw()`, set max operations and string size (`.set_max_string_size(...)`), and ensure the `"sync"` feature flag is enabled in `Cargo.toml`.
 
+### 4.6 Payload Size Limits & Denial-of-Service Defense (Finding F-025)
+- **Vulnerability:** Unbounded request body and message frame limits on HTTP and gRPC ingress endpoints across document processing, integration, and evidence upload paths.
+- **Impact:** Resource exhaustion, memory exhaustion, and Out-Of-Memory (OOM) pod termination under malicious large payload bursts.
+- **Remediation:** Configured explicit payload size limits across gRPC channel configs and HTTP body parsers across all microservices and edge gateways.
+
 ---
 
 ## 5. Level 4: Code & Data Architecture (C4)
