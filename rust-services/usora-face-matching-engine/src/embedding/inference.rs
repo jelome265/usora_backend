@@ -88,7 +88,9 @@ impl OnnxEmbeddingModel {
         )?;
 
         for _ in 0..3 {
-            let _ = self.model.run(tvec!(tensor.clone()))
+            let _ = self
+                .model
+                .run(tvec!(tensor.clone()))
                 .context("Warmup inference failed")?;
         }
 
@@ -116,20 +118,19 @@ impl OnnxEmbeddingModel {
         Ok(tensor)
     }
 
-    fn run_inference(
-        &self,
-        tensor: ndarray::Array4<f32>,
-    ) -> Result<EmbeddingVector> {
+    fn run_inference(&self, tensor: ndarray::Array4<f32>) -> Result<EmbeddingVector> {
         let input = tract_onnx::prelude::tensor4(
             tensor.as_slice().unwrap(),
             &[1, 3, self.input_height as i64, self.input_width as i64],
         )?;
 
-        let result = self.model
+        let result = self
+            .model
             .run(tvec!(input))
             .context("Embedding inference failed")?;
 
-        let output = result[0].to_array_view::<f32>()
+        let output = result[0]
+            .to_array_view::<f32>()
             .context("Failed to get output array")?;
 
         let mut embedding: Vec<f32> = output.iter().copied().collect();
@@ -151,11 +152,9 @@ impl EmbeddingModel for OnnxEmbeddingModel {
         let cropped = utils::crop_face(image, face)?;
         let tensor = Self::preprocess(&cropped, self.input_width, self.input_height)?;
 
-        let vector = tokio::task::spawn_blocking(move || {
-            self.run_inference(tensor)
-        })
-        .await
-        .context("Embedding spawn blocking failed")??;
+        let vector = tokio::task::spawn_blocking(move || self.run_inference(tensor))
+            .await
+            .context("Embedding spawn blocking failed")??;
 
         Ok(FaceEmbedding {
             vector,

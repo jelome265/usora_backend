@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
@@ -13,6 +14,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "tenants", schema = "identity")
 @Data
+@EqualsAndHashCode(callSuper = true)
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -58,6 +60,7 @@ public class TenantEntity extends BaseEntity {
     @Entity
     @Table(name = "oauth2_clients", schema = "identity")
     @Data
+    @EqualsAndHashCode(callSuper = true)
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
@@ -117,6 +120,7 @@ public class TenantEntity extends BaseEntity {
     @Entity
     @Table(name = "users", schema = "identity")
     @Data
+    @EqualsAndHashCode(callSuper = true)
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
