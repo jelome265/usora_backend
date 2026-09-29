@@ -283,7 +283,10 @@ impl FeatureStore for PostgresFeatureStore {
         let mut results = Vec::with_capacity(applicant_ids.len());
 
         for applicant_id in applicant_ids {
-            match self.get_features(tenant_id, applicant_id, feature_names).await {
+            match self
+                .get_features(tenant_id, applicant_id, feature_names)
+                .await
+            {
                 Ok(fv) => results.push(fv),
                 Err(e) => {
                     tracing::warn!(
@@ -313,8 +316,8 @@ impl FeatureStore for PostgresFeatureStore {
             .map_err(|e| ModelError::FeatureError(e.to_string()))?;
 
         for (name, value) in &features {
-            let json_value = serde_json::to_value(value)
-                .map_err(|e| ModelError::FeatureError(e.to_string()))?;
+            let json_value =
+                serde_json::to_value(value).map_err(|e| ModelError::FeatureError(e.to_string()))?;
 
             sqlx::query(
                 r#"
@@ -445,10 +448,7 @@ pub fn features_to_dense(
 ) -> Vec<f64> {
     let mut dense = Vec::with_capacity(expected_size);
     for name in feature_names {
-        let value = features
-            .get(name)
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0);
+        let value = features.get(name).and_then(|v| v.as_f64()).unwrap_or(0.0);
         dense.push(value);
     }
     while dense.len() < expected_size {
@@ -483,10 +483,7 @@ impl NormalizationParams {
     pub fn normalize(&self, features: &HashMap<String, FeatureValue>) -> Vec<f64> {
         let mut normalized = Vec::with_capacity(self.feature_order.len());
         for name in &self.feature_order {
-            let raw = features
-                .get(name)
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
+            let raw = features.get(name).and_then(|v| v.as_f64()).unwrap_or(0.0);
             let mean = self.means.get(name).copied().unwrap_or(0.0);
             let std = self.stds.get(name).copied().unwrap_or(1.0);
             let norm = if std > f64::EPSILON {
