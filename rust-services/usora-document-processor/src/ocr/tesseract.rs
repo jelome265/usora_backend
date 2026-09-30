@@ -1,5 +1,5 @@
-use crate::ocr::{OcrEngine, OcrResult, RegionType, TextRegion};
 use crate::models::BoundingBox;
+use crate::ocr::{OcrEngine, OcrResult, RegionType, TextRegion};
 use async_trait::async_trait;
 use image::GenericImageView;
 use std::path::PathBuf;
@@ -40,10 +40,8 @@ impl TesseractOcr {
     }
 
     fn run_tesseract(data_path: &PathBuf, processed: &image::GrayImage) -> anyhow::Result<String> {
-        let mut ocr = tesseract::Tesseract::new(
-            Some("eng"),
-            Some(data_path.to_string_lossy().to_string()),
-        )?;
+        let mut ocr =
+            tesseract::Tesseract::new(Some("eng"), Some(data_path.to_string_lossy().to_string()))?;
 
         ocr.set_image_from_bytes(processed.as_raw())?;
         ocr.set_page_seg_mode(3);
@@ -63,7 +61,10 @@ impl TesseractOcr {
             return 0.0;
         }
         let total = text.len() as f32;
-        let non_alpha = text.chars().filter(|c| c.is_ascii_alphanumeric() || c.is_whitespace()).count() as f32;
+        let non_alpha = text
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || c.is_whitespace())
+            .count() as f32;
         (non_alpha / total).min(1.0)
     }
 }
