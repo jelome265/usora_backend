@@ -15,7 +15,7 @@ This document presents a comprehensive, multi-dimensional security, reliability,
 
 Our static analysis, codebase reviews, and architectural deep-dives have synthesized all prior security evaluations (including `AUDIT-usora-security-2026-08-03.md`, `rust_review.md`, `docs/infrastructure-deep-review-2026-08-04.md`, `docs/architecture-security-review-2026-07-31.md`, and `docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md`).
 
-This consolidated review establishes a single, authoritative, and actionable remediation roadmap covering Critical (C1–C7) and High (H1–H6) findings across both application code and infrastructure layers.
+This consolidated review establishes a single, authoritative, and actionable remediation roadmap covering Critical (C1–C7) and High (H1–H6) findings as well as core RPC/payload defenses (F-012, F-020, F-025) across both application code and infrastructure layers.
 
 ---
 
@@ -127,12 +127,13 @@ The Component level analyzes the inner mechanics of the API Gateway, Spring Boot
 |                            COMPONENT ARCHITECTURE (C3)                            |
 |                                                                                   |
 |  [ Axum API Gateway ]                                                             |
-|    |--> AuthLayer (JWKS Loader) -> TenantLayer -> RateLimitLayer                  |
+|    |--> AuthLayer (JWKS Loader) -> TenantLayer -> RateLimitLayer -> PayloadLimit  |
 |    |--> gRPC / REST Outbound Clients                                              |
 |                                                                                   |
 |  [ Java Orchestrator Services ]                                                   |
 |    |--> SecurityConfig (RS256 JWT) -> TenantInterceptor -> DomainService          |
 |    |--> Dual-Authorization & HMAC Rule Signing (Compliance)                       |
+|    |--> gRPC Max Inbound Message Limits & Contract Drift Checks                    |
 |                                                                                   |
 |  [ Rust Compute Engines ]                                                         |
 |    |--> Service Auth Middleware (HS256 Scope Check)                               |
@@ -165,6 +166,16 @@ The Component level analyzes the inner mechanics of the API Gateway, Spring Boot
 - **Vulnerability:** `usora-risk-scoring-engine` initialized Rhai engine without instruction/memory bounds.
 - **Impact:** Malicious scripts could trigger infinite loops or OOM panics in risk scoring pods.
 - **Remediation:** Initialize Rhai using `Engine::new_raw()`, set max operations and string size (`.set_max_string_size(...)`), and ensure the `"sync"` feature flag is enabled in `Cargo.toml`.
+
+### 4.6 gRPC Contract Drift Protection & Service Matrix Controls (Finding F-012 / F-020)
+- **Vulnerability:** Local Protobuf definitions in Spring Boot services diverged from canonical `shared/proto/` contracts.
+- **Impact:** Unhandled deserialization errors and silent RPC failures during inter-service communication.
+- **Remediation:** Establish automated CI contract drift checks (`F-020-proto-contract-drift-check`) and document the explicit gRPC service matrix (`F-012-grpc-service-matrix`).
+
+### 4.7 Explicit gRPC & REST Payload Size Limits (Finding F-025)
+- **Vulnerability:** Microservice REST and gRPC endpoints lacked explicit maximum payload payload size constraints.
+- **Impact:** Memory exhaustion Denial of Service (DoS) attacks via ultra-large HTTP POST payloads or gRPC messages.
+- **Remediation:** Enforce `DefaultBodyLimit` (e.g. 10MB) on Axum REST routes and configure gRPC max message size limits (16MB) across all Tonic and gRPC Java servers and clients.
 
 ---
 
@@ -216,6 +227,8 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 | **H4** | Infrastructure | High (P1) | Terraform Modules | **REMEDIATED** | Fixed VPC endpoint interpolation & `${var.environment}` |
 | **H5** | Network Security | High (P1) | K8s NetworkPolicies | **REMEDIATED** | Restricted database egress to VPC CIDRs |
 | **H6** | CI/CD Pipelines | High (P1) | GitHub Actions | **REMEDIATED** | Parallel Docker build matrix |
+| **F-012/F-020** | gRPC Interface | High (P1) | `shared/proto/*` | **REMEDIATED** | Service matrix validation & drift check CI |
+| **F-025** | API Protection | High (P1) | REST / gRPC Servers | **REMEDIATED** | Explicit 10MB/16MB payload size limits |
 
 ---
 
@@ -236,6 +249,7 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 |   - Kubernetes Network Policy Egress Hardening (H5)                               |
 |   - Parallel CI/CD Build Matrix (H6) & Helm Release Templates (C1)                |
 |   - Dual-Authorization Rule Signing (C2) & CORS Hardening (C5)                    |
+|   - gRPC Contract Drift CI & Payload Size Limits (F-012, F-020, F-025)            |
 |                                                                                   |
 |  Phase 3: Compute Resilience & Compliance Evidence (P2)                           |
 |   - Rhai DSL Sandbox Memory Bounds                                                |
@@ -248,6 +262,6 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 
 ## 8. Conclusion
 
-The USORA KYC Platform features a high-performance polyglot architecture capable of processing complex compliance workflows at sub-second latencies. By implementing the consolidated remediation plan detailed in this Security Architecture Review—hardening edge authentication, enforcing PostgreSQL Row-Level Security, removing downstream header trust, parameterizing Terraform IaC endpoints, and locking down Kubernetes egress policies—USORA satisfies SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 requirements.
+The USORA KYC Platform features a high-performance polyglot architecture capable of processing complex compliance workflows at sub-second latencies. By implementing the consolidated remediation plan detailed in this Security Architecture Review—hardening edge authentication, enforcing PostgreSQL Row-Level Security, removing downstream header trust, parameterizing Terraform IaC endpoints, locking down Kubernetes egress policies, and restricting payload sizes across RPC/REST interfaces—USORA satisfies SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 requirements.
 
 *Report compiled and certified by: Jules, Principal Security & Infrastructure Engineer.*
