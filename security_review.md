@@ -4,16 +4,16 @@
 **Date:** September 2026
 **Document ID:** `USORA-SECURITY-REVIEW-2026-09`
 **Classification:** Confidentially Restricted — Internal Engineering & Audit Operations
-**Target Architecture:** Rust Axum/Tokio API Gateway + 3 Rust Compute Engines + 7 Java Spring Boot Orchestration Services
+**Target Architecture:** Polyglot Microservices Fleet (Rust Axum API Gateway + 3 Rust Compute Engines + 7 Java Spring Boot Orchestration Services)
 **Framework Standard:** C4 Architecture Model (Context, Containers, Components, Code/Data) & SOC 2 Type II / ISO 27001 Baseline
 
 ---
 
 ## 1. Executive Summary
 
-This document presents a comprehensive, multi-dimensional security, reliability, and infrastructure audit of the **USORA KYC Platform** structured according to the **C4 Architecture Model**. USORA is a high-performance, polyglot compliance and verification platform designed for multi-tenant, regulated enterprise environments. At this scale, maintaining zero-trust architecture, strict tenant isolation, cryptographic assurances, robust network topologies, and clean container packaging is paramount to satisfy SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 compliance standards.
+This document presents a comprehensive, multi-dimensional security, reliability, and infrastructure audit of the **USORA KYC Platform** structured according to the **C4 Architecture Model**. USORA is a high-performance, polyglot compliance and verification platform designed for multi-tenant, regulated enterprise financial environments. At this scale, maintaining zero-trust architecture, strict tenant isolation, cryptographic assurances, robust network topologies, and clean container packaging is paramount to satisfy SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 compliance standards.
 
-Our static analysis, codebase reviews, and architectural deep-dives have synthesized all prior security evaluations (including `AUDIT-usora-security-2026-08-03.md`, `rust_review.md`, `docs/infrastructure-deep-review-2026-08-04.md`, `docs/architecture-security-review-2026-07-31.md`, and `docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md`).
+Our static analysis, codebase reviews, and architectural evaluations have synthesized all prior security reviews (including `AUDIT-usora-security-2026-08-03.md`, `rust_review.md`, `docs/infrastructure-deep-review-2026-08-04.md`, `docs/architecture-security-review-2026-07-31.md`, and `docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md`).
 
 This consolidated review establishes a single, authoritative, and actionable remediation roadmap covering Critical (C1–C7) and High (H1–H6) findings across both application code and infrastructure layers.
 
@@ -42,13 +42,13 @@ The System Context level defines the regulatory boundaries, actors, and high-lev
 
 ### 2.1 Regulatory Boundary & Compliance Baseline
 - **Context:** The platform processes sensitive personally identifiable information (PII), biometric templates, government-issued documents, and financial compliance records. Target frameworks include SOC 2 Type II, GDPR Article 32, EU AML5/AML6, and ISO 27001:2022.
-- **Defect:** Documentation overclaims (`main.md`, `compliance-mapping.md`) assert "SOC 2 Type II Certified" and 99.99% SLA metrics before full operational staging validation.
+- **Defect:** Documentation overclaims (`main.md`, `compliance-mapping.md`) asserted "SOC 2 Type II Certified" and 99.99% SLA metrics prior to operational staging validation.
 - **Risk:** Regulatory compliance misrepresentation during external enterprise compliance audits.
 - **Remediation:** Align documentation state with operational audit verification status.
 
 ### 2.2 Multi-Tenant Data & Identity Isolation Boundary
 - **Context:** USORA mandates strict tenant separation at rest, in transit, and during compute processing.
-- **Defect:** Downstream microservices accepted unverified HTTP headers (`X-Tenant-ID`) or request body `tenant_id` fields as tenant overrides.
+- **Defect:** Downstream microservices previously accepted unverified HTTP headers (`X-Tenant-ID`) or request body `tenant_id` fields as tenant overrides.
 - **Risk:** Cross-tenant data leakage and audit trail falsification if internal backend services are reached directly.
 - **Remediation:** Enforce cryptographically verified JWT claims (`tid`) as the mandatory tenant identity source across all layers.
 
@@ -83,25 +83,25 @@ The Container level details the interactions between the Rust API Gateway, Java 
 ### 3.1 Infrastructure-as-Code (Terraform Modules)
 
 #### 3.1.1 Broken Regional String Interpolations (Finding H4)
-- **Vulnerability:** In `infrastructure/terraform/modules/vpc/main.tf`, AWS service names for private VPC Gateway/Interface Endpoints miss regional interpolation (`service_name = "com.amazonaws..s3"`).
+- **Vulnerability:** In `infrastructure/terraform/modules/vpc/main.tf`, AWS service names for private VPC Gateway/Interface Endpoints missed regional interpolation (`service_name = "com.amazonaws..s3"`).
 - **Impact:** `terraform plan`/`apply` execution fails. Traffic to S3/ECR/DynamoDB falls back to public routing if bypassed.
 - **Remediation:** Parameterize with region data source: `service_name = "com.amazonaws.${data.aws_region.current.name}.s3"`.
 
 #### 3.1.2 Broken IAM Policy ARN in RDS Module
-- **Vulnerability:** In `infrastructure/terraform/modules/rds/main.tf`, IAM policy attachment uses invalid ARN format (`policy_arn = "arn::iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"`).
+- **Vulnerability:** In `infrastructure/terraform/modules/rds/main.tf`, IAM policy attachment used invalid ARN format (`policy_arn = "arn::iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"`).
 - **Impact:** RDS enhanced monitoring provisioning fails during deployment.
 - **Remediation:** Fix partition reference: `policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"`.
 
 #### 3.1.3 Resource Naming Collisions
-- **Vulnerability:** Modules provision resources using static suffixes (`-vpc`, `-db-primary`, `-redis`, `-msk`) omitting `${var.environment}` prefixes.
+- **Vulnerability:** Modules provisioned resources using static suffixes (`-vpc`, `-db-primary`, `-redis`, `-msk`) omitting `${var.environment}` prefixes.
 - **Impact:** Resource collisions across dev/staging/prod environments in shared AWS accounts.
 - **Remediation:** Prefix all Terraform resource names and tags with `${var.environment}-`.
 
 ### 3.2 Kubernetes & Network Security
 
 #### 3.2.1 Permissive Network Policies & Database Egress (Finding H5)
-- **Vulnerability:** In `infrastructure/k8s/base/network-policies.yml`, database egress port rules (`5432`/`6379`/`9092`) specify wildcard `cidr: 0.0.0.0/0`.
-- **Impact:** Compromised pod containers can exfiltrate database contents directly to public internet IPs.
+- **Vulnerability:** In `infrastructure/k8s/base/network-policies.yml`, database egress port rules (`5432`/`6379`/`9092`) specified wildcard `cidr: 0.0.0.0/0`.
+- **Impact:** Compromised pod containers could exfiltrate database contents directly to public internet IPs.
 - **Remediation:** Scope inter-service ingress network policies to explicit microservice app labels and constrain database egress to internal VPC CIDRs (e.g. `10.2.0.0/16`).
 
 #### 3.2.2 Helm Chart Templating & Release Completeness (Finding C1)
