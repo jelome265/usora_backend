@@ -13,9 +13,9 @@
 
 This document presents a comprehensive, multi-dimensional security, reliability, and infrastructure audit of the **USORA KYC Platform** structured according to the **C4 Architecture Model**. USORA is a high-performance, polyglot compliance and verification platform designed for multi-tenant, regulated enterprise environments. At this scale, maintaining zero-trust architecture, strict tenant isolation, cryptographic assurances, robust network topologies, and clean container packaging is paramount to satisfy SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 compliance standards.
 
-Our static analysis, codebase reviews, and architectural deep-dives have synthesized all prior security evaluations (including `AUDIT-usora-security-2026-08-03.md`, `rust_review.md`, `docs/infrastructure-deep-review-2026-08-04.md`, `docs/architecture-security-review-2026-07-31.md`, and `docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md`).
+Our static analysis, codebase reviews, and architectural deep-dives have synthesized all prior security evaluations (including `AUDIT-usora-security-2026-08-03.md`, `rust_review.md`, `docs/infrastructure-deep-review-2026-08-04.md`, `docs/architecture-security-review-2026-07-31.md`, `docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md`, and recent gRPC/REST interface hardening commits).
 
-This consolidated review establishes a single, authoritative, and actionable remediation roadmap covering Critical (C1–C7) and High (H1–H6) findings across both application code and infrastructure layers.
+This consolidated review establishes a single, authoritative, and actionable remediation roadmap covering Critical (C1–C7), High (H1–H6), and Feature/Interface (F-025) findings across both application code and infrastructure layers.
 
 ---
 
@@ -166,6 +166,11 @@ The Component level analyzes the inner mechanics of the API Gateway, Spring Boot
 - **Impact:** Malicious scripts could trigger infinite loops or OOM panics in risk scoring pods.
 - **Remediation:** Initialize Rhai using `Engine::new_raw()`, set max operations and string size (`.set_max_string_size(...)`), and ensure the `"sync"` feature flag is enabled in `Cargo.toml`.
 
+### 4.6 Explicit gRPC & REST Payload Size Limits (Finding F-025)
+- **Vulnerability:** Microservice REST endpoints and gRPC control plane interfaces previously omitted explicit payload frame limits.
+- **Impact:** Oversized base64 document or biometric evidence payloads could trigger memory exhaustion (OOM) and DoS attacks across Rust compute engines and Java Spring Boot services.
+- **Remediation:** Enforce explicit 16MB/32MB maximum frame/message bounds across all gRPC servers (`tonic::transport::Server::max_frame_size` and Spring gRPC starter properties) and HTTP body limits (`DefaultBodyLimit::max(16MB)` in Axum and `spring.servlet.multipart.max-request-size=16MB` in Spring Boot).
+
 ---
 
 ## 5. Level 4: Code & Data Architecture (C4)
@@ -216,6 +221,7 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 | **H4** | Infrastructure | High (P1) | Terraform Modules | **REMEDIATED** | Fixed VPC endpoint interpolation & `${var.environment}` |
 | **H5** | Network Security | High (P1) | K8s NetworkPolicies | **REMEDIATED** | Restricted database egress to VPC CIDRs |
 | **H6** | CI/CD Pipelines | High (P1) | GitHub Actions | **REMEDIATED** | Parallel Docker build matrix |
+| **F-025** | API / DoS Safety | High (P1) | Microservice gRPC & REST | **REMEDIATED** | Explicit 16MB gRPC and REST payload size limits |
 
 ---
 
@@ -236,6 +242,7 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 |   - Kubernetes Network Policy Egress Hardening (H5)                               |
 |   - Parallel CI/CD Build Matrix (H6) & Helm Release Templates (C1)                |
 |   - Dual-Authorization Rule Signing (C2) & CORS Hardening (C5)                    |
+|   - Explicit gRPC & REST Payload Size Limits (F-025)                              |
 |                                                                                   |
 |  Phase 3: Compute Resilience & Compliance Evidence (P2)                           |
 |   - Rhai DSL Sandbox Memory Bounds                                                |
@@ -248,6 +255,6 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 
 ## 8. Conclusion
 
-The USORA KYC Platform features a high-performance polyglot architecture capable of processing complex compliance workflows at sub-second latencies. By implementing the consolidated remediation plan detailed in this Security Architecture Review—hardening edge authentication, enforcing PostgreSQL Row-Level Security, removing downstream header trust, parameterizing Terraform IaC endpoints, and locking down Kubernetes egress policies—USORA satisfies SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 requirements.
+The USORA KYC Platform features a high-performance polyglot architecture capable of processing complex compliance workflows at sub-second latencies. By implementing the consolidated remediation plan detailed in this Security Architecture Review—hardening edge authentication, enforcing PostgreSQL Row-Level Security, removing downstream header trust, enforcing gRPC and REST payload size limits, parameterizing Terraform IaC endpoints, and locking down Kubernetes egress policies—USORA satisfies SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 requirements.
 
 *Report compiled and certified by: Jules, Principal Security & Infrastructure Engineer.*
