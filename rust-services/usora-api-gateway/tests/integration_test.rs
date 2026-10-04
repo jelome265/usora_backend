@@ -1,16 +1,16 @@
-use std::sync::Arc;
-use tower::ServiceExt;
 use axum::body::Body;
-use axum::http::{Request, StatusCode, Method};
+use axum::http::{Method, Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::Value;
+use std::sync::Arc;
+use tower::ServiceExt;
 
-use usora_api_gateway::config::Config;
-use usora_api_gateway::routes;
-use usora_api_gateway::middleware::tenant::TenantContext;
 use usora_api_gateway::auth::jwt::JwtClaims;
-use usora_api_gateway::auth::{AuthenticatedUser, AuthMethod};
+use usora_api_gateway::auth::{AuthMethod, AuthenticatedUser};
+use usora_api_gateway::config::Config;
+use usora_api_gateway::middleware::tenant::TenantContext;
 use usora_api_gateway::rate_limit::token_bucket::TokenBucket;
+use usora_api_gateway::routes;
 use usora_api_gateway::utils::{hmac_sign, hmac_verify};
 
 #[tokio::test]
