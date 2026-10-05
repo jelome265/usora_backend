@@ -79,7 +79,12 @@ impl PreprocessingStage {
             let w = (max_x - min_x).saturating_add(padding * 2);
             let h = (max_y - min_y).saturating_add(padding * 2);
             let crop_rect = image::math::Rect::new(x, y, w.min(img.width()), h.min(img.height()));
-            return img.crop_imm(crop_rect.x, crop_rect.y, crop_rect.width, crop_rect.height);
+            return img.crop_imm(
+                crop_rect.x,
+                crop_rect.y,
+                crop_rect.width,
+                crop_rect.height,
+            );
         }
 
         img.clone()

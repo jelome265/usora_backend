@@ -67,9 +67,7 @@ impl IngestionStage {
         if width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION {
             anyhow::bail!(
                 "Image dimensions {}x{} exceed the maximum allowed dimension of {} pixels",
-                width,
-                height,
-                MAX_IMAGE_DIMENSION
+                width, height, MAX_IMAGE_DIMENSION
             );
         }
         let pixel_count = width as u64 * height as u64;
@@ -77,10 +75,7 @@ impl IngestionStage {
             anyhow::bail!(
                 "Image has {} total pixels ({}x{}), exceeding the maximum allowed {} pixels -- \
                  this file's compressed size does not reflect its decoded memory footprint",
-                pixel_count,
-                width,
-                height,
-                MAX_IMAGE_PIXELS
+                pixel_count, width, height, MAX_IMAGE_PIXELS
             );
         }
         Ok(())
@@ -104,8 +99,14 @@ impl IngestionStage {
 
     fn extract_metadata(img: &image::DynamicImage) -> std::collections::HashMap<String, String> {
         let mut metadata = std::collections::HashMap::new();
-        metadata.insert("width".to_string(), img.width().to_string());
-        metadata.insert("height".to_string(), img.height().to_string());
+        metadata.insert(
+            "width".to_string(),
+            img.width().to_string(),
+        );
+        metadata.insert(
+            "height".to_string(),
+            img.height().to_string(),
+        );
         metadata
     }
 }
@@ -158,10 +159,8 @@ mod tests {
     /// dimensions must pass.
     #[test]
     fn validate_dimensions_accepts_reasonable_document_scan() {
-        assert!(
-            IngestionStage::validate_dimensions(2481, 3508).is_ok(), // A4 at 300dpi
-            "a typical A4-at-300dpi document scan must not be rejected"
-        );
+        assert!(IngestionStage::validate_dimensions(2481, 3508).is_ok(), // A4 at 300dpi
+            "a typical A4-at-300dpi document scan must not be rejected");
     }
 
     /// F-024 regression: the actual decompression-bomb scenario this
@@ -187,13 +186,9 @@ mod tests {
 
     #[test]
     fn validate_dimensions_boundary_is_inclusive() {
-        assert!(
-            IngestionStage::validate_dimensions(MAX_IMAGE_DIMENSION, 1).is_ok(),
-            "exactly at the dimension limit should still be accepted"
-        );
-        assert!(
-            IngestionStage::validate_dimensions(MAX_IMAGE_DIMENSION + 1, 1).is_err(),
-            "one pixel over the dimension limit must be rejected"
-        );
+        assert!(IngestionStage::validate_dimensions(MAX_IMAGE_DIMENSION, 1).is_ok(),
+            "exactly at the dimension limit should still be accepted");
+        assert!(IngestionStage::validate_dimensions(MAX_IMAGE_DIMENSION + 1, 1).is_err(),
+            "one pixel over the dimension limit must be rejected");
     }
 }
