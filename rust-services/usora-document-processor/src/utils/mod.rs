@@ -44,7 +44,8 @@ pub fn format_processing_time(start: std::time::Instant) -> f64 {
 pub fn init_tracing(config: &crate::config::Config) -> Result<()> {
     use tracing_subscriber::EnvFilter;
 
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"));
 
     tracing_subscriber::fmt()
         .with_env_filter(filter)
@@ -55,16 +56,11 @@ pub fn init_tracing(config: &crate::config::Config) -> Result<()> {
     if let Some(ref endpoint) = config.otlp_endpoint {
         let _ = opentelemetry_otlp::new_pipeline()
             .tracing()
-            .with_exporter(
-                opentelemetry_otlp::new_exporter()
-                    .tonic()
-                    .with_endpoint(endpoint),
-            )
+            .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(endpoint))
             .with_trace_config(opentelemetry::sdk::trace::config().with_resource(
-                opentelemetry::sdk::Resource::new(vec![opentelemetry::KeyValue::new(
-                    "service.name",
-                    config.service_name.clone(),
-                )]),
+                opentelemetry::sdk::Resource::new(vec![
+                    opentelemetry::KeyValue::new("service.name", config.service_name.clone()),
+                ]),
             ))
             .install_batch(opentelemetry::runtime::Tokio);
     }
