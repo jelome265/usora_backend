@@ -62,7 +62,7 @@ where
         }
 
         let fut = self.inner.call(req);
-        Box::pin(async move { fut.await })
+        Box::pin(fut)
     }
 }
 
@@ -130,11 +130,7 @@ mod tests {
     use axum::body::Body;
     use axum::http::Request as HttpRequest;
 
-    fn request_with(
-        header: Option<&str>,
-        user: Option<AuthenticatedUser>,
-        path: &str,
-    ) -> Request {
+    fn request_with(header: Option<&str>, user: Option<AuthenticatedUser>, path: &str) -> Request {
         let mut builder = HttpRequest::builder().uri(path);
         if let Some(h) = header {
             builder = builder.header("X-Tenant-ID", h);
@@ -165,7 +161,11 @@ mod tests {
     #[test]
     fn header_does_not_override_jwt_tenant_without_permission() {
         let user = authenticated_user("tenant-legit", vec!["some:other:permission"]);
-        let req = request_with(Some("tenant-attacker"), Some(user), "/v1/tenant-attacker/resource");
+        let req = request_with(
+            Some("tenant-attacker"),
+            Some(user),
+            "/v1/tenant-attacker/resource",
+        );
 
         let resolved = resolve_tenant(&req);
 
@@ -216,7 +216,11 @@ mod tests {
     /// must independently validate it), and must NOT trust the header.
     #[test]
     fn unauthenticated_request_uses_path_not_header() {
-        let req = request_with(Some("tenant-attacker"), None, "/v1/tenant-from-path/resource");
+        let req = request_with(
+            Some("tenant-attacker"),
+            None,
+            "/v1/tenant-from-path/resource",
+        );
 
         assert_eq!(resolve_tenant(&req), Some("tenant-from-path".to_string()));
     }
@@ -241,7 +245,11 @@ mod tests {
             permissions: vec![],
             auth_method: AuthMethod::Jwt,
         };
-        let req = request_with(Some("tenant-attacker"), Some(user), "/v1/tenant-from-path/resource");
+        let req = request_with(
+            Some("tenant-attacker"),
+            Some(user),
+            "/v1/tenant-from-path/resource",
+        );
 
         assert_eq!(resolve_tenant(&req), Some("tenant-from-path".to_string()));
     }

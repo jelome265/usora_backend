@@ -166,6 +166,11 @@ The Component level analyzes the inner mechanics of the API Gateway, Spring Boot
 - **Impact:** Malicious scripts could trigger infinite loops or OOM panics in risk scoring pods.
 - **Remediation:** Initialize Rhai using `Engine::new_raw()`, set max operations and string size (`.set_max_string_size(...)`), and ensure the `"sync"` feature flag is enabled in `Cargo.toml`.
 
+### 4.6 Explicit gRPC & REST Payload Size Limits (Finding F-025)
+- **Vulnerability:** Unbounded inbound message sizes on gRPC services and REST endpoints permitted memory exhaustion attacks via oversized evidence uploads.
+- **Impact:** Denial-of-service (DoS) via Out-Of-Memory (OOM) pod crashes across orchestration and compute services.
+- **Remediation:** Configure explicit payload size caps across gRPC channels (`max_decoding_message_size(10 * 1024 * 1024)` / 10MB) and REST body limiters (`DefaultBodyLimit::disable()` with explicit custom `Content-Length` / stream size enforcement in Axum and Spring Boot).
+
 ---
 
 ## 5. Level 4: Code & Data Architecture (C4)
@@ -216,6 +221,7 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 | **H4** | Infrastructure | High (P1) | Terraform Modules | **REMEDIATED** | Fixed VPC endpoint interpolation & `${var.environment}` |
 | **H5** | Network Security | High (P1) | K8s NetworkPolicies | **REMEDIATED** | Restricted database egress to VPC CIDRs |
 | **H6** | CI/CD Pipelines | High (P1) | GitHub Actions | **REMEDIATED** | Parallel Docker build matrix |
+| **F-025** | API & gRPC | High (P1) | Fleet-wide gRPC / REST | **REMEDIATED** | Explicit 10MB gRPC & REST payload caps |
 
 ---
 

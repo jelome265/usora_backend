@@ -43,8 +43,8 @@ impl MultiLevelCache {
     }
 
     pub async fn init_redis(&self, redis_url: &str) -> Result<(), RiskEngineError> {
-        let client =
-            redis::Client::open(redis_url).map_err(|e| RiskEngineError::CacheError(e.to_string()))?;
+        let client = redis::Client::open(redis_url)
+            .map_err(|e| RiskEngineError::CacheError(e.to_string()))?;
         let conn = client
             .get_connection_manager()
             .await
@@ -129,8 +129,8 @@ impl MultiLevelCache {
     fn add_to_l1(&self, key: &str, response: ScoringResponse) {
         if self.l1.len() >= self.l1_capacity {
             let mut lru = self.lru.lock();
-            if let Some(evicted) = lru.push(key.to_string(), ()) {
-                self.l1.remove(&evicted);
+            if let Some((evicted, _)) = lru.push(key.to_string(), ()) {
+                self.l1.remove(evicted.as_str());
             }
         }
         self.l1.insert(
@@ -149,8 +149,8 @@ impl MultiLevelCache {
 
     pub fn hit_rates(&self) -> (u64, u64) {
         (
-            *self.hit_count.get("l1").unwrap_or(&0),
-            *self.hit_count.get("l2").unwrap_or(&0),
+            self.hit_count.get("l1").map(|r| *r.value()).unwrap_or(0),
+            self.hit_count.get("l2").map(|r| *r.value()).unwrap_or(0),
         )
     }
 
