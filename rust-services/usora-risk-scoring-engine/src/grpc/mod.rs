@@ -52,7 +52,7 @@ impl RiskScoringServiceImpl {
                 Some(risk_scoring::feature_value::Value::IntVal(i)) => FeatureValue::Integer(*i),
                 Some(risk_scoring::feature_value::Value::FloatVal(f)) => FeatureValue::Float(*f),
                 Some(risk_scoring::feature_value::Value::BoolVal(b)) => FeatureValue::Boolean(*b),
-                None | Some(_) => FeatureValue::Null,
+                None => FeatureValue::Null,
             };
             features.insert(k.clone(), fv);
         }

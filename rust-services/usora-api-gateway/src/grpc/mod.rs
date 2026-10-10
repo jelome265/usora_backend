@@ -28,6 +28,7 @@ impl Interceptor for BearerAuth {
 pub(crate) type AuthedChannel = InterceptedService<Channel, BearerAuth>;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct GrpcClients {
     pub(crate) identity:
         proto::identity::identity_service_client::IdentityServiceClient<AuthedChannel>,

@@ -13,7 +13,7 @@ use crate::AppState;
 
 fn start_time() -> &'static Instant {
     static START: OnceLock<Instant> = OnceLock::new();
-    START.get_or_init(|| Instant::now())
+    START.get_or_init(Instant::now)
 }
 
 fn health_counter() -> &'static Counter {

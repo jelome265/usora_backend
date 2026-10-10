@@ -22,7 +22,7 @@ pub fn create_router(state: Arc<AppState>) -> Router<()> {
     let rate_cfg = &state.config.rate_limiting;
     let cors_layer = build_cors_layer(&state.config.cors.allowed_origins);
 
-    let app = Router::new()
+    Router::new()
         .nest("/api/v1", api_routes)
         .route("/health", get(health::health_check))
         .route("/metrics", get(health::metrics_handler))
@@ -63,9 +63,7 @@ pub fn create_router(state: Arc<AppState>) -> Router<()> {
             HeaderValue::from_static("usora-api-gateway"),
         ))
         .layer(cors_layer)
-        .with_state(state);
-
-    app
+        .with_state(state)
 }
 
 /// SECURITY: builds a strict, explicit CORS policy from configuration.

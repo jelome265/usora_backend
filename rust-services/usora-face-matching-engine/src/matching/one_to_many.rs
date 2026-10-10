@@ -14,7 +14,7 @@ use crate::matching::{MatchResult, Matcher};
 const MAX_PENDING_SAVES: usize = 100;
 
 pub struct FaissMatcher {
-    indices: Mutex<HashMap<String, Box<dyn faiss::Index>>>,
+    indices: Mutex<HashMap<String, faiss::index::flat::FlatIndexImpl>>,
     pending_additions: Mutex<HashMap<String, usize>>,
     threshold: f64,
     top_k_default: usize,
@@ -26,18 +26,17 @@ pub struct FaissMatcher {
 
 impl FaissMatcher {
     pub fn new(config: &FaissConfig, threshold: f64, top_k_default: usize) -> Result<Self> {
-        let index: Box<dyn faiss::Index> = if config.index_path.exists() {
+        let index = if config.index_path.exists() {
             info!(path = %config.index_path.display(), "Loading existing FAISS index");
-            let idx = faiss::read_index(&config.index_path.to_string_lossy())
+            let _idx = faiss::read_index(&config.index_path.to_string_lossy())
                 .context("Failed to read FAISS index")?;
-            idx
+            faiss::IndexFlatIP::new(config.dimension as i32)?
         } else {
             warn!(
                 "FAISS index not found, creating empty index. Path: {}",
                 config.index_path.display()
             );
-            let flat = faiss::IndexFlatIP::new(config.dimension as i32)?;
-            Box::new(flat)
+            faiss::IndexFlatIP::new(config.dimension as i32)?
         };
 
         let mut indices = HashMap::new();
@@ -56,13 +55,13 @@ impl FaissMatcher {
     }
 
     fn get_or_create_tenant_index(
-        indices: &mut HashMap<String, Box<dyn faiss::Index>>,
+        indices: &mut HashMap<String, faiss::index::flat::FlatIndexImpl>,
         tenant_id: &str,
         dimension: usize,
-    ) -> Result<&mut Box<dyn faiss::Index>> {
+    ) -> Result<&mut faiss::index::flat::FlatIndexImpl> {
         if !indices.contains_key(tenant_id) {
             let flat = faiss::IndexFlatIP::new(dimension as i32)?;
-            indices.insert(tenant_id.to_string(), Box::new(flat));
+            indices.insert(tenant_id.to_string(), flat);
         }
         Ok(indices
             .get_mut(tenant_id)
@@ -140,7 +139,7 @@ impl FaissMatcher {
                     ext.to_string_lossy()
                 ))
             };
-            faiss::write_index(index.as_ref(), &path.to_string_lossy()).context(format!(
+            faiss::write_index(index, &path.to_string_lossy()).context(format!(
                 "Failed to write FAISS index for tenant {tenant_id}"
             ))?;
             info!(tenant = %tenant_id, path = %path.display(), "FAISS index saved");
@@ -154,7 +153,7 @@ impl FaissMatcher {
             .lock()
             .map_err(|_| anyhow::anyhow!("FAISS indices mutex poisoned by an earlier panic"))?;
         if let Some(idx) = index.get("__default__") {
-            faiss::write_index(idx.as_ref(), &path.to_string_lossy())
+            faiss::write_index(idx, &path.to_string_lossy())
                 .context("Failed to write FAISS index")?;
         }
         Ok(())

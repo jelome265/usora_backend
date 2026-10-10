@@ -241,6 +241,7 @@ impl JwtValidator {
     }
 }
 
+#[allow(clippy::module_inception)]
 pub mod jwt {
     use thiserror::Error;
 

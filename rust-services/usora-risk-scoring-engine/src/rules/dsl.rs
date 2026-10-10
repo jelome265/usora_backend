@@ -47,23 +47,19 @@ impl DslRule {
     fn create_engine() -> Engine {
         let mut engine = Engine::new();
         engine.set_max_operations(50_000);
-        engine.set_max_strings(100);
+        engine.set_max_string_size(100);
         engine.set_max_modules(5);
 
         engine.register_type::<FeatureValue>();
 
         engine.register_fn("is_string", |v: Dynamic| -> bool { v.is_string() });
         engine.register_fn("is_int", |v: Dynamic| -> bool { v.is_int() });
-        engine.register_fn("is_float", |v: Dynamic| -> bool {
-            matches!(v, Dynamic::Float(_))
-        });
-        engine.register_fn("is_bool", |v: Dynamic| -> bool {
-            matches!(v, Dynamic::Bool(_))
-        });
+        engine.register_fn("is_float", |v: Dynamic| -> bool { v.is_float() });
+        engine.register_fn("is_bool", |v: Dynamic| -> bool { v.is_bool() });
         engine.register_fn("to_float", |v: Dynamic| -> f64 {
             if v.is_int() {
                 v.as_int().unwrap() as f64
-            } else if matches!(v, Dynamic::Float(_)) {
+            } else if v.is_float() {
                 v.as_float().unwrap()
             } else {
                 0.0
@@ -188,8 +184,8 @@ fn parse_rule_result(
     name: &str,
     priority: i32,
 ) -> Result<RuleResult, RuleError> {
-    let map = match result.as_map() {
-        Some(m) => m.clone(),
+    let map = match result.try_cast::<rhai::Map>() {
+        Some(m) => m,
         None => {
             let triggered = !result.is_unit();
             return Ok(RuleResult {
@@ -224,12 +220,12 @@ fn parse_rule_result(
         .unwrap_or_default();
 
     let risk_level_override = map.get("risk_level").and_then(|d| {
-        d.as_str().map(|s| match s {
-            "low" => RiskLevel::Low,
-            "medium" => RiskLevel::Medium,
-            "high" => RiskLevel::High,
-            "critical" => RiskLevel::Critical,
-            _ => return None,
+        d.as_str().and_then(|s| match s {
+            "low" => Some(RiskLevel::Low),
+            "medium" => Some(RiskLevel::Medium),
+            "high" => Some(RiskLevel::High),
+            "critical" => Some(RiskLevel::Critical),
+            _ => None,
         })
     });
 

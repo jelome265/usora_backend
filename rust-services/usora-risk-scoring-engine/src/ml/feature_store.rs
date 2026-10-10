@@ -160,7 +160,7 @@ impl FeatureStore for RedisFeatureStore {
         let json = serde_json::to_string(&features)
             .map_err(|e| ModelError::FeatureError(e.to_string()))?;
         let mut conn = self.conn.write().await;
-        conn.set_ex(&key, json, ttl_seconds as usize)
+        conn.set_ex(&key, json, ttl_seconds)
             .await
             .map_err(|e| ModelError::FeatureError(e.to_string()))?;
         Ok(())
@@ -169,7 +169,7 @@ impl FeatureStore for RedisFeatureStore {
     async fn health_check(&self) -> Result<(), ModelError> {
         let mut conn = self.conn.write().await;
         redis::cmd("PING")
-            .query_async::<_, String>(&mut *conn)
+            .query_async::<String>(&mut *conn)
             .await
             .map_err(|e| ModelError::FeatureError(e.to_string()))?;
         Ok(())
@@ -353,9 +353,9 @@ impl FeatureStore for PostgresFeatureStore {
 }
 
 pub struct CompositeFeatureStore {
-    redis: Arc<RedisFeatureStore>,
-    postgres: Arc<PostgresFeatureStore>,
-    config: FeatureStoreConfig,
+    pub(crate) redis: Arc<RedisFeatureStore>,
+    pub(crate) postgres: Arc<PostgresFeatureStore>,
+    pub(crate) config: FeatureStoreConfig,
 }
 
 impl CompositeFeatureStore {

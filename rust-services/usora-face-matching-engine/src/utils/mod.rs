@@ -6,6 +6,7 @@ use image::{
     Rgb,
 };
 use ndarray::{Array, Array3, Axis, Dim};
+use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use uuid::Uuid;
 
@@ -299,7 +300,7 @@ pub fn non_maximum_suppression(
     keep
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BBox {
     pub x1: f64,
     pub y1: f64,

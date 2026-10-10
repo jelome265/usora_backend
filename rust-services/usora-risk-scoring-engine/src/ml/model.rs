@@ -149,6 +149,7 @@ impl ModelInstance {
 
 pub struct ModelLifecycle {
     current: ArcSwap<ModelInstance>,
+    metadata: ModelMetadata,
     config: ModelConfig,
     reload_interval: tokio::sync::watch::Sender<()>,
     metrics_history: RwLock<Vec<ModelMetrics>>,
@@ -157,9 +158,11 @@ pub struct ModelLifecycle {
 impl ModelLifecycle {
     pub fn new(config: ModelConfig) -> Result<Self, ModelError> {
         let instance = ModelInstance::load(&config)?;
+        let metadata = instance.metadata.clone();
         let (tx, _) = tokio::sync::watch::channel(());
         Ok(Self {
             current: ArcSwap::new(Arc::new(instance)),
+            metadata,
             config,
             reload_interval: tx,
             metrics_history: RwLock::new(Vec::new()),
@@ -331,7 +334,7 @@ impl ModelEnsemble for ModelLifecycle {
             .map(|(i, _)| i)
             .unwrap_or(0);
 
-        let score = instance.config.class_labels[predicted_class]
+        let _score = instance.config.class_labels[predicted_class]
             .parse::<f64>()
             .unwrap_or_else(|_| match predicted_class {
                 0 => 0.0,
@@ -466,7 +469,7 @@ impl ModelEnsemble for ModelLifecycle {
             .map(|(i, _)| i)
             .unwrap_or(0);
 
-        for (i, &val) in base_input.iter().enumerate() {
+        for (i, &_val) in base_input.iter().enumerate() {
             let mut perturbed = base_input.clone();
             perturbed[i] = 0.0;
             let perturbed_map: HashMap<String, f64> = perturbed
@@ -502,7 +505,7 @@ impl ModelEnsemble for ModelLifecycle {
     }
 
     fn metadata(&self) -> &ModelMetadata {
-        &self.current().metadata
+        &self.metadata
     }
 
     fn name(&self) -> &str {

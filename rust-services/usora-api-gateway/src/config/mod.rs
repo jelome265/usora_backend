@@ -105,7 +105,7 @@ impl Default for RateLimitingConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct CorsConfig {
     /// Explicit allowlist of origins permitted to make cross-origin
     /// requests to this API. SECURITY: this must never default to a
@@ -113,17 +113,6 @@ pub struct CorsConfig {
     /// finding C5. An empty list means no cross-origin browser access is
     /// permitted (server-to-server / same-origin callers are unaffected).
     pub allowed_origins: Vec<String>,
-}
-
-impl Default for CorsConfig {
-    fn default() -> Self {
-        // Intentionally empty by default: a fresh/misconfigured environment
-        // must fail closed (no cross-origin access) rather than fail open
-        // (any origin). Set CORS_ALLOWED_ORIGINS explicitly per environment.
-        Self {
-            allowed_origins: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

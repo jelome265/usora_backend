@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use image::{DynamicImage, GenericImageView};
 use std::path::Path;
+use tract_onnx::prelude::Framework;
 use tracing::{info, warn};
 
 use crate::detection::DetectedFace;
@@ -370,7 +371,7 @@ impl PassiveLivenessDetector {
             }
         }
 
-        let input = tract_onnx::prelude::tensor4(tensor.as_slice().unwrap(), &[1, 3, 112, 112])?;
+        let input = tract_onnx::prelude::Tensor::from_shape(&[1, 3, 112, 112], tensor.as_slice().unwrap())?;
 
         let result = model.run(tvec!(input))?;
         let output = result[0].to_array_view::<f32>()?;
