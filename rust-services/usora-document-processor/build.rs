@@ -12,7 +12,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for entry in std::fs::read_dir(&shared_proto)? {
         let entry = entry?;
-        if entry.path().extension().map(|e| e == "proto").unwrap_or(false) {
+        if entry
+            .path()
+            .extension()
+            .map(|e| e == "proto")
+            .unwrap_or(false)
+        {
             println!("cargo:rerun-if-changed={}", entry.path().display());
         }
     }
