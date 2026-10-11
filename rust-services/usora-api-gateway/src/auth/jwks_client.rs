@@ -7,9 +7,9 @@
 //! every token failed with `MissingKey` regardless of validity (see
 //! auth/jwt.rs and middleware/auth.rs history). This closes that gap.
 
+use std::collections::HashMap;
 use jsonwebtoken::DecodingKey;
 use serde::Deserialize;
-use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
 struct Jwk {
@@ -44,23 +44,17 @@ pub enum JwksError {
 /// something other than "sig") are skipped rather than causing the whole
 /// fetch to fail, since a JWKS document may legitimately contain unrelated
 /// keys (e.g. encryption keys) alongside signing keys.
-pub async fn fetch_jwks(
-    client: &reqwest::Client,
-    url: &str,
-) -> Result<HashMap<String, DecodingKey>, JwksError> {
+pub async fn fetch_jwks(client: &reqwest::Client, url: &str) -> Result<HashMap<String, DecodingKey>, JwksError> {
     let response = client
         .get(url)
         .send()
         .await
-        .map_err(|source| JwksError::Request {
-            url: url.to_string(),
-            source,
-        })?;
+        .map_err(|source| JwksError::Request { url: url.to_string(), source })?;
 
-    let jwk_set: JwkSet = response.json().await.map_err(|source| JwksError::Parse {
-        url: url.to_string(),
-        source,
-    })?;
+    let jwk_set: JwkSet = response
+        .json()
+        .await
+        .map_err(|source| JwksError::Parse { url: url.to_string(), source })?;
 
     let mut keys = HashMap::new();
     for jwk in jwk_set.keys {
@@ -115,8 +109,7 @@ pub fn spawn_refresh_task(
     interval_secs: u64,
 ) {
     tokio::spawn(async move {
-        let mut interval =
-            tokio::time::interval(std::time::Duration::from_secs(interval_secs.max(1)));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs.max(1)));
         // The first tick fires immediately; we already did an initial fetch
         // synchronously at startup (see AppState::new), so skip it here to
         // avoid a redundant fetch right after boot.

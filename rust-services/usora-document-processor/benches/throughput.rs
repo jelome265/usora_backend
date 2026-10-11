@@ -1,9 +1,9 @@
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, BatchSize};
 use std::sync::Arc;
 use usora_document_processor::{
     config::Config,
-    models::{ColorSpace, DocumentImage, ImageFormat},
-    pipeline::{PipelineBuilder, PipelineContext, ProcessingPipeline},
+    pipeline::{PipelineBuilder, ProcessingPipeline, PipelineContext},
+    models::{DocumentImage, ImageFormat, ColorSpace},
     DocumentProcessor,
 };
 
@@ -18,18 +18,12 @@ fn mock_document_data(size_kb: u32) -> Vec<u8> {
             let r = ((x as f32 / width as f32) * 255.0) as u8;
             let g = ((y as f32 / height as f32) * 255.0) as u8;
             let b = 128u8;
-            img.as_mut_rgb8()
-                .unwrap()
-                .put_pixel(x, y, image::Rgb([r, g, b]));
+            img.as_mut_rgb8().unwrap().put_pixel(x, y, image::Rgb([r, g, b]));
         }
     }
 
     let mut buf = Vec::new();
-    img.write_to(
-        &mut std::io::Cursor::new(&mut buf),
-        image::ImageFormat::Jpeg,
-    )
-    .unwrap();
+    img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Jpeg).unwrap();
     buf
 }
 

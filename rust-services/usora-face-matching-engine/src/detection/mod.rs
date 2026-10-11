@@ -70,7 +70,10 @@ pub struct TextureAnalysis {
 
 #[async_trait]
 pub trait FaceDetector: Send + Sync {
-    async fn detect_faces(&self, image: &image::DynamicImage) -> anyhow::Result<Vec<DetectedFace>>;
+    async fn detect_faces(
+        &self,
+        image: &image::DynamicImage,
+    ) -> anyhow::Result<Vec<DetectedFace>>;
 
     async fn detect_single_face(
         &self,
