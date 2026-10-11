@@ -1,13 +1,15 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shared_proto = std::path::PathBuf::from("../../shared/proto");
 
+    std::fs::create_dir_all("src/generated")?;
+
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
         .out_dir("src/generated")
         .compile_protos(
             &[shared_proto.join("document.proto")],
-            &[shared_proto.clone()],
+            std::slice::from_ref(&shared_proto),
         )?;
 
     for entry in std::fs::read_dir(&shared_proto)? {

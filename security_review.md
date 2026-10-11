@@ -197,6 +197,11 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 - **Impact:** Cross-tenant user creation and privilege escalation.
 - **Remediation:** Validate payload `tenantId` against caller's verified `tid` claim in `DomainService.java`.
 
+### 5.6 Explicit Payload & Buffer Size Limits (Finding F-025)
+- **Vulnerability:** Absence of explicit request size limits at the gRPC and HTTP layers allowed large payloads to cause Out-Of-Memory (OOM) crashes or buffer exhaustion DoS.
+- **Impact:** Attackers sending multi-gigabyte document attachments or gRPC frames could crash API Gateway or Spring Boot microservices.
+- **Remediation:** Enforce 25MB maximum message frame size across all gRPC servers (`max_decoding_message_size(25 * 1024 * 1024)`) and HTTP request body limiters (`RequestBodyLimitLayer::new(50 * 1024 * 1024)`).
+
 ---
 
 ## 6. Comprehensive Remediation Matrix
