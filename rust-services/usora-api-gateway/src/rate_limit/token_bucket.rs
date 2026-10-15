@@ -1,6 +1,6 @@
-use redis::aio::ConnectionManager;
 use std::sync::Arc;
 use std::time::Instant;
+use redis::aio::ConnectionManager;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
@@ -78,8 +78,7 @@ impl TokenBucket {
         let inner = self.tokens.blocking_lock();
         let now = Instant::now();
         let elapsed = now.duration_since(inner.last_refill).as_millis() as u64;
-        let current_tokens =
-            (inner.tokens + elapsed as f64 * self.refill_rate).min(self.max_tokens);
+        let current_tokens = (inner.tokens + elapsed as f64 * self.refill_rate).min(self.max_tokens);
         if current_tokens >= self.max_tokens - 0.5 {
             return Some(0);
         }
@@ -92,8 +91,7 @@ impl TokenBucket {
         let inner = self.tokens.lock().await;
         let now = Instant::now();
         let elapsed = now.duration_since(inner.last_refill).as_millis() as u64;
-        let current_tokens =
-            (inner.tokens + elapsed as f64 * self.refill_rate).min(self.max_tokens);
+        let current_tokens = (inner.tokens + elapsed as f64 * self.refill_rate).min(self.max_tokens);
         if current_tokens >= self.max_tokens - 0.5 {
             return Some(0);
         }
@@ -116,12 +114,7 @@ impl RedisTokenBucket {
         }
     }
 
-    pub async fn consume(
-        &self,
-        key: &str,
-        max_tokens: u64,
-        refill_seconds: u64,
-    ) -> Result<bool, redis::RedisError> {
+    pub async fn consume(&self, key: &str, max_tokens: u64, refill_seconds: u64) -> Result<bool, redis::RedisError> {
         let redis_key = format!("{}:token_bucket:{}", self.prefix, key);
         let now = chrono::Utc::now().timestamp_millis() as u64;
         let mut con = self.redis.clone();

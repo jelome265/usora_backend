@@ -298,11 +298,7 @@ impl MrzEngine {
 fn parse_name(field: &str) -> (String, String) {
     let cleaned = clean_text(field);
     if let Some(double_less) = cleaned.find("<<") {
-        let surname_part = cleaned[..double_less]
-            .trim()
-            .replace('<', " ")
-            .trim()
-            .to_string();
+        let surname_part = cleaned[..double_less].trim().replace('<', " ").trim().to_string();
         let given_part = cleaned[double_less + 2..]
             .trim()
             .replace('<', " ")
@@ -323,7 +319,9 @@ fn parse_name(field: &str) -> (String, String) {
 }
 
 fn clean_text(s: &str) -> String {
-    s.trim_end_matches('<').trim_start_matches('<').to_string()
+    s.trim_end_matches('<')
+        .trim_start_matches('<')
+        .to_string()
 }
 
 #[async_trait]
@@ -356,24 +354,22 @@ fn perform_mrz_ocr(image: &image::GrayImage) -> anyhow::Result<String> {
     use imageproc::contrast::adaptive_threshold;
 
     let thresholded = adaptive_threshold(image, 61);
-    let processed =
-        imageproc::morphology::dilate(&thresholded, imageproc::morphology::Square(2), 1);
+    let processed = imageproc::morphology::dilate(
+        &thresholded,
+        imageproc::morphology::Square(2),
+        1,
+    );
 
     let mut ocr = tesseract::Tesseract::new(
         Some("eng"),
-        Some(
-            crate::Config::from_env()
-                .map(|c| c.tesseract_data_path.to_string_lossy().to_string())
-                .unwrap_or_else(|_| "/usr/share/tessdata".to_string()),
-        ),
+        Some(crate::Config::from_env()
+            .map(|c| c.tesseract_data_path.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "/usr/share/tessdata".to_string())),
     )?;
 
     ocr.set_image_from_bytes(processed.as_raw())?;
     ocr.set_page_seg_mode(6);
-    ocr.set_variable(
-        "tessedit_char_whitelist",
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",
-    );
+    ocr.set_variable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<");
     let text = ocr.get_text()?;
 
     Ok(text)

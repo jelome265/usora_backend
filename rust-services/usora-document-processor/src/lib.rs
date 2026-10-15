@@ -1,14 +1,14 @@
-pub mod auth;
 pub mod config;
 pub mod extraction;
-pub mod grpc;
-pub mod metrics;
-pub mod models;
 pub mod ocr;
 pub mod pipeline;
+pub mod validation;
+pub mod models;
+pub mod grpc;
 pub mod routes;
 pub mod utils;
-pub mod validation;
+pub mod auth;
+pub mod metrics;
 
 pub mod generated {
     pub mod usora {
@@ -22,9 +22,9 @@ pub mod generated {
 
 pub use config::Config;
 pub use models::{
-    AuthenticityScore, BoundingBox, ColorSpace, DocumentData, DocumentImage, DocumentStatus,
-    DocumentValidation, ExtractedField, ExtractionMethod, ImageFormat, MrzFormat, MrzResult,
-    ProcessedDocument, ProcessingMetrics, ValidationResult,
+    DocumentImage, DocumentData, ExtractedField, ProcessedDocument, ProcessingMetrics,
+    ValidationResult, MrzResult, MrzFormat, AuthenticityScore, DocumentValidation,
+    DocumentStatus, ImageFormat, ColorSpace, BoundingBox, ExtractionMethod,
 };
 
 pub struct DocumentProcessor {
@@ -39,17 +39,13 @@ impl DocumentProcessor {
         let mut extractor = extraction::Extractor::new();
         extractor = extractor
             .with_engine(std::sync::Arc::new(extraction::mrz::MrzEngine::new()))
-            .with_engine(std::sync::Arc::new(
-                extraction::barcode::BarcodeEngine::new(),
-            ))
+            .with_engine(std::sync::Arc::new(extraction::barcode::BarcodeEngine::new()))
             .with_engine(std::sync::Arc::new(extraction::nfc::NfcEngine::new()));
 
         let mut validation_engine = validation::ValidationEngine::new();
         validation_engine = validation_engine
             .with_validator(Box::new(validation::authenticity::AuthenticityCheckEngine))
-            .with_validator(Box::new(
-                validation::tamper_detection::TamperDetectionEngine,
-            ));
+            .with_validator(Box::new(validation::tamper_detection::TamperDetectionEngine));
 
         Self {
             config,
@@ -59,7 +55,10 @@ impl DocumentProcessor {
         }
     }
 
-    pub async fn process_document(&self, raw_data: &[u8]) -> anyhow::Result<ProcessedDocument> {
+    pub async fn process_document(
+        &self,
+        raw_data: &[u8],
+    ) -> anyhow::Result<ProcessedDocument> {
         let start = std::time::Instant::now();
         let document_id = uuid::Uuid::now_v7();
 
@@ -79,10 +78,7 @@ impl DocumentProcessor {
 
         let fields = self.extractor.extract_all(&processed_ctx.image).await?;
 
-        let validation = self
-            .validation_engine
-            .validate_all(&processed_ctx.image.data)
-            .await?;
+        let validation = self.validation_engine.validate_all(&processed_ctx.image.data).await?;
 
         let processing_time = utils::format_processing_time(start);
 

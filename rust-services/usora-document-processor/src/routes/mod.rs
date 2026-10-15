@@ -1,9 +1,10 @@
-use crate::auth::{require_service_auth, AuthState};
 use crate::generated::usora::document::v1::{
-    CrossReferenceRequest, DocumentAnalysisRequest, ForgeryDetectionRequest,
-    MetadataExtractionRequest, SecurityFeaturesRequest, TemplateRequest,
+    DocumentAnalysisRequest, ForgeryDetectionRequest,
+    MetadataExtractionRequest, CrossReferenceRequest,
+    SecurityFeaturesRequest, TemplateRequest,
 };
 use crate::grpc::DocumentAnalysisServiceImpl;
+use crate::auth::{require_service_auth, AuthState};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -29,30 +30,12 @@ pub fn router(state: AppState, auth: Arc<AuthState>) -> axum::Router {
     // without a bearer token (it's restricted at the network layer
     // instead — see this chart's NetworkPolicy).
     let authenticated_routes = axum::Router::new()
-        .route(
-            "/api/v1/documents/analyze",
-            axum::routing::post(analyze_document),
-        )
-        .route(
-            "/api/v1/documents/forgery-check",
-            axum::routing::post(forgery_check),
-        )
-        .route(
-            "/api/v1/documents/metadata",
-            axum::routing::post(extract_metadata),
-        )
-        .route(
-            "/api/v1/documents/cross-reference",
-            axum::routing::post(cross_reference),
-        )
-        .route(
-            "/api/v1/documents/security-features",
-            axum::routing::post(security_features),
-        )
-        .route(
-            "/api/v1/documents/templates/{country}/{doc_type}",
-            axum::routing::get(get_template),
-        )
+        .route("/api/v1/documents/analyze", axum::routing::post(analyze_document))
+        .route("/api/v1/documents/forgery-check", axum::routing::post(forgery_check))
+        .route("/api/v1/documents/metadata", axum::routing::post(extract_metadata))
+        .route("/api/v1/documents/cross-reference", axum::routing::post(cross_reference))
+        .route("/api/v1/documents/security-features", axum::routing::post(security_features))
+        .route("/api/v1/documents/templates/{country}/{doc_type}", axum::routing::get(get_template))
         .route_layer(middleware::from_fn_with_state(auth, require_service_auth))
         .with_state(state);
 
@@ -62,10 +45,7 @@ pub fn router(state: AppState, auth: Arc<AuthState>) -> axum::Router {
         .layer(middleware::from_fn(track_rest_metrics))
 }
 
-async fn track_rest_metrics(
-    req: axum::extract::Request,
-    next: middleware::Next,
-) -> axum::response::Response {
+async fn track_rest_metrics(req: axum::extract::Request, next: middleware::Next) -> axum::response::Response {
     let route = req.uri().path().to_string();
     let response = next.run(req).await;
     let status_class = match response.status().as_u16() {
@@ -237,11 +217,7 @@ async fn cross_reference(
         document_image: req.document_image,
     };
 
-    match state
-        .service
-        .validate_cross_reference(Request::new(grpc_req))
-        .await
-    {
+    match state.service.validate_cross_reference(Request::new(grpc_req)).await {
         Ok(resp) => {
             let inner = resp.into_inner();
             Ok(Json(serde_json::json!({
@@ -288,11 +264,7 @@ async fn security_features(
         check_watermark: req.check_watermark.unwrap_or(true),
     };
 
-    match state
-        .service
-        .check_security_features(Request::new(grpc_req))
-        .await
-    {
+    match state.service.check_security_features(Request::new(grpc_req)).await {
         Ok(resp) => {
             let inner = resp.into_inner();
             Ok(Json(serde_json::json!({
@@ -318,11 +290,7 @@ async fn get_template(
         document_type: doc_type,
     };
 
-    match state
-        .service
-        .get_document_template(Request::new(grpc_req))
-        .await
-    {
+    match state.service.get_document_template(Request::new(grpc_req)).await {
         Ok(resp) => {
             let inner = resp.into_inner();
             Ok(Json(serde_json::json!({
@@ -351,19 +319,13 @@ mod base64_serde {
     use base64::Engine;
 
     pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    where S: Serializer {
         serializer.serialize_str(&base64::engine::general_purpose::STANDARD.encode(bytes))
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
+    where D: Deserializer<'de> {
         let s = String::deserialize(deserializer)?;
-        base64::engine::general_purpose::STANDARD
-            .decode(&s)
-            .map_err(serde::de::Error::custom)
+        base64::engine::general_purpose::STANDARD.decode(&s).map_err(serde::de::Error::custom)
     }
 }
