@@ -192,4 +192,3 @@ mod tests {
             "one pixel over the dimension limit must be rejected");
     }
 }
-
