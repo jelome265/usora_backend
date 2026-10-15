@@ -27,7 +27,10 @@ struct ModelEntry {
     model: tract_onnx::prelude::SimplePlan<
         tract_onnx::prelude::TypedFact,
         Box<dyn tract_onnx::prelude::TypedOp>,
-        tract_onnx::prelude::Graph<tract_onnx::prelude::TypedFact, Box<dyn tract_onnx::prelude::TypedOp>>,
+        tract_onnx::prelude::Graph<
+            tract_onnx::prelude::TypedFact,
+            Box<dyn tract_onnx::prelude::TypedOp>,
+        >,
     >,
     metadata: ModelMetadata,
 }
@@ -37,11 +40,7 @@ impl ModelManager {
         ModelManager { models: Vec::new() }
     }
 
-    pub fn load_model(
-        &mut self,
-        model_path: &Path,
-        config: &ModelConfig,
-    ) -> Result<()> {
+    pub fn load_model(&mut self, model_path: &Path, config: &ModelConfig) -> Result<()> {
         info!(path = %model_path.display(), "Loading embedding model");
 
         let model = tract_onnx::prelude::onnx()
@@ -51,12 +50,7 @@ impl ModelManager {
                 0,
                 tract_onnx::prelude::InferenceFact::dt_shape(
                     tract_onnx::prelude::f32::datum_type(),
-                    tvec!(
-                        1,
-                        3,
-                        config.input_height as i64,
-                        config.input_width as i64
-                    ),
+                    tvec!(1, 3, config.input_height as i64, config.input_width as i64),
                 ),
             )
             .context("Failed to set input shape")?
@@ -67,7 +61,12 @@ impl ModelManager {
 
         let metadata = ModelMetadata {
             model_version: Self::detect_version(model_path),
-            input_shape: vec![1, 3, config.input_height as usize, config.input_width as usize],
+            input_shape: vec![
+                1,
+                3,
+                config.input_height as usize,
+                config.input_width as usize,
+            ],
             output_shape: vec![1, config.embedding_dimension],
             model_type: Self::detect_model_type(model_path),
             loaded_at: chrono::Utc::now(),
@@ -91,7 +90,10 @@ impl ModelManager {
     }
 
     pub fn get_version(&self, version: &str) -> Option<&ModelEntry> {
-        self.models.iter().rev().find(|e| e.metadata.model_version == version)
+        self.models
+            .iter()
+            .rev()
+            .find(|e| e.metadata.model_version == version)
     }
 
     pub fn metadata(&self) -> Option<&ModelMetadata> {
@@ -112,14 +114,21 @@ impl ModelManager {
     ) -> Result<()> {
         info!("Warming up embedding model");
 
-        let input = ndarray::Array4::<f32>::zeros((1, 3, config.input_height as usize, config.input_width as usize));
+        let input = ndarray::Array4::<f32>::zeros((
+            1,
+            3,
+            config.input_height as usize,
+            config.input_width as usize,
+        ));
         let tensor = tract_onnx::prelude::tensor4(
             input.as_slice().unwrap(),
             &[1, 3, config.input_height as i64, config.input_width as i64],
         )?;
 
         for i in 0..3 {
-            let _ = model.run(tvec!(tensor.clone())).context("Warmup inference failed")?;
+            let _ = model
+                .run(tvec!(tensor.clone()))
+                .context("Warmup inference failed")?;
             info!(iteration = i + 1, "Warmup completed");
         }
 
@@ -140,7 +149,8 @@ impl ModelManager {
     }
 
     fn detect_model_type(model_path: &Path) -> ModelType {
-        let name = model_path.file_stem()
+        let name = model_path
+            .file_stem()
             .map(|s| s.to_string_lossy().to_lowercase())
             .unwrap_or_default();
         if name.contains("arcface") {
