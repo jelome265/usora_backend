@@ -3,7 +3,8 @@ use image::{DynamicImage, GenericImageView};
 use ndarray_stats::QuantileExt;
 
 use crate::detection::{
-    DetectedFace, FaceGeometry, HistogramAnalysis, QualityDetails, QualityScore, TextureAnalysis,
+    DetectedFace, FaceGeometry, HistogramAnalysis, QualityDetails, QualityScore,
+    TextureAnalysis,
 };
 use crate::utils;
 
@@ -44,7 +45,11 @@ impl QualityChecker {
         QualityChecker::default()
     }
 
-    pub fn check_quality(&self, image: &DynamicImage, face: &DetectedFace) -> Result<QualityScore> {
+    pub fn check_quality(
+        &self,
+        image: &DynamicImage,
+        face: &DetectedFace,
+    ) -> Result<QualityScore> {
         let cropped = utils::crop_face(image, face)?;
         let brightness = utils::compute_brightness(&cropped);
         let contrast = utils::compute_contrast(&cropped);
@@ -219,8 +224,8 @@ impl QualityChecker {
         let variance: f64 = pixels.iter().map(|&p| (p - mean).powi(2)).sum::<f64>() / n;
         let std_dev = variance.sqrt();
 
-        let skewness: f64 =
-            pixels.iter().map(|&p| (p - mean).powi(3)).sum::<f64>() / (n * std_dev.powi(3));
+        let skewness: f64 = pixels.iter().map(|&p| (p - mean).powi(3)).sum::<f64>()
+            / (n * std_dev.powi(3));
 
         let mut hist = vec![0u64; 256];
         for &p in &pixels {
@@ -258,7 +263,11 @@ impl QualityChecker {
     ) -> FaceGeometry {
         let face_w = face.bbox.width();
         let face_h = face.bbox.height();
-        let face_ratio = if face_h > 0.0 { face_w / face_h } else { 1.0 };
+        let face_ratio = if face_h > 0.0 {
+            face_w / face_h
+        } else {
+            1.0
+        };
 
         let asymmetry_score = if face.landmarks.len() >= 5 {
             let left_eye = face.landmarks[0];
@@ -318,7 +327,8 @@ impl QualityChecker {
                     let block_mean = block_sum as f64 / block_count as f64;
                     for dy in 0..block_size.min(h - by) {
                         for dx in 0..block_size.min(w - bx) {
-                            let diff = gray.get_pixel(bx + dx, by + dy)[0] as f64 - block_mean;
+                            let diff =
+                                gray.get_pixel(bx + dx, by + dy)[0] as f64 - block_mean;
                             local_contrast_sum += diff.abs();
                             local_contrast_count += 1;
                         }
@@ -377,7 +387,11 @@ impl QualityChecker {
         }
 
         let mean: f64 = lbp_values.iter().sum::<f64>() / lbp_values.len() as f64;
-        lbp_values.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / lbp_values.len() as f64
+        lbp_values
+            .iter()
+            .map(|&v| (v - mean).powi(2))
+            .sum::<f64>()
+            / lbp_values.len() as f64
     }
 
     fn compute_frequency_energy(&self, gray: &image::GrayImage) -> f64 {
@@ -449,8 +463,7 @@ impl QualityChecker {
         geometry: &FaceGeometry,
         texture: &TextureAnalysis,
     ) -> f64 {
-        let brightness_score =
-            self.normalize_range(brightness, self.min_brightness, self.max_brightness);
+        let brightness_score = self.normalize_range(brightness, self.min_brightness, self.max_brightness);
         let contrast_score = self.normalize_range(contrast, self.min_contrast, self.max_contrast);
 
         let sharpness_score = (sharpness / 200.0).min(1.0) * 100.0;
@@ -495,12 +508,7 @@ mod tests {
     fn test_quality_check_valid_face() {
         let img = DynamicImage::new_rgb8(200, 200);
         let face = DetectedFace {
-            bbox: utils::BBox {
-                x1: 40.0,
-                y1: 40.0,
-                x2: 160.0,
-                y2: 160.0,
-            },
+            bbox: utils::BBox { x1: 40.0, y1: 40.0, x2: 160.0, y2: 160.0 },
             landmarks: vec![
                 [70.0, 80.0],
                 [130.0, 80.0],
