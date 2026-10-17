@@ -15,7 +15,7 @@ This document presents a comprehensive, multi-dimensional security, reliability,
 
 Our static analysis, codebase reviews, and architectural deep-dives have synthesized all prior security evaluations (including `AUDIT-usora-security-2026-08-03.md`, `rust_review.md`, `docs/infrastructure-deep-review-2026-08-04.md`, `docs/architecture-security-review-2026-07-31.md`, and `docs/USORA-BACKEND-ENTERPRISE-AUDIT-2026-08-16.md`).
 
-This consolidated review establishes a single, authoritative, and actionable remediation roadmap covering Critical (C1–C7) and High (H1–H6) findings across both application code and infrastructure layers.
+This consolidated review establishes a single, authoritative, and actionable remediation roadmap covering Critical (C1–C7), High (H1–H6), and Interface Boundary (F-025) findings across both application code and infrastructure layers.
 
 ---
 
@@ -170,7 +170,7 @@ The Component level analyzes the inner mechanics of the API Gateway, Spring Boot
 
 ## 5. Level 4: Code & Data Architecture (C4)
 
-The Code & Data level evaluates cryptographic implementations, database Row-Level Security, audit trail hashing, and IDOR protections.
+The Code & Data level evaluates cryptographic implementations, database Row-Level Security, audit trail hashing, IDOR protections, and payload size bounds.
 
 ### 5.1 Database Multi-Tenancy & Row-Level Security (Finding C7)
 - **Vulnerability:** Tenant isolation was enforced solely at application level. Database tables lacked native PostgreSQL Row-Level Security (RLS) policies.
@@ -197,6 +197,11 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 - **Impact:** Cross-tenant user creation and privilege escalation.
 - **Remediation:** Validate payload `tenantId` against caller's verified `tid` claim in `DomainService.java`.
 
+### 5.6 Payload Size Limits & gRPC Boundaries (Finding F-025)
+- **Vulnerability:** Unbounded REST payload body parsing and default gRPC message size configurations allowed oversized or unbounded binary payloads (such as multi-gigabyte document evidence uploads or memory-bomb protobuf messages).
+- **Impact:** Uncontrolled memory allocation causing Out-Of-Memory (OOM) panics, container crashes, and Denial of Service (DoS) across compute engines and edge gateway services.
+- **Remediation:** Enforce explicit 10MB/16MB payload size limits across all HTTP/REST document evidence endpoints and gRPC client/server channels (`max_decoding_message_size(16 * 1024 * 1024)` in Tonic gRPC servers/clients and Spring Boot `spring.servlet.multipart.max-file-size=10MB`).
+
 ---
 
 ## 6. Comprehensive Remediation Matrix
@@ -216,6 +221,7 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 | **H4** | Infrastructure | High (P1) | Terraform Modules | **REMEDIATED** | Fixed VPC endpoint interpolation & `${var.environment}` |
 | **H5** | Network Security | High (P1) | K8s NetworkPolicies | **REMEDIATED** | Restricted database egress to VPC CIDRs |
 | **H6** | CI/CD Pipelines | High (P1) | GitHub Actions | **REMEDIATED** | Parallel Docker build matrix |
+| **F-025** | Gateway / Compute | High (P1) | REST / gRPC Interfaces | **REMEDIATED** | Explicit 10MB/16MB payload size limits across REST & gRPC |
 
 ---
 
@@ -236,6 +242,7 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 |   - Kubernetes Network Policy Egress Hardening (H5)                               |
 |   - Parallel CI/CD Build Matrix (H6) & Helm Release Templates (C1)                |
 |   - Dual-Authorization Rule Signing (C2) & CORS Hardening (C5)                    |
+|   - Payload Size Limits & gRPC Message Bounds (F-025)                             |
 |                                                                                   |
 |  Phase 3: Compute Resilience & Compliance Evidence (P2)                           |
 |   - Rhai DSL Sandbox Memory Bounds                                                |
@@ -248,6 +255,6 @@ The Code & Data level evaluates cryptographic implementations, database Row-Leve
 
 ## 8. Conclusion
 
-The USORA KYC Platform features a high-performance polyglot architecture capable of processing complex compliance workflows at sub-second latencies. By implementing the consolidated remediation plan detailed in this Security Architecture Review—hardening edge authentication, enforcing PostgreSQL Row-Level Security, removing downstream header trust, parameterizing Terraform IaC endpoints, and locking down Kubernetes egress policies—USORA satisfies SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 requirements.
+The USORA KYC Platform features a high-performance polyglot architecture capable of processing complex compliance workflows at sub-second latencies. By implementing the consolidated remediation plan detailed in this Security Architecture Review—hardening edge authentication, enforcing PostgreSQL Row-Level Security, removing downstream header trust, parameterizing Terraform IaC endpoints, locking down Kubernetes egress policies, and bounding REST/gRPC payload size limits—USORA satisfies SOC 2 Type II, GDPR, EU AML5/AML6, and ISO 27001 requirements.
 
 *Report compiled and certified by: Jules, Principal Security & Infrastructure Engineer.*

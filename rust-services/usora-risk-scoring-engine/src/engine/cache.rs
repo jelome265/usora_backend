@@ -43,8 +43,8 @@ impl MultiLevelCache {
     }
 
     pub async fn init_redis(&self, redis_url: &str) -> Result<(), RiskEngineError> {
-        let client =
-            redis::Client::open(redis_url).map_err(|e| RiskEngineError::CacheError(e.to_string()))?;
+        let client = redis::Client::open(redis_url)
+            .map_err(|e| RiskEngineError::CacheError(e.to_string()))?;
         let conn = client
             .get_connection_manager()
             .await
